@@ -1,4 +1,4 @@
-library(igraph)
+#USAGE: Rscript preProcess.R tn93output.csv year
 
 #Takes in a dataframe to split into 2 partitions
 sampleSplit <- function(df, divide) {
@@ -28,37 +28,12 @@ for(row in 1:nrow(input)) {
   #INQUIRY: Sot sure if there is a faster way to censor the edgelist for future years
   input[row, "maxDate"] <- as.integer(max(input[row, "Date2"],  input[row, "Date1"]))
 }
+year = as.integer(args[2])
 
-#Initializing 2 data frames to point to 2 partitions of the data. 
-train <- data.frame(ID1 = character(), ID2 = character(), Date1 = integer(), Date2=integer(), minDate=integer())
-test <- data.frame(ID1 = character(), ID2 = character(), Date1 = integer(), Date2=integer(), minDate=integer()) 
+#The inputted data frame excluding all cases beyond a current year and all cases already inputted copied into the test or train partitions
+inputAtYear <- input[input$maxDate<=year, ] 
+index <- sampleSplit(inputAtYear, 0.5)
 
-#Populates the dataframes with even splits of each year, iterating through subsets of the input defined by the lowest collection date
-year = min(input$maxDate)
-
-while (year<=max(input$maxDate)){
-  
-  #The inputted data frame excluding all cases beyond a current year and all cases already inputted copied into the test or train partitions
-  inputAtYear <- input[input$maxDate==year, ] 
-  index <- sampleSplit(inputAtYear, 0.5)
-  
-  #adding the current year's data into the partitions
-  train <- rbind(inputAtYear[index, ],train)
-  test <- rbind(inputAtYear[-index, ], test)
-  
-  #graph <- graph_from_data_frame(train, T, NULL)
-  #graph <- graph_from_data_frame(test, T, NULL)
-  
-  year=year+1
-}
-
-#Optional data and output testing
-if (is.na(args[2])==F){
-  str(train)
-  str(test)
-  str(input)
-  pdf("dataSummary.pdf")
-  plot(hist(input$maxDate))
-  plot(graph_from_data_frame(input, T, NULL))
-  dev.off() 
-}
+#adding the current year's data into the partitions
+train <-inputAtYear[index, ]
+test <- inputAtYear[-index, ]
