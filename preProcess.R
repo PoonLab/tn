@@ -15,25 +15,23 @@ sampleSplit <- function(df, divide) {
 #The ID columns should be in an ID_Date format.
 args = commandArgs(trailingOnly = T)
 input <- read.csv(args[1], stringsAsFactors = F)
-
-#Iterates through tn93 output to create columns specifying collection year and id as their own columns
-for(row in 1:nrow(input)) {
-  splitID1 <- strsplit(input[row,"ID1"], "_")[[1]]
-  splitID2 <- strsplit(input[row,"ID2"], "_")[[1]]
-  input[row, "ID1"] <- splitID1[1] 
-  input[row, "Date1"] <- as.integer(splitID1[2])
-  input[row, "ID2"] <- splitID2[1]
-  input[row, "Date2"] <- as.integer(splitID2[2])
-  
-  #INQUIRY: Sot sure if there is a faster way to censor the edgelist for future years
-  input[row, "maxDate"] <- as.integer(max(input[row, "Date2"],  input[row, "Date1"]))
-}
 year = as.integer(args[2])
 
+#Alters tn93 output to create columns specifying collection year and id as their own columns
+temp <- sapply(input$ID1, function(x) strsplit(x, '_')[[1]])
+input$ID1 <- temp[1,]
+input$Date1 <- temp[2,]
+
+temp <- sapply(input$ID2, function(x) strsplit(x, '_')[[1]])
+input$ID2 <- temp[1,]
+input$Date2 <- temp[2,]
+
+input$maxDate <- apply(cbind(input$Date1, input$Date2), 1, max)
+
 #The inputted data frame excluding all cases beyond a current year and all cases already inputted copied into the test or train partitions
-inputAtYear <- input[input$maxDate<=year, ] 
-index <- sampleSplit(inputAtYear, 0.5)
+inputToYear <- input[input$maxDate<=year, ] 
+index <- sampleSplit(inputToYear, 0.5)
 
 #adding the current year's data into the partitions
-train <-inputAtYear[index, ]
-test <- inputAtYear[-index, ]
+train <-inputToYear[index, ]
+test <- inputToYear[-index, ]
