@@ -15,7 +15,8 @@ sampleSplit <- function(df, divide) {
 #The ID columns should be in an ID_Date format.
 args = commandArgs(trailingOnly = T)
 input <- read.csv(args[1], stringsAsFactors = F)
-year = as.integer(args[2])
+
+year = as.integer(args[2]) #Year to include up to
 
 #Alters tn93 output to create columns specifying collection year and id as their own columns
 temp <- sapply(input$ID1, function(x) strsplit(x, '_')[[1]])
