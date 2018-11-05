@@ -4,34 +4,53 @@
 library(igraph)
 ####- TO-DO: Use ML for optimization. see Caret or e107 packages -####
 
-#Takes in a graph and returns a subgraph containing only vertices up to a certain year and edges under a certain distance
-cutAndCensor <- function(inG, y, dist) {
-  #@param inG: The graph to be processed
-  #@param year: The specified year, beyond which all vertices will be censored
-  #@param dist: The specified distance, beyond which all edges will be excluded
-  #@return The processed subgraph
-  
-  vertUpToYear <- V(inG)[V(inG)$year<=y]
-  outG <- induced_subgraph(inG, vertUpToYear , impl = "copy_and_delete")
-  
-  eWithinDist <- E(outG)[E(outG)$Distance<=dist]
-  outG <- subgraph.edges(outG, eWithinDist, delete.vertices = FALSE)
-  
-  return(outG)
-}
+#optimize <- function(inG, y) {}
+
+#_______________________________________________________________________________________________________________#
 
 #Generates a difference representing how accurately a set of predictor variablespredict cluster size. 
 #This score is based off of the difference between clusters actual growth in a year vs their estimate of their own growth.
 #Currently the only predictor of growth is recent cluster growth.
-predict <- function(inG, y, dist) {
+predict <- function(inG, y) {
   #@param inG: The graph representing all of the data
   #@param y: The reference point year (recent growth and clusters will be based off of this year)
   #@param dist: The cutoff genetic distance. Only vertices below this distance may be in the same cluster
   #@return: The Average difference between estimated and actual growth for clusters.
   
-  #Sub Graphs representing the total input graph sensored up to the next year and present year (respectively)
-  newG <- cutAndCensor(inG, (y+1), dist)
-  presG <- cutAndCensor(newG, y, dist)
+  #Sub Graph representing the total input graph sensored up to the next year
+  vertUpToYear <- V(inG)[V(inG)$year<=(y+1)]
+  newG <- induced_subgraph(inG, vertUpToYear , impl = "copy_and_delete")
+  
+  #Optimization function for distance
+  #!BROKEN: Allows for one massive cluster to be considered optimal.
+  f <- function(d) {
+    
+    eWithinDist <- E(newG)[E(newG)$Distance<=d]
+    cutG <- subgraph.edges(newG, eWithinDist, delete.vertices = F)
+    clu <- components(cutG)
+
+    bridgeEs <- E(cutG)[(V(cutG)[V(cutG)$year==(y+1)]) %--% (V(cutG)[V(cutG)$year==y])]
+    bridgeG <- subgraph.edges(cutG, bridgeEs, delete.vertices=T)
+    
+    presClu <- length(levels(factor(unname(clu$membership[attr(clu$membership, "names") %in% V(newG)[V(newG)$year <= y]$name]))))/clu$no
+    newCases <- length(V(bridgeG)[V(bridgeG)$year==(y+1)]) 
+    
+    ratV <- newCases/presClu
+    return(ratV)
+  }
+  
+  dist <- optimize(f, lower = 0, upper = 1, maximum = T, tol = 0.001)
+  
+  #Filter forward censored subgraph to optimal distance
+  eWithinDist <- E(newG)[E(newG)$Distance<=d]
+  newG <- subgraph.edges(newG, eWithinDist, delete.vertices = F)
+  
+  #obtains a subgraph, forward censored only up to the current year
+  vertUpToYear <- V(inG)[V(inG)$year<=y]
+  presG <- induced_subgraph(newG, vertUpToYear, delete.vertices = F)
+  
+  ####- TO-DO: This could be its own function (ie. everything below could be predict, above is just optimize) -####
+#___________________________________________________________________________________________________________________#
   
   #Obtaining clusters. In this case, simply connected components within dist parameter
   clu <- components(presG)
@@ -50,7 +69,8 @@ predict <- function(inG, y, dist) {
   
   #Creates a sub graph, representing only the interface between the current and the next year
   #Only edges between a current year and next year vertex are included
-  bridgeEs <- E(newG)[(V(newG)[V(newG)$year==(y+1)]) %--% (V(newG)[V(newG)$year==y])]
+  E(newG)[(V(newG)[V(newG)$year==(y+1)]) %--% (V(newG)[V(newG)$year==y])]
+  
   bridgeG <- subgraph.edges(newG, bridgeEs, delete.vertices = T) 
   print(bridgeG)
   newVs <- V(bridgeG)[V(bridgeG)$year==(y+1)]
@@ -88,9 +108,8 @@ V(g)$name <- temp[1,]
 V(g)$year <- as.numeric(temp[2,])
 years <- as.numeric(levels(factor(V(g)$year)))
 
-###-TO DO: Optimize distance cutoff input to obtain reasonable clusters-####
+df <- data.frame(Year = integer(years), diff = double())
 
-#Test
-for(i in 5:5) {
-  predict(g, (2000+i), 0.05)
-}
+temp <- sapply(df$year, predict(g, x))
+df$diff <- temp
+print(df)
