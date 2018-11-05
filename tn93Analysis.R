@@ -22,17 +22,19 @@ predict <- function(inG, y) {
   newG <- induced_subgraph(inG, vertUpToYear , impl = "copy_and_delete")
   
   #Optimization function for distance
-  #!BROKEN: Allows for one massive cluster to be considered optimal.
   f <- function(d) {
-    
+    #Obtain a subgraph of all edges below a given distance
     eWithinDist <- E(newG)[E(newG)$Distance<=d]
     cutG <- subgraph.edges(newG, eWithinDist, delete.vertices = F)
     clu <- components(cutG)
 
-    bridgeEs <- E(cutG)[(V(cutG)[V(cutG)$year==(y+1)]) %--% (V(cutG)[V(cutG)$year==y])]
+    #obtain a subgraph of only the interface between the present and next year
+    bridgeEs <- E(cutG)[(V(cutG)[V(cutG)$year==(y+1)]) %--% (V(cutG)[V(cutG)$year<=y])]
     bridgeG <- subgraph.edges(cutG, bridgeEs, delete.vertices=T)
     
+    #The percentage of current clusters that are capturing new cases
     presClu <- length(levels(factor(unname(clu$membership[attr(clu$membership, "names") %in% V(newG)[V(newG)$year <= y]$name]))))/clu$no
+    #The number of new cases captured, based on the distance
     newCases <- length(V(bridgeG)[V(bridgeG)$year==(y+1)]) 
     
     ratV <- newCases/presClu
@@ -106,10 +108,10 @@ g <- graph_from_data_frame(input, directed=FALSE, vertices=NULL)
 temp <- sapply(V(g)$name, function(x) strsplit(x, '_')[[1]])
 V(g)$name <- temp[1,]
 V(g)$year <- as.numeric(temp[2,])
-years <- as.numeric(levels(factor(V(g)$year)))
+numYears <- length(levels(factor(V(g)$year)))
 
-df <- data.frame(Year = integer(years), diff = double())
+df <- data.frame(Year = integer(numYears), Score = double(numYears))
 
-temp <- sapply(df$year, predict(g, x))
-df$diff <- temp
+temp <- sapply(df$year, function(x) predict(g, x))
+df$Score <- temp
 print(df)
