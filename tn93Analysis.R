@@ -42,7 +42,7 @@ prettyGoodDist <- function(inG) {
   
   #Obtain the distance that maximized variance. 
   out <- dist[variance==max(variance)][[1]]
-
+  
   #Create a poisson family glm based upon the recently generated data.
   ####- TO DO: This is currently unused -####
   distMod <- glm(variance~dist, family=poisson)
@@ -111,6 +111,22 @@ getGrowth <- function(inG) {
   }
   
   return(clu$growth)
+}
+
+getGrowthSimp <- function(inG) {
+  
+  inG <- subgraph.edges(inG, E(inG), delete.vertices = T)
+  
+  clu <- components(clu)
+  newV <- V(inG)[V(inG)$year == max(V(ing)$year)]
+  
+  newC <- clu$membership[attr(clu$membership, "names") %in% newV$name]
+  
+  growthTable <- table(unname(newC))
+  
+  clu$growth <- growthTable[2,]
+  
+  return(clu)
 }
 
 #Obtains a filtered subgraph of the full graph.
