@@ -6,6 +6,51 @@ library(igraph)
 
 #__________________________________________________________________________________________________________________________#
 
+
+#Estimates a cutoff distance. A subgraph based on edges below that cutoff should produce ideal clusters.
+#A list of ideal clusters will have high variance across their growths
+prettyGoodDist <- function(inG) {
+  #@param inG: The input graph (usually a subgraph forward-censored by year). The latest year represents the Upcoming year. 
+  #@return: A cutoff producing "ideal" clusters
+  
+  #This objective function defines the relationship between cutoff distance and cluster growth variance
+  objF <- function(d) {
+    cutG <- inG - E(inG)[E(inG)$Distance>=d]
+    var <- var(getGrowth(cutG))
+    return(var)
+  }
+  
+  #Obtains the interface between vertices from the upcoming year and vertices from past years
+  newV <- V(inG)[V(inG)$year==max(V(inG)$year)]
+  presG <- V(inG)[V(inG)$year<max(V(inG)$year)]
+  bridgeE <- E(inG)[newV%--%presG]
+  
+  #Initializes some data for modelling (variance~dist). The starting distance (x) is set to the shortest distance between a new vertex and an old vertex. 
+  #The step size is based upon how short the starting distance is.
+  variance <- c()
+  dist <- c()
+  x <- min(bridgeE$Distance)
+  step <- 0.005
+  
+  #Generates the data for modelling. Stops generating data once the Maximum informative distance is reached. 
+  #(Maximum informative distance is the point at which all old vertices cluster in 1 cluster)
+  while (!is.na(objF(x))) {
+    dist <- c(dist, x)
+    variance <- c(variance, objF(x))
+    x<-x+step
+    print(x)
+  }
+  
+  #Obtain the distance that maximized variance. 
+  out <- dist[variance==max(variance)][[1]]
+  
+  #Create a poisson family glm based upon the recently generated data.
+  ####- TO DO: This is currently unused -####
+  distMod <- glm(variance~dist, family=poisson)
+  
+  return(out)
+}
+
 #Estimates the growth of clusters based on information from all years before the latest year.
 ####- TO DO: Add MANY more predictor variables for this estimation and improve upon the current ones -####
 estimateGrowth <- function(inG) {
@@ -69,15 +114,28 @@ getGrowth <- function(inG) {
   return(clu)
 }
 
+#An alternative version of get growth. This time the clusters are based on the grtowing year (potentially misinformative?)
 getGrowthSimp <- function(inG) {
+  #@param inG, the subgraph filtered up to the current year at a current distance
+  #@return An updated vector of cluster information, including the growth (new cases added)
   
-  inG <- subgraph.edges(ing, E(inG), delete.vertices = T)
+  #filter out all lone vertices
+  inG <- subgraph.edges(inG, E(inG), delete.vertices = T)
   
+  #Obtain a table of growth (# of new cases per cluster) based on the cases in the new year 
   clu <- components(inG)
-  newV <- V(inG)[V(ing)$year == max(V(inG)$year)]$name
+  newV <- V(inG)[V(inG)$year == max(V(inG)$year)]
+  newC <- clu$membership[names(clu$membership) %in% newV$name]
+  growth <- table(unname(newC))
   
-  oldClu <- clu$membership[attr(clu$membership, "names") !%in% newV]
+  #Add the number of new cases added each year as a characteristic of the cluster info
+  clu$growth[as.numeric(names(growth))] <- unname(growth) 
+  temp <- sapply(clu$growth, function(x) 
+    if(is.na(x)){x <- 0}
+    else{x<-x}) 
+  clu$growth <- temp
   
+  return(clu)
 }
 
 #Obtains a filtered subgraph of the full graph.
@@ -96,7 +154,6 @@ subGraph <- function(inG, y, d) {
 
   return(outG)
 }
-
 
 
 #__________________________________________________________________________________________________________________________#
@@ -148,33 +205,6 @@ for (x in seq(0.005, 0.020, 0.002)) {
   res <- cbind(res, result)
 }
 ##########################################################
-
-#Obtain the optimum cutoff distance for that year
-####- TO DO: Have this be based upon optDist function (glm-based estimate) and then erase the outdated function above -####
-dist <- prettyGoodDist(g)
-
-#Generate the Output data
-for (y in years) {
-  #If the case has no previous years to compare against
-  if (length(V(g)[V(g)$year<y])==0) next
-  
-  startT <- proc.time() 
-  
-  #Filter the input graph to the loop year (y). The loop year will represent the "Upcoming" Year
-  filtrG <- subGraph(g, y, dist)
-  
-  #Obtain the accuracy (ie. The actual - expected cluster growth)
-  growthDiff <- estimateGrowth(filtrG) - abs(getGrowth(filtrG))
-  acc <- mean(growthDiff)
-  
-  #Populate the output data with accuracy and ideal cutoff distance
-  output$Accuracy[output$Year==y] <- acc
-  output$Distance[output$Year==y] <- dist
-  
-  #Populate the output data with the speed of this iteration
-  endT <- proc.time()
-  output$Time[output$Year==y] <- (endT-startT)
-}
 
 #Test
 print(proc.time())
