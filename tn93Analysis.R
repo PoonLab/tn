@@ -6,56 +6,14 @@ library(igraph)
 
 #__________________________________________________________________________________________________________________________#
 
-
-#Estimates a cutoff distance. A subgraph based on edges below that cutoff should produce ideal clusters.
-#A list of ideal clusters will have high variance across their growths
-prettyGoodDist <- function(inG) {
-  #@param inG: The input graph (usually a subgraph forward-censored by year). The latest year represents the Upcoming year. 
-  #@return: A cutoff producing "ideal" clusters
-  
-  #This objective function defines the relationship between cutoff distance and cluster growth variance
-  objF <- function(d) {
-    cutG <- inG - E(inG)[E(inG)$Distance>=d]
-    var <- var(getGrowth(cutG))
-    return(var)
-  }
-  
-  #Obtains the interface between vertices from the upcoming year and vertices from past years
-  newV <- V(inG)[V(inG)$year==max(V(inG)$year)]
-  presG <- V(inG)[V(inG)$year<max(V(inG)$year)]
-  bridgeE <- E(inG)[newV%--%presG]
-  
-  #Initializes some data for modelling (variance~dist). The starting distance (x) is set to the shortest distance between a new vertex and an old vertex. 
-  #The step size is based upon how short the starting distance is.
-  variance <- c()
-  dist <- c()
-  x <- min(bridgeE$Distance)
-  step <- 0.005
-  
-  #Generates the data for modelling. Stops generating data once the Maximum informative distance is reached. 
-  #(Maximum informative distance is the point at which all old vertices cluster in 1 cluster)
-  while (!is.na(objF(x))) {
-    dist <- c(dist, x)
-    variance <- c(variance, objF(x))
-    x<-x+step
-    print(x)
-  }
-  
-  #Obtain the distance that maximized variance. 
-  out <- dist[variance==max(variance)][[1]]
-  
-  #Create a poisson family glm based upon the recently generated data.
-  ####- TO DO: This is currently unused -####
-  distMod <- glm(variance~dist, family=poisson)
-  
-  return(out)
-}
-
 #Estimates the growth of clusters based on information from all years before the latest year.
 ####- TO DO: Add MANY more predictor variables for this estimation and improve upon the current ones -####
 estimateGrowth <- function(inG) {
   #@param inG: The input graph (usually a subgraph forward-censored by year). The latest year represents the Upcoming year. 
   #@return: An attribute for the clusters representing the predicted growth of each one.
+  
+  
+  inG <- subgraph.edges(inG, E(inG), delete.vertices = T)
   
   #Obtain the present graph (ie. the subgraph contain all cases before the the latest/"upcoming" year) and it's cluster info
   presV <- V(inG)[V(inG)$year<max(V(inG)$year)]
@@ -82,6 +40,7 @@ getGrowth <- function(inG) {
   #@param inG: The input graph (usually a subgraph forward-censored by year). The latest year represents the Upcoming year. 
   #@return: An attribute for the clusters representing the growth of each cluster
   
+  inG <- subgraph.edges(inG, E(inG), delete.vertices = T)
   newV <- V(inG)[V(inG)$year==max(V(inG)$year)]
   
   #Obtain the present graph (ie. the subgraph contain all cases before the the latest/"upcoming" year) and it's cluster info
@@ -93,47 +52,24 @@ getGrowth <- function(inG) {
   
   #Obtains the interface between vertices from the upcoming year and vertices from the present year.  
   bridgeE <- E(inG)[newV%--%V(inG)[-newV]]
-  bridgeG <- inG - V(inG)[-ends(inG, bridgeE, names=F)]
+  bridgeG <- subgraph.edges(inG, bridgeE, delete.vertices=T)
   
-  #Redifine the upcoming and present vertices as only those in the interface
+  #Create a new bipartite graph of future cases linked to previous (clustered) cases
   newV <- V(bridgeG)[V(bridgeG)$year==max(V(bridgeG)$year)]
-  presV <- V(bridgeG)[V(bridgeG)$year<max(V(bridgeG)$year)]
+  presV <- V(bridgeG)[-newV]
   
-  #Compare and obtain the growth of each cluster based on the placement of each new vertex
-  #A vertex added to multiple clusters is considered to increase each cluster's size by a fraction
-  if (length(newV)!=0){
-    for (i in 1:length(newV)) {
-      v <- newV[[i]]
-      es <- E(bridgeG)[inc(v)]
-      cluIndex <- unname(clu$membership[attr(clu$membership, "names") %in% ends(bridgeG, es, names = T)])
-      vWeight <- 1/length(levels(factor(cluIndex))) 
-      clu$growth[cluIndex] <- clu$growth[cluIndex]+vWeight 
-    }
-  }
+  #Establish the weight of a future case based on the number of past cases it's added to
+  weight <- sapply(newV, function(x) 1/length(E(bridgeG)[inc(x)])) 
   
-  return(clu)
-}
-
-#An alternative version of get growth. This time the clusters are based on the grtowing year (potentially misinformative?)
-getGrowthSimp <- function(inG) {
-  #@param inG, the subgraph filtered up to the current year at a current distance
-  #@return An updated vector of cluster information, including the growth (new cases added)
+  #Create a table of every link from past to future cases and the weight that those links are worth
+  temp <- unname(sapply(presV, function(x){
+    point <- sum(unname(weight[neighbors(bridgeG, x, "all")$name])) 
+    cluId <- unname(clu$membership[V(bridgeG)[x]$name])
+    return (c(cluId, point))
+  })) 
   
-  #filter out all lone vertices
-  inG <- subgraph.edges(inG, E(inG), delete.vertices = T)
-  
-  #Obtain a table of growth (# of new cases per cluster) based on the cases in the new year 
-  clu <- components(inG)
-  newV <- V(inG)[V(inG)$year == max(V(inG)$year)]
-  newC <- clu$membership[names(clu$membership) %in% newV$name]
-  growth <- table(unname(newC))
-  
-  #Add the number of new cases added each year as a characteristic of the cluster info
-  clu$growth[as.numeric(names(growth))] <- unname(growth) 
-  temp <- sapply(clu$growth, function(x) 
-    if(is.na(x)){x <- 0}
-    else{x<-x}) 
-  clu$growth <- temp
+  #Assign growth as an attribute of the set of clusters based off of the weighted information from temp 
+  clu$growth <- sapply(seq(1,clu$no), function(x) sum(temp[2,][temp[1,]==x]))
   
   return(clu)
 }
@@ -154,7 +90,6 @@ subGraph <- function(inG, y, d) {
 
   return(outG)
 }
-
 
 #__________________________________________________________________________________________________________________________#
 
@@ -186,7 +121,7 @@ output <- data.frame(Year = as.integer(years),
 ##########################################################
 y <- '2010'
 res <- {}
-for (x in seq(0.005, 0.020, 0.002)) {
+for (x in seq(0.005, 0.0650, 0.002)) {
   print(x)
   
   filtrG <- subGraph(g, y, x)
