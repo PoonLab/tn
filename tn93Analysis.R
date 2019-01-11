@@ -12,9 +12,6 @@ estimateGrowth <- function(inG) {
   #@param inG: The input graph (usually a subgraph forward-censored by year). The latest year represents the Upcoming year. 
   #@return: An attribute for the clusters representing the predicted growth of each one.
   
-  
-  inG <- subgraph.edges(inG, E(inG), delete.vertices = T)
-  
   #Obtain the present graph (ie. the subgraph contain all cases before the the latest/"upcoming" year) and it's cluster info
   presV <- V(inG)[V(inG)$year<max(V(inG)$year)]
   presG <- induced_subgraph(inG, presV, impl = "auto")
@@ -32,44 +29,63 @@ estimateGrowth <- function(inG) {
     clu$growth[[i]] <- presCsize-oldCsize
   }
   
-  return(clu$growth)
-}
+  return(clu)
+} ####- CURRENTLY UNUSED -####
 
 #Determines the growth of clusters based on the new addition of cases in the latest year (ie. The Upcoming year)
-getGrowth <- function(inG) {
+getGrowth <- function(inG, alt=F, full=F) {
   #@param inG: The input graph (usually a subgraph forward-censored by year). The latest year represents the Upcoming year. 
+  #@param alt: Checked true 
   #@return: An attribute for the clusters representing the growth of each cluster
   
-  inG <- subgraph.edges(inG, E(inG), delete.vertices = T)
   newV <- V(inG)[V(inG)$year==max(V(inG)$year)]
   
   #Obtain the present graph (ie. the subgraph contain all cases before the the latest/"upcoming" year) and it's cluster info
   presG <- inG - newV
+  if (full) {
+    presG <- presG - E(presG)
+  }
   clu <- components(presG)
-
+  
   #Initialize cluster growth at 0 for each cluster
   clu$growth <- integer(clu$no)
   
   #Obtains the interface between vertices from the upcoming year and vertices from the present year.  
   bridgeE <- E(inG)[newV%--%V(inG)[-newV]]
-  bridgeG <- subgraph.edges(inG, bridgeE, delete.vertices=T)
-  
-  #Create a new bipartite graph of future cases linked to previous (clustered) cases
-  newV <- V(bridgeG)[V(bridgeG)$year==max(V(bridgeG)$year)]
-  presV <- V(bridgeG)[-newV]
-  
-  #Establish the weight of a future case based on the number of past cases it's added to
-  weight <- sapply(newV, function(x) 1/length(E(bridgeG)[inc(x)])) 
-  
-  #Create a table of every link from past to future cases and the weight that those links are worth
-  temp <- unname(sapply(presV, function(x){
-    point <- sum(unname(weight[neighbors(bridgeG, x, "all")$name])) 
-    cluId <- unname(clu$membership[V(bridgeG)[x]$name])
-    return (c(cluId, point))
-  })) 
-  
-  #Assign growth as an attribute of the set of clusters based off of the weighted information from temp 
-  clu$growth <- sapply(seq(1,clu$no), function(x) sum(temp[2,][temp[1,]==x]))
+  if (length(bridgeE > 0)) {
+    bridgeG <- subgraph.edges(inG, bridgeE, delete.vertices=T)
+    
+    #Create a new bipartite graph of future cases linked to previous (clustered) cases
+    newV <- V(bridgeG)[V(bridgeG)$year==max(V(bridgeG)$year)]
+    presV <- V(bridgeG)[-newV]
+    
+    #### TO-DO: Finish alt-option (currently broken, this option would assign case addition based on closest cluster) -####
+    if(alt){
+      #Get edge id's of all of the shortest edge lengths (A case can only be linked to 1 case)
+      closeE <- lapply(newV, function(x) {
+        xE <- E(bridgeG)[inc(x)]
+        closest <- xE[xE$Distance == min(xE$Distance)]
+        return (closest[1])
+      })
+      
+      bridgeG <- subgraph.edges(bridgeG, closeE, delete.vertices = T)
+      weight <- rep(newV, function(x) 1)
+      
+    } else {
+      #Establish the weight of a future case based on the number of past cases it's added to
+      weight <- sapply(newV, function(x) 1/length(E(bridgeG)[inc(x)])) 
+    }
+    
+    #Create a table of every link from past to future cases and the weight that those links are worth
+    temp <- unname(sapply(presV, function(x){
+      point <- sum(unname(weight[neighbors(bridgeG, x, "all")$name])) 
+      cluId <- unname(clu$membership[V(bridgeG)[x]$name])
+      return (c(cluId, point))
+    }))
+    
+    #Assign growth as an attribute of the set of clusters based off of the weighted information from temp 
+    clu$growth <- sapply(seq(1,clu$no), function(x) round(sum(temp[2,][temp[1,]==x])))
+  }
   
   return(clu)
 }
@@ -87,17 +103,29 @@ subGraph <- function(inG, y, d) {
   #Removes edges with distances above a certain cutoff
   outE <- E(outG)[E(outG)$Distance>=d]
   outG <- outG - outE
-
+  
   return(outG)
+}
+
+#Obtains the Deviance and AIC of a comparison between our predicted growth as a measure of  
+cutoffStats <- function(subG, full=F) {
+  #Da = -2(la - lfull)
+
+  clu <- getGrowth(subG, full=full)
+  size <- clu$csize
+  growth <- clu$growth
+  
+  # generate data frame at level of clusters=
+  df <- data.frame(Size=size, Growth=growth)
+  
+  # number of new cases per cluster is count outcome 
+  fit <- glm(Growth~Size, data=df, family='poisson')
+  
+  return(fit)
 }
 
 #__________________________________________________________________________________________________________________________#
 
-
-#Warnings are currently generated by maximum informative distance being reached in the objective function. 
-#This is handled by the functions that use objF
-options(warn=-1)
-args <- 
 #Expecting the output from a tn93 run formatted to a csv file.
 #Expecting patient information in the format ID_Date
 args = commandArgs(trailingOnly = T)
@@ -112,36 +140,28 @@ V(g)$name <- temp[1,]
 V(g)$year <- as.numeric(temp[2,])
 years <- levels(factor(V(g)$year))
 
-#Initialize a dataframe for the output of Accuracy by year
-output <- data.frame(Year = as.integer(years), 
-                     Accuracy = double(length(years)), 
-                     Distance = double(length(years)), 
-                     Time = double(length(years)))
-
 ##########################################################
-y <- '2010'
+
+y <- max(years) 
+cutoffs <- seq(0, 0.050, 0.002)
 res <- {}
-for (x in seq(0.005, 0.0650, 0.002)) {
-  print(x)
-  
-  filtrG <- subGraph(g, y, x)
-  clusters <- getGrowth(filtrG)
-  prediction <- estimateGrowth(filtrG)
 
+for (d in cutoffs) {
+  print(d)
+  subG <- subGraph(g, y, d)
+  fit <- cutoffStats(subG) 
   
-  # generate data frame at level of clusters
-  df <- data.frame(estimate=prediction, actual=clusters$growth)
+  deviance <- fit$deviance
+  AIC <- fit$aic
+  var <- var(fit$data$Growth)
+  rel <- var(fitdata$Growth/sqrt(fit$data$Growth))
+  no <- length(fit$data$Growth) 
+  size <- mean(fit$data$Size)
   
-  # number of new cases per cluster is count outcome 
-  fit <- glm(actual ~ prediction , data=df, family='poisson')
-    
-  result <- fit$null.deviance - fit$deviance
-
-  res <- cbind(res, result)
+  res <- cbind(res, c(Deviance, AIC, var, rel, no, size))
 }
-##########################################################
 
-#Test
-print(proc.time())
-cat("\n")
-print(output)
+colnames(res) <- cutoffs
+rownames(res) <- c('Deviance', 'GAIC', 'Variance in Absolute Growth', "Variance in Relative Growth", "Number of Clusters", "Mean Cluster Size" )
+
+##########################################################
