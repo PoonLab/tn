@@ -55,6 +55,7 @@ getGrowth <- function(inG, alt=F, full=F) {
   
   #Initialize cluster growth at 0 for each cluster
   clu$growth <- integer(clu$no)
+  clu$inc <-0
   
   #Obtains the interface between vertices from the upcoming year and vertices from the present year.  
   bridgeE <- E(inG)[newV%--%V(inG)[-newV]]
@@ -63,6 +64,7 @@ getGrowth <- function(inG, alt=F, full=F) {
     
     #Create a new bipartite graph of future cases linked to previous (clustered) cases
     newV <- V(bridgeG)[V(bridgeG)$year==max(V(bridgeG)$year)]
+    clu$inc <- length(newV) /  length(V(presG))
     presV <- V(bridgeG)[-newV]
     
     #### TO-DO: Finish alt-option (currently broken, this option would assign case addition based on closest cluster) -####
@@ -118,27 +120,28 @@ subGraph <- function(inG, y, d, plot=F) {
   else {return(outG)}
 }
 
-#Obtains the Deviance and AIC of a comparison between our predicted growth as a measure of  
-####- TO DO: Hone statistical understanding of criterion, potentially changing this function -#### 
-cutoffStats <- function(subG, full=F) {
+#Obtains fit measurements for 
+stats <- function(subG, full=F) {
   #@param inG: The input graph (usually a subgraph forward-censored by year). The latest year represents the Upcoming year. 
   #@param full: A boolean determining whether or not this is the growth estimate for a fully saturated model
-  #@return: The glm, Poisson linked tracking growth relative to size
-  
+  #@return: The glm, Poisson linked tracking growth relative to size as well as a poisson probability map
+
   #Obtain the cluster growth and size based upon most recent cases and cutoff parameter for subG
-  clu <- getGrowth(subG, full=full)
-  size <- sqrt(clu$csize)
-  growth <- clu$growth
+  clu <- getGrowth(subG,full=full)
+  exp <- clu$inc*(clu$csize)
+  relGrowth <- clu$growth - exp
+  zscore <- relGrowth / sqrt(exp)
+
+  #Generate data frame at level of clusters
+  df <- data.frame(Expectation=exp, Actual=clu$growth)
   
-  # generate data frame at level of clusters
-  df <- data.frame(Size=size, Growth=growth)
-  
-  # number of new cases per cluster is coun
-  t outcome 
-  fit <- glm(Growth~Size, data=df, family='poisson')
+  #Number of new cases per cluster is count outcome
+  fit <- glm(Actual~Expectation, data=df, family = "poisson")
+  fit$var <- var(clu$growth) 
   
   return(fit)
 }
+  
 
 #__________________________________________________________________________________________________________________________#
 
@@ -160,25 +163,27 @@ years <- levels(factor(V(g)$year))
 ##########################################################
 
 y <- max(years) 
-cutoffs <- seq(0, 0.06, 0.001)
+cutoffs <- seq(0, 0.05, 0.002)
 res <- {}
 
 for (d in cutoffs) {
   print(d)
-  subG <- subGraph(g, y, d)
-  fit <- cutoffStats(subG) 
-  full <- cutoffStats(subG, full=T)
+  subG <- subGraph(g,y,d)
+  fit <- stats(subG)
+  full <- stats(subG, full=T)
   
   Deviance <- full$deviance - fit$deviance
   GAIC <- fit$aic- full$aic
+  VPC <- fit$var / full$var
   
-  res <- cbind(res, c(Deviance, GAIC))
+  res <- cbind(res, c(Deviance, GAIC, VPC))
 }
 
 colnames(res) <- cutoffs
-rownames(res) <- c("Deviance", "GAIC")
+rownames(res) <- c("Deviance", "GAIC", "VPC")
 
 plot(cutoffs, res[1,], xlab= "tn93 Cutoffs", ylab= "Deviance" )
 plot(cutoffs, res[2,], xlab= "tn93 Cutoffs", ylab= "GAIC" )
+plot(cutoffs, res[3,], xlab= "tn93 Cutoffs", ylab= "VPC")
 
 ##########################################################
