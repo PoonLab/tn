@@ -2,108 +2,116 @@
 #USAGE: Rscript tn93Graph.R tn93output.csv
 
 library(igraph)
-####- TO-DO: Use ML for optimization. see Caret or e107 packages -####
+####- TO-DO: Use ML for variable selection (see lasso) and better fitting (see Caret or e107) -####
 
-#__________________________________________________________________________________________________________________________#
+#____________________________________________________________________________________________________________________________#
 
-#Estimates the growth of clusters based on information from all years before the latest year.
-####- TO DO: Decide upon a statistically reasonable way to include the "Full" parameter -####
-####- TO DO: Implement use of this function -####
-####- TO DO: Consider LASSO functionality to add more predictor variables for this estimation -####
-estimateGrowth <- function(inG, full=F) {
-  #@param inG: The input graph (usually a subgraph forward-censored by year). The latest year represents the Upcoming year.
-  #@param full: A boolean determining whether or not this is the growth estimate for a fully saturated model
-  #@return: An attribute for the clusters representing the predicted growth of each one.
+#Estimates the growth of clusters based on information from recent years
+####- TO-DO: Include include meta-data factors -####
+forecast <- function(clu) {
+  #@param clu: A set of clusters based on the present year.
+  #@return: An attribute for clu representing the past growth of clusters relative to their size. (ie. The predicted absolute growth)
   
+  #Obtain a past year to compare too (ideally 5 years before the present year), to establish the recent growth of present clusters
+  presY <- max(V(presG)$year)
+  minY <- min(V(presG)$year)
+  
+  #To ensure we don't exceed the bottom limit of the years in data.
+  if (presY>(minY+5)) {oldY <- (presY-5)} 
+  else {oldY <- minY}
+  
+  #Difference in past year and present year
+  diff <- presY-oldY
+  
+  #Obtain the cluster sizes of present clusters based only on membership from the old year
+  oldMem <- clu$membership[names(clu$membership) %in% V(presG)[year<=oldY]$name]
+  oldCsize <- sapply(1:clu$no, function(x) length(oldMem[unname(oldMem)==x]))
+  
+  #Obtain the Relative, Recent Growth of clusters
+  rrG <- (clu$csize-oldCsize) / (diff*sqrt(clu$csize))  
+  
+  return(rrG)
+}
+
+#Obtain growth measurements of a graph, with the newest year considered "the upcoming" year
+growG <- function(inG, alt=F, full=F) {
+  #@param inG: A subG gaph cut based on a threshold distance, with the latest casses representing New cases (ie. Upcoming cases)
+  #@param alt: An option determining whether or not to resolve cluster growth as weighted nodes or closest nodes
+  #@param full: An option determining whether or not this is the growth estimate for a fully saturated model
+  #@return: Cluster information for the Present year (ie. The year before the newest year in inG)
+
   #Obtain the present graph (ie. the subgraph contain all cases before the the latest/"upcoming" year) and it's cluster info
-  presV <- V(inG)[V(inG)$year<max(V(inG)$year)]
-  presG <- induced_subgraph(inG, presV, impl = "auto")
-  clu <- components(presG)
-  
-  #Obtain the size of current clusters after excluding all vertices from the current year. (ie. The clusters without their recent growth)
-  ####- TO DO: Confirm this is a mathematically valid method when taking into account cluster merging -####
-  oldClu <- clu$membership[attr(clu$membership, "names") %in% V(presG)[V(presG)$year<max(V(presG)$year)]$name]
-  
-  #Obtain the recent cluster growth for each cluster (ie. the difference between old cluster sizes and new ones)
-  ####- TO DO: Potentially better style and speed with lapply? -####
-  for (i in 1:clu$no) {
-    presCsize <- clu$csize[[i]]
-    oldCsize <- length(oldClu[unname(oldClu)==i])
-    clu$growth[[i]] <- presCsize-oldCsize
-  }
-  
-  return(clu)
-} 
-
-#Determines the growth of clusters based on the new addition of cases in the latest year (ie. The Upcoming year)
-####- TO DO: Test and patch up the alt parameter so that the alternative method is usable -####
-getGrowth <- function(inG, alt=F, full=F) {
-  #@param inG: The input graph (usually a subgraph forward-censored by year). The latest year represents the Upcoming year. 
-  #@param alt: A boolean determining whether or not to resolve cluster growth as weighted nodes or closest nodes
-  #@param full: A boolean determining whether or not this is the growth estimate for a fully saturated model
-  #@return: An attribute for the clusters representing the growth of each cluster
-  
-  #Defines the new vertices (which determine cluster growth)
-  newV <- V(inG)[V(inG)$year==max(V(inG)$year)]
-  
-  #Obtain the present graph (ie. the subgraph contain all cases before the the latest/"upcoming" year) and it's cluster info
+  newV <- V(inG)[year==max(year)]
   presG <- inG - newV
-  if (full) {
-    presG <- presG - E(presG)
-  }
-  clu <- components(presG)
   
-  #Initialize cluster growth at 0 for each cluster
-  clu$growth <- integer(clu$no)
-  clu$inc <-0
+  #If the full option is selection, we de-aggregate the present year. All vertices are considered clusters of size 1
+  if (full) {presG <- presG - E(presG)}
   
-  #Obtains the interface between vertices from the upcoming year and vertices from the present year.  
+  clu <- components(presG)  #Obtain initial cluster info (cluster membership, cluster sizes, number of clusters)
+  clu$growth <- integer(clu$no)  #Initialize cluster growth (ie. The appearence of new cases in each cluster) at 0 for each cluster
+  clu$inc <- 0   #Initialize cluster incidence (ie. The total number of new cases added over the total number of present cases) at 0
+  
+  #Establishes the connections between present and new years to measure growth
   bridgeE <- E(inG)[newV%--%V(inG)[-newV]]
-  if (length(bridgeE > 0)) {
+  
+  #If there are no bridging Edges between present and new cases, there is no growth and the initializeed values represent the cluster growth
+  if (length(bridgeE)>0) {
+    
+    #Establishes a bipartite graph with only the edges that link new cases to present cases
     bridgeG <- subgraph.edges(inG, bridgeE, delete.vertices=T)
+    newBridgeV <- V(bridgeG)[year==max(year)]
+    presBridgeV <- V(bridgeG)[-newBridgeV]
     
-    #Create a new bipartite graph of future cases linked to previous (clustered) cases
-    newV <- V(bridgeG)[V(bridgeG)$year==max(V(bridgeG)$year)]
-    clu$inc <- length(newV) /  length(V(presG))
-    presV <- V(bridgeG)[-newV]
+    #Calculate incidence based on the new cases linked to present cases
+    clu$inc <- length(newBridgeV) / length(V(presG))
     
-    #### TO-DO: Finish alt-option (currently broken, this option would assign case addition based on closest cluster) -####
+    #Branches here to differ between 2 different methods of resolving new cases which bridge 2 clusters
     if(alt){
-      #Get edge id's of all of the shortest edge lengths (A case can only be linked to 1 case)
-      closeE <- lapply(newV, function(x) {
+      
+      #Obtain edge id's of all of the shortest edge lengths (A case can only be linked to 1 case)
+      closeE <- unname(sapply(newBridgeV, function(x) {
         xE <- E(bridgeG)[inc(x)]
-        closest <- xE[xE$Distance == min(xE$Distance)]
-        return (closest[1])
-      })
+        closest <- xE[Distance == min(Distance)]
+        return (closest[[1]])
+      }))
       
-      bridgeG <- subgraph.edges(bridgeG, closeE, delete.vertices = T)
-      weight <- rep(newV, function(x) 1)
+      #Filter bridge again to only include the shortest edges from new cases
+      bridgeG <- subgraph.edges(bridgeG, E(bridgeG)[closeE], delete.vertices=T)
+      newBridgeV <- V(bridgeG)[year==max(year)]
       
+      #Obtain a table of values, representing the growth of given cluster indices
+      growth <- unname(sapply(newBridgeV, function(x) {
+        n <- neighbors(bridgeG, x, "all")
+        cluId <- unname(clu$membership[names(clu$membership) %in% n$name])
+        return(c(cluId, 1))
+      }))
+        
     } else {
-      #Establish the weight of a future case based on the number of past cases it's added to
-      weight <- sapply(newV, function(x) 1/length(E(bridgeG)[inc(x)])) 
+      
+      #Obtain the weight of a future case based on the number of past cases it's added to
+      weight <- sapply(newBridgeV, function(x) 1/length(E(bridgeG)[inc(x)])) 
+      
+      #Obtain a table of every link from past to future cases and the weight that those links are worth
+      growth <- unname(sapply(presBridgeV, function(x){
+        point <- sum(unname(weight[neighbors(bridgeG, x, "all")$name])) 
+        cluId <- unname(clu$membership[V(bridgeG)[x]$name])
+        return (c(cluId, point))
+      }))
     }
     
-    #Create a table of every link from past to future cases and the weight that those links are worth
-    temp <- unname(sapply(presV, function(x){
-      point <- sum(unname(weight[neighbors(bridgeG, x, "all")$name])) 
-      cluId <- unname(clu$membership[V(bridgeG)[x]$name])
-      return (c(cluId, point))
-    }))
-    
-    #Assign growth as an attribute of the set of clusters based off of the weighted information from temp 
-    clu$growth <- sapply(seq(1,clu$no), function(x) round(sum(temp[2,][temp[1,]==x])))
+    #Assign growth as an attribute of the set of clusters based off of the weighted information from growth 
+    clu$growth <- sapply(seq(1,clu$no), function(x) round(sum(growth[2,][growth[1,]==x])))
   }
   
   return(clu)
 }
 
-#Obtains a filtered subgraph of the full graph.
+#Obtains a filtered subgraph of the full graph. Vertices are removed beyond a given year and edges are removed below a cutoff
 subGraph <- function(inG, y, d, plot=F) {
-  #@param y: The year that represents the latest year. We forward censor everything past this.
-  #@param d: The distance that represents the optimal cutoff distance for the whole graph
+  #@param y: The year that represents the latest year. We forward-censor everything past this.
+  #@param d: The distance that represents the cutoff threshold. We remove all edges above this.
   #@param plot: Creates an easy to view subgraph for the purposes of plotting and overview, but not for statistical analysis.
-  #@return: The filtered graph (forward censored and cut by an optimal distance)
+  #@return: The filtered graph (forward censored and cut by a given distance)
   
   #Removes vertices beyond a current year
   outV <- V(inG)[V(inG)$year>y]
@@ -112,38 +120,132 @@ subGraph <- function(inG, y, d, plot=F) {
   #Removes edges with distances above a certain cutoff
   outE <- E(outG)[E(outG)$Distance>=d]
   outG <- outG - outE
-  if(plot){ #Ignores clusters of size 1 and provides a graph (for ease of overview and no calculations)
+  
+  #Plot option ignores clusters of size 1 and provides a graph (for ease of overview, not for calculations)
+  if(plot){ 
     outG <- subgraph.edges(outG, E(outG), delete.vertices = T)
     plot(outG, vertex.size = 2, vertex.label = NA, edge.width = 0.65, edge.color = 'black')
     print(components(outG))
-  }   
-  else {return(outG)}
+  } 
+  
+  return(outG)
 }
 
-#Obtains fit measurements for 
-stats <- function(subG, full=F) {
-  #@param inG: The input graph (usually a subgraph forward-censored by year). The latest year represents the Upcoming year. 
-  #@param full: A boolean determining whether or not this is the growth estimate for a fully saturated model
-  #@return: The glm, Poisson linked tracking growth relative to size as well as a poisson probability map
-
-  #Obtain the cluster growth and size based upon most recent cases and cutoff parameter for subG
-  clu <- getGrowth(subG,full=full)
+#Obtains several different statistics from a variety of different modelling options
+stats <- function(clu) {
+  #@param clu: A set of cluster information annotated with incidence and cluster growth at a given year and cutoff
+  #@return: A list of statistics based on the provided set of clusters
+  
+  #Obtain an expectation based off of overall cluster growth
   exp <- clu$inc*(clu$csize)
-  relGrowth <- clu$growth - exp
-  zscore <- relGrowth / sqrt(exp)
-
+  
+  #zscore can be calculated based off of this diff
+  diff <- clu$growth - exp
+  zscore <- diff / sqrt(exp)
+  
+  #Obtain a prediction based on the function forecasting cluster growth 
+  pred <- forecast(clu)
+  
+  #Initialize the list of statistics
+  stats <- list()
+  
   #Generate data frame at level of clusters
-  df <- data.frame(Expectation=exp, Actual=clu$growth)
+  df <- data.frame(Expectation=exp, Size=clu$csize, Growth=clu$growth, RelGrowth=clu$growth/clu$csize, Prediction=pred)
   
-  #Number of new cases per cluster is count outcome
-  fit <- glm(Actual~Expectation, data=df, family = "poisson")
-  fit$var <- var(clu$growth) 
   
-  return(fit)
+  stats$prob <- glm(Growth~Expectation, data=df, family = "poisson") #Models growth against calculated expectation
+  
+  stats$var <- var(clu$growth/clu$csize) #The variance of relative growth
+  
+  stats$zscore <- mean(zscore) #The mean zscore (representing probability based on expection)
+  
+  stats$GbyS <- glm(Growth~Size, data=df, family="poisson") #Models growth by size
+  
+  stats$acc <- glm(RelGrowth~Prediction, data=df, family="poisson") #Models growth against prediction 
+  
+  stats$Sby1 <- glm(Size~1, data=df, family="poisson") #Models how well size follows a poisson distribution
+  
+  stats$Gby1 <- glm(Growth~1, data=df, family="poisson") #Models how well growth follows a poisson distribution
+  
+  stats$RGby1 <- glm(RelGrowth~1, data=df, family="poisson") #Models how well relative growth follows a poisson distribution
+  
+  return(stats)
 }
-  
 
-#__________________________________________________________________________________________________________________________#
+#Obtains statistics at a set of cutoffs for the same input graph (initially fully connected)
+analyzeG <- function(alt=F, cutoffs=cutoffs, year=max(years), inG=g) {
+  #@param cutoffs: The cutoffs sequence, this will become the independant variable for all results
+  #@param year: The year representing the newest (upcoming) year. Ideally the latest year
+  #@param inG: The graph to be worked upon. Ideally the complete graph with all connections
+  #@param alt: The option to use the alternative method of growth measurement
+  #@return: A dataframe of all calculated results
+  
+  #Initialize the dataframe of results
+  res <- {} 
+  
+  for (d in cutoffs) {
+    print(d) #Important for progress tracking
+    
+    #Obtain and analyze growth statistics for a given cutoff
+    subG <- subGraph(inG,year,d)
+    growth <- growG(subG, alt=alt)
+    fit <- stats(growth)
+    
+    #Obtain a fully saturated model for the same growth. This will have no cluster aggregation, instead tracking individual new case links
+    growth <- growG(subG, full=T)
+    full <- stats(growth)
+    
+    #Obtain the Forecast Accuracy
+    #This is a measure of how well the relative growth is predicted by the forecast function
+    ####- TO-DO: Confirm that this does not need a fully saturated comparison -####
+    Accuracy <- (fit$acc)$deviance
+    print(Accuracy)
+    
+    #Obtain the Variance partition coefficient
+    #This is a measure of how much variance can be attributed to this particular clustering level
+    VPC <- fit$var / full$var
+    
+    #Obtain the mean zscore for growths 
+    #This is a measure of how unlikely growth rates are based on a theoretical distribution
+    zscoreMean <- fit$zscore
+    
+    #Obtain Deviance and GAICC for a Poisson Probability Map
+    #This is a measure of how well the probabilities of growth rates follow a poisson distribution
+    DeviancePPMap <- (full$prob)$deviance - (fit$prob)$deviance
+    GAICPPMap <- (fit$prob)$aic- (full$prob)$aic
+    
+    #This is a measure of how well the growth is predicted by size
+    DevianceGbyS <- (full$GbyS)$deviance - (fit$GbyS)$deviance
+    GAICGbyS <- (fit$GbyS)$aic- (full$prob)$aic
+    
+    #This is a measure of how well size follows a poisson distribution
+    DevianceSby1 <- (full$Sby1)$deviance - (fit$Sby1)$deviance
+    GAICSby1 <- (fit$Sby1)$aic- (full$Sby1)$aic
+
+    #This is a measure of how well growth follows a poisson distribution    
+    DevianceGby1 <- (full$Gby1)$deviance - (fit$Gby1)$deviance
+    GAICGby1 <- (fit$Gby1)$aic- (full$Gby1)$aic
+
+    #This is a measure of how well Relative growth follows a poisson distribution
+    DevianceRGby1 <- (full$RGby1)$deviance - (fit$RGby1)$deviance
+    GAICRGby1 <- (fit$RGby1)$aic- (full$RGby1)$aic
+    
+    stats <- c(Accuracy, zscoreMean, DeviancePPMap, GAICPPMap, DevianceGbyS, GAICGbyS, DevianceSby1, GAICSby1, DevianceGby1, GAICGby1, DevianceRGby1, GAICRGby1, VPC)
+    
+    #Expand the result df with this data
+    res <- cbind(res, stats)
+    
+    print(stats)
+  }
+  
+  #Apply labels for the results table
+  colnames(res) <- cutoffs
+  rownames(res) <- c("Accuracy", "zscoreMean", "DeviancePPMap", "GAICPPMap", "DevianceGbyS", "GAICGbyS", "DevianceSby1", "GAICSby1", "DevianceGby1", "GAICGby1", "DevianceRGby1", "GAICRGby1", "VPC")
+  
+  return(res)
+}
+
+#____________________________________________________________________________________________________________________________#
 
 #Expecting the output from a tn93 run formatted to a csv file.
 #Expecting patient information in the format ID_Date
@@ -157,33 +259,13 @@ g <- graph_from_data_frame(input, directed=FALSE, vertices=NULL)
 temp <- sapply(V(g)$name, function(x) strsplit(x, '_')[[1]])
 V(g)$name <- temp[1,]
 V(g)$year <- as.numeric(temp[2,])
+
+#Obtain the range of years
 years <- levels(factor(V(g)$year))
 
-#Plot generation, currently records deviance and GAIC for a MAUP based model as modulated by Cutoff
+#Test
 ##########################################################
-
-y <- max(years) 
 cutoffs <- seq(0, 0.05, 0.002)
-res <- {}
-
-for (d in cutoffs) {
-  print(d)
-  subG <- subGraph(g,y,d)
-  fit <- stats(subG)
-  full <- stats(subG, full=T)
-  
-  Deviance <- full$deviance - fit$deviance
-  GAIC <- fit$aic- full$aic
-  VPC <- fit$var / full$var
-  
-  res <- cbind(res, c(Deviance, GAIC, VPC))
-}
-
-colnames(res) <- cutoffs
-rownames(res) <- c("Deviance", "GAIC", "VPC")
-
-plot(cutoffs, res[1,], xlab= "tn93 Cutoffs", ylab= "Deviance" )
-plot(cutoffs, res[2,], xlab= "tn93 Cutoffs", ylab= "GAIC" )
-plot(cutoffs, res[3,], xlab= "tn93 Cutoffs", ylab= "VPC")
-
+res <- analyzeG(cutoffs, depVars)
+plot(cutoffs, res[,], xlab= "tn93 Cutoffs", ylab= "")
 ##########################################################
