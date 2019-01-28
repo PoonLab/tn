@@ -1,5 +1,5 @@
-#A process process for scoring the effectiveness of clustering from tn93 Output.
-#USAGE: Rscript tn93Graph.R tn93output.csv
+#A process which scores the effectiveness of cluster data from tn93 Output.
+#USAGE: Rscript tn93Analysis.R tn93output.csv
 
 library(igraph)
 ####- TO-DO: Use ML for variable selection (see lasso) and better fitting (see Caret or e107) -####
@@ -35,7 +35,9 @@ growG <- function(inG, full=F) {
   gcTable <- table(unname(clu$membership[names(clu$membership) %in% newV$name])) 
   gcIds <- as.integer(names(gcTable)) 
   gcMag <- unname(gcTable)
-    
+  
+  #Finalize the growth and predicted growth
+  clu$pred <- forecast(inG, clu, full=F)  
   clu$growth[gcIds] <- gcMag  
 
   return(clu)
@@ -43,13 +45,20 @@ growG <- function(inG, full=F) {
 
 #Estimates the growth of clusters based on information from recent years
 ####- TO-DO: Include include meta-data factors -####
-forecast <- function(clu) {
-  #@param clu: A set of clusters based on the present year.
+forecast <- function(inG, clu, full=F) {
+  #@param inG: A subG gaph cut based on a threshold distance, with the latest casses representing New cases (ie. Upcoming cases)
+  #@param clu: A set of clusters based on the present year. Obtained from growG()
+  #@param full: An option determining whether or not this is the growth estimate for a fully saturated model
   #@return: An attribute for clu representing the past growth of clusters relative to their size. (ie. The predicted absolute growth)
   
+  #In the case that this is the fully saturated model
+  if (full) {
+    inG <- inG - E(inG)
+  }
+  
   #Obtain a past year to compare too (ideally 5 years before the present year), to establish the recent growth of present clusters
-  presY <- max(V(presG)$year)
-  minY <- min(V(presG)$year)
+  presY <- max(V(inG)$year)
+  minY <- min(V(inG)$year)
   
   #To ensure we don't exceed the bottom limit of the years in data.
   if (presY>(minY+5)) {oldY <- (presY-5)} 
@@ -59,7 +68,7 @@ forecast <- function(clu) {
   diff <- presY-oldY
   
   #Obtain the cluster sizes of present clusters based only on membership from the old year
-  oldMem <- clu$membership[names(clu$membership) %in% V(presG)[year<=oldY]$name]
+  oldMem <- clu$membership[names(clu$membership) %in% V(inG)[year<=oldY]$name]
   oldCsize <- sapply(1:clu$no, function(x) length(oldMem[unname(oldMem)==x]))
   
   #Obtain the Relative, Recent Growth of clusters
@@ -167,6 +176,7 @@ subGraph <- function(inG, y, d, plot=F) {
 }
 
 #Obtains several different statistics from a variety of different modelling options
+####-TO-DO: Change term for acc and zscore, investigate Sby1, and RGby1 -####
 stats <- function(clu) {
   #@param clu: A set of cluster information annotated with incidence and cluster growth at a given year and cutoff
   #@return: A list of statistics based on the provided set of clusters
@@ -179,7 +189,7 @@ stats <- function(clu) {
   zscore <- diff / sqrt(exp)
   
   #Obtain a prediction based on the function forecasting cluster growth 
-  pred <- forecast(clu)
+  pred <- clu$pred
   
   #Initialize the list of statistics
   stats <- list()
@@ -231,8 +241,8 @@ analyzeG <- function(cutoffs,year=max(years), inG=g) {
     
     #Obtain the Forecast Accuracy
     #This is a measure of how well the relative growth is predicted by the forecast function
-    ####- TO-DO: Confirm that this does not need a fully saturated comparison -####
-    Accuracy <- 1-(fit$acc)$deviance/(fit$acc)$null.deviance
+    #Accuracy <- (full$acc)$deviance - (fit$acc)$deviance ##COMPARE: Accuracy <- (fit$acc)$null.deviance - (fit$acc)$deviance
+    Accuracy <- (fit$acc)$null.deviance - (fit$acc)$deviance
     
     #Obtain the mean zscore for growths 
     #This is a measure of how unlikely growth rates are based on a theoretical distribution
