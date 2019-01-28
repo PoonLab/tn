@@ -6,6 +6,41 @@ library(igraph)
 
 #____________________________________________________________________________________________________________________________#
 
+#Obtains the Growth of clusters based on which clusters haold new cases
+growG <- function(inG, full=F) {
+  #@param inG: A subG gaph cut based on a threshold distance, with the latest casses representing New cases (ie. Upcoming cases)
+  #@param full: An option determining whether or not this is the growth estimate for a fully saturated model
+  #@return: Cluster information for the Present year (ie. The year before the newest year in inG)
+  
+  #Define vertices as new cases and present cases
+  newV <- V(inG)[year==max(year)]
+  presV <- V(inG)[-newV]
+  
+  #Used to obtain ther fully saturated model. With case growth measured based on no aggregation in present cases
+  if (full){
+    bridgeE <- E(inG)[newV%--%V(inG)[-newV]]
+    inG <- inG - E(inG)[-bridgeE]
+    newV <- V(inG)[year==max(year)]
+    presV <- V(inG)[-newV]
+  }
+  
+  #Obtain cluster information
+  clu <- components(inG)
+  
+  #Define the incidence and initialize the growth
+  clu$inc <- length(newV)/(length(presV) + length(newV))
+  clu$growth <- integer(clu$no) 
+  
+  #Obtain cluster growth (ie. the number of new cases in each cluster, based on clusters defined at the latest year)  
+  gcTable <- table(unname(clu$membership[names(clu$membership) %in% newV$name])) 
+  gcIds <- as.integer(names(gcTable)) 
+  gcMag <- unname(gcTable)
+    
+  clu$growth[gcIds] <- gcMag  
+
+  return(clu)
+}
+
 #Estimates the growth of clusters based on information from recent years
 ####- TO-DO: Include include meta-data factors -####
 forecast <- function(clu) {
@@ -33,8 +68,8 @@ forecast <- function(clu) {
   return(rrG)
 }
 
-#Obtain growth measurements of a graph, with the newest year considered "the upcoming" year
-growG <- function(inG, alt=F, full=F) {
+#Simulates growth of current clusters by adding clusters from the upcoming year, with the newest year provided considered "the upcoming" year
+growthSim <- function(inG, alt=F, full=F) {
   #@param inG: A subG gaph cut based on a threshold distance, with the latest casses representing New cases (ie. Upcoming cases)
   #@param alt: An option determining whether or not to resolve cluster growth as weighted nodes or closest nodes
   #@param full: An option determining whether or not this is the growth estimate for a fully saturated model
@@ -152,16 +187,13 @@ stats <- function(clu) {
   #Generate data frame at level of clusters
   df <- data.frame(Expectation=exp, Size=clu$csize, Growth=clu$growth, RelGrowth=clu$growth/clu$csize, Prediction=pred)
   
+  stats$acc <- glm(RelGrowth~Prediction, data=df, family="poisson") #Models growth against prediction 
+
+  stats$zscore <- mean(zscore) #The mean zscore (representing probability based on expection)
   
   stats$prob <- glm(Growth~Expectation, data=df, family = "poisson") #Models growth against calculated expectation
   
-  stats$var <- var(clu$growth/clu$csize) #The variance of relative growth
-  
-  stats$zscore <- mean(zscore) #The mean zscore (representing probability based on expection)
-  
   stats$GbyS <- glm(Growth~Size, data=df, family="poisson") #Models growth by size
-  
-  stats$acc <- glm(RelGrowth~Prediction, data=df, family="poisson") #Models growth against prediction 
   
   stats$Sby1 <- glm(Size~1, data=df, family="poisson") #Models how well size follows a poisson distribution
   
@@ -169,15 +201,17 @@ stats <- function(clu) {
   
   stats$RGby1 <- glm(RelGrowth~1, data=df, family="poisson") #Models how well relative growth follows a poisson distribution
   
+  stats$var <- var(clu$growth/clu$csize) #The variance of relative growth
+  
   return(stats)
 }
 
 #Obtains statistics at a set of cutoffs for the same input graph (initially fully connected)
-analyzeG <- function(alt=F, cutoffs=cutoffs, year=max(years), inG=g) {
+####-TO-DO: Confirm comparisons between Seattle results to select actual methods -####
+analyzeG <- function(cutoffs,year=max(years), inG=g) {
   #@param cutoffs: The cutoffs sequence, this will become the independant variable for all results
   #@param year: The year representing the newest (upcoming) year. Ideally the latest year
   #@param inG: The graph to be worked upon. Ideally the complete graph with all connections
-  #@param alt: The option to use the alternative method of growth measurement
   #@return: A dataframe of all calculated results
   
   #Initialize the dataframe of results
@@ -188,22 +222,17 @@ analyzeG <- function(alt=F, cutoffs=cutoffs, year=max(years), inG=g) {
     
     #Obtain and analyze growth statistics for a given cutoff
     subG <- subGraph(inG,year,d)
-    growth <- growG(subG, alt=alt)
+    growth <- growG(subG) ##COMPARE: growth <- growthSim(subG) OR growthSim(subG, alt=T)
     fit <- stats(growth)
     
     #Obtain a fully saturated model for the same growth. This will have no cluster aggregation, instead tracking individual new case links
-    growth <- growG(subG, full=T)
-    full <- stats(growth)
+    growth <- growG(subG, full=T) ##COMPARE: growth <- growthSim(subG, full=T) OR growthSim(subG, alt=T, full=T)
+    full <- stats(growth) 
     
     #Obtain the Forecast Accuracy
     #This is a measure of how well the relative growth is predicted by the forecast function
     ####- TO-DO: Confirm that this does not need a fully saturated comparison -####
-    Accuracy <- (fit$acc)$deviance
-    print(Accuracy)
-    
-    #Obtain the Variance partition coefficient
-    #This is a measure of how much variance can be attributed to this particular clustering level
-    VPC <- fit$var / full$var
+    Accuracy <- 1-(fit$acc)$deviance/(fit$acc)$null.deviance
     
     #Obtain the mean zscore for growths 
     #This is a measure of how unlikely growth rates are based on a theoretical distribution
@@ -211,31 +240,33 @@ analyzeG <- function(alt=F, cutoffs=cutoffs, year=max(years), inG=g) {
     
     #Obtain Deviance and GAICC for a Poisson Probability Map
     #This is a measure of how well the probabilities of growth rates follow a poisson distribution
-    DeviancePPMap <- (full$prob)$deviance - (fit$prob)$deviance
+    DeviancePPMap <- (full$prob)$deviance - (fit$prob)$deviance ##COMPARE: DeviancePPMap <- (fit$prob)$null.deviance - (fit$prob)$deviance
     GAICPPMap <- (fit$prob)$aic- (full$prob)$aic
     
     #This is a measure of how well the growth is predicted by size
-    DevianceGbyS <- (full$GbyS)$deviance - (fit$GbyS)$deviance
+    DevianceGbyS <- (full$GbyS)$deviance - (fit$GbyS)$deviance ##COMPARE: DevianceGbyS <- (fit$GbyS)$null.deviance - (fit$GbyS)$deviance
     GAICGbyS <- (fit$GbyS)$aic- (full$prob)$aic
     
     #This is a measure of how well size follows a poisson distribution
-    DevianceSby1 <- (full$Sby1)$deviance - (fit$Sby1)$deviance
+    DevianceSby1 <- (full$Sby1)$deviance - (fit$Sby1)$deviance ##COMPARE: DevianceSby1 <- (fit$GbyS)$null.deviance - (fit$GbyS)$deviance
     GAICSby1 <- (fit$Sby1)$aic- (full$Sby1)$aic
 
     #This is a measure of how well growth follows a poisson distribution    
-    DevianceGby1 <- (full$Gby1)$deviance - (fit$Gby1)$deviance
+    DevianceGby1 <- (full$Gby1)$deviance - (fit$Gby1)$deviance ##COMPARE: DevianceGby1 <- (fit$GbyS)$null.deviance - (fit$GbyS)$deviance
     GAICGby1 <- (fit$Gby1)$aic- (full$Gby1)$aic
 
     #This is a measure of how well Relative growth follows a poisson distribution
-    DevianceRGby1 <- (full$RGby1)$deviance - (fit$RGby1)$deviance
+    DevianceRGby1 <- (full$RGby1)$deviance - (fit$RGby1)$deviance ##COMPARE: DevianceRGby1 <- (fit$GbyS)$null.deviance - (fit$GbyS)$deviance
     GAICRGby1 <- (fit$RGby1)$aic- (full$RGby1)$aic
+    
+    #Obtain the Variance partition coefficient
+    #This is a measure of how much variance can be attributed to this particular clustering level
+    VPC <- fit$var / full$var
     
     stats <- c(Accuracy, zscoreMean, DeviancePPMap, GAICPPMap, DevianceGbyS, GAICGbyS, DevianceSby1, GAICSby1, DevianceGby1, GAICGby1, DevianceRGby1, GAICRGby1, VPC)
     
     #Expand the result df with this data
     res <- cbind(res, stats)
-    
-    print(stats)
   }
   
   #Apply labels for the results table
@@ -265,7 +296,15 @@ years <- levels(factor(V(g)$year))
 
 #Test
 ##########################################################
+#Define Resolution of plotted data
 cutoffs <- seq(0, 0.05, 0.002)
-res <- analyzeG(cutoffs, depVars)
-plot(cutoffs, res[,], xlab= "tn93 Cutoffs", ylab= "")
+res <- analyzeG(cutoffs)
+
+#Create Plots
+yLabs<- c("Accuracy", "zscoreMean", "DeviancePPMap", "GAICPPMap", "DevianceGbyS", "GAICGbyS", "DevianceSby1", "GAICSby1", "DevianceGby1", "GAICGby1", "DevianceRGby1", "GAICRGby1", "VPC")
+for (i in 1:1){
+  print(i)
+  yLab <- yLabs[[i]]
+  plot(cutoffs, res[i,], xlab= "tn93 Cutoffs", ylab= yLab)
+}
 ##########################################################
