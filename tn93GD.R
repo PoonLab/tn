@@ -1,7 +1,7 @@
 #A process which generates cluster growth data as a function of tn93 cutoff threshold
 #Creates an external .RData file of paired cluster info sets
 
-#USAGE: Rscript tn93Analysis.R tn93output.csv
+#USAGE: Rscript tn93GD.R tn93output.csv
 
 library(igraph)
 
@@ -131,7 +131,7 @@ growF <- function(inG) {
   clu$growth <- sapply(1:clu$no, function(x){
     members <- names(clu$membership[unname(clu$membership)==x])
     memV <- V(inG)[name%in%members]
-    newV <- memV[year==newY]
+    newV <- memV[year==max(year)]
     return(length(newV))
   })
   
@@ -207,7 +207,7 @@ cutoffs <- seq(0, 0.065, 0.001)
 for (d in cutoffs) {
   print(d) #Important for progress tracking
   
-  subG <- subGraph(sampG,y,d)
+  subG <- subGraph(g,y,d)
 
   #Obtain growth based on a restricted model
   growth <- grow(subG) 
