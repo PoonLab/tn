@@ -1,7 +1,7 @@
 #A process which generates cluster growth data as a function of tn93 cutoff threshold
 #Creates an external .RData file of paired cluster info sets
 
-#USAGE: Rscript tn93GD.R tn93output.csv
+### USAGE: Rscript tn93GD.R tn93output.csv ###
 
 library(igraph)
 
@@ -16,14 +16,14 @@ linkFreq <- function(inG) {
   maxY <- max(V(inG)$year)
   minY <- min(V(inG)$year)
   years <- seq(minY, (maxY-1), 1)
+  newV <- V(inG)[year==maxY]
   
   #Obtain the frequency of new cases being connected to each year
   frequency <- sapply(years, function(x) {
     presV <- V(inG)[year==x]
-    newV <- V(inG)[year==maxY]
-    links <- length(E(inG)[presV%--%newV])
-    relLinks <- links / length(presV)
-    return(relLinks)
+    bridgeV <- ends(inG, E(inG)[presV%--%newV])
+    freq <- length(bridgeV[bridgeV%in%newV]) / length(presV)
+    return(freq)
   })
   
   #Assign age to every case
@@ -205,7 +205,7 @@ cutoffs <- seq(0, 0.065, 0.001)
 
 #Generate growth data for each cutoff in a series of cutoffs
 for (d in cutoffs) {
-  print(d) #Important for progress tracking
+  print(noquote(paste0(as.integer(d/max(cutoffs)*100), "%")))  #Progress tracking
   
   subG <- subGraph(g,y,d)
 
