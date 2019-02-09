@@ -6,6 +6,21 @@ library(igraph)
 
 #__________________________________________________________________________________________________________________________#
 
+altGrowth <- function(inG, y, full=F) {
+  clu <- components(inG)
+  oldV <- V(inG)[V(inG)$year<=y]
+  oldClu <- clu$membership[attr(clu$membership, "names") %in% oldV$name]
+  
+  if (full) {
+    clu$growth <- integer(length(oldV)) 
+    clu$growth <- sapply(oldV, function(x) length(E(inG)[inc(x)&&inc(E(inG)[-oldV])]))
+  } else {
+    clu$growth <- sapply(1:clu$no, function(x) clu$csize[[x]]-length(oldClu[unname(oldClu)==x]))
+  }
+  
+  return(clu)
+}
+
 #Estimates the growth of clusters based on information from all years before the latest year.
 ####- TO DO: Decide upon a statistically reasonable way to include the "Full" parameter -####
 ####- TO DO: Implement use of this function -####
@@ -141,6 +156,8 @@ stats <- function(subG, full=F) {
   
   return(fit)
 }
+
+altStats <- function(subG, full=F)
   
 
 #__________________________________________________________________________________________________________________________#
