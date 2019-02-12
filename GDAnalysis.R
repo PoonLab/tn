@@ -7,7 +7,7 @@
 #__________________________________________________________________________________________#
 
 #Obtain the VPC, a measure of variance due to the aggregate level over total variance
-VPC <- function(res=res){
+vpc <- function(res=res){
   stat <- sapply(colnames(res), function(x) {
     #Extract full and fit data
     fit <- res[[1,x]]
@@ -29,6 +29,8 @@ gaic <- function(res=res)  {
     fit <- res[[1,x]]
     full <- res[[2,x]]
     
+    print(max(full$forecast))
+    
     #Place growth and forecast data in dfs for fit and full growth
     df1 <- data.frame(Growth = fit$growth, Pred = fit$forecast)
     df2 <- data.frame(Growth = full$growth, Pred = full$forecast)
@@ -38,7 +40,7 @@ gaic <- function(res=res)  {
     mod2 <- glm(Growth ~ Pred, data = df2, family = "poisson")
     
     #Calculate GAIC
-    mod1$aic-mod2$aic 
+    mod2$aic-mod1$aic 
   })
   
   #Present and return data
@@ -78,8 +80,3 @@ args = commandArgs(trailingOnly = T)
 
 #Loads the output from tn93GD.RData
 load(args)
-
-#Test Functions
-VPC <- vpc()
-GAIC <- gaic()
-deviance <- dev()
