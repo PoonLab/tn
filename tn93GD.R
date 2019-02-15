@@ -8,7 +8,7 @@
 library(igraph)
 library(dplyr)
 
-####0T
+####
 #library(easynls)
 
 ## Helper Functions
@@ -204,6 +204,53 @@ closeFilter <- function(inG) {
   return(outG)
 }
 
+simGrowth <- function(inG, fit, full=F) { 
+  
+  #Obtain the newest date
+  newV <- V(inG)[year==newY]
+
+  #Obtain a forward-Censored Graph
+  oldG <- inG - newV
+  
+  if (full) {
+    oldG <- oldG-E(oldG)
+  }
+  
+  #Assign a predicted growth value to each member of the graph
+  freq <- sapply(V(inG)$year, function(x) {
+    age <- newY - x
+    
+    ####- TO-DO: Use coefficients to establish age -####
+    if (age==0) { return(NaN) }
+    else {
+      freq <- unname(fit[age])
+      weight <- sum(sample(c(1,0), length(V(inG)[year==newY]), replace = T, prob = c(freq, 1-freq)))
+      return(weight)
+    }
+  })
+  
+  V(inG)$freq <- freq
+  
+  #Obtain cluster information
+  clu <- components(oldG)
+
+  #Assign cluster growth based on number of new cases embedded in clusters 
+  temp <- sapply(1:clu$no, function(x) {
+    members <- names(clu$membership[unname(clu$membership)==x])
+    memV <- V(inG)[name%in%members]
+    bridgeE <- E(inG)[memV%--%newV]
+    forecast <- sum(memV$freq) 
+    growth <- length(bridgeE)
+    return(c(growth,forecast))
+  })
+  
+  clu$growth <- temp[1,]
+  clu$forecast <- temp[2,]
+  clu$inc <- length(newV)
+  
+  return(clu)
+}
+
 ## Importing Case data
 #____________________________________________________________________________________________________________________________#
 
@@ -265,6 +312,9 @@ for (y in years) {
 ageD <- lapply(1:nrow(ldf), function(x) bind_rows(ldf[x,]))
 names(ageD) <- cutoffs
 
+#Save data in accessable file
+save(res, file = paste0(gsub("\\..*", "", args), "AD.RData"))
+
 ## Generate Growth data
 #__________________________________________________________________________________________________________________________#
 
@@ -292,10 +342,10 @@ for (d in cutoffs) {
   subG <- subGraph(g,newY,d)
 
   #Obtain growth based on a restricted model
-  growth <- grow(subG, fit) 
+  growth <- simGrowth(subG, fit) 
   
   #Obtain growth based on a full model
-  growthF <- growF(subG, fit)
+  growthF <- simGrowth(subG, fit, full=T)
   
   #Group the full and restricted growth models in a list
   l <- list(growth, growthF)
