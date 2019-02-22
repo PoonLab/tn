@@ -42,107 +42,6 @@ linkFreq <- function(inG) {
   return(df)
 }
 
-#Obtains an estimate of cluster growth based on the ages of cases within
-forecast <- function(inG, fit) {
-  #@param inG: A graph cut based on a threshold distance, with the latest casses representing New cases (ie. Upcoming cases)
-  #@param fit: The associated model of case link frequency based on case age. 
-  #@return: An attribute for clu representing the estimation of their growth based on case ages
-  
-  #Obtain the new year, from which we will measure growth
-  newY <- max(V(inG)$year)
-  
-  ####- TO-DO: Extract coeeficients from model data -####
-  
-  #Assign a predicted growth value to each member of the graph
-  V(inG)$freq <- sapply(V(inG)$year, function(x) {
-    age <- newY - x
-    if (age==0) {return(0)}
-    else{
-      ####- TO-DO: Use coefficients to establish age -####
-      freq <- unname(fit[age])
-      weight <- sum(sample(c(1,0), length(V(inG)[year==newY]), replace = T, prob = c(freq, 1-freq)))
-    }
-  })
-  
-  #Obtain cluster information
-  clu <- components(inG)
-
-  #Obtain a prediction of growth based on the predicted growth of a cluster's members  
-  forecast <- sapply(1:clu$no, function(x) {
-    members <- names(clu$membership[unname(clu$membership)==x])
-    memV <- V(inG)[name%in%members]
-    presMV <- memV[year<newY]
-    sumFreq <- sum(presMV$freq)
-    return(sumFreq)
-  })
-  
-  return(forecast)
-}
-
-#Obtains the Growth of clusters based on which clusters hold new cases
-growF <- function(inG, fit) {
-  #@param inG: A subGraph cut based on a threshold distance, with the latest cases representing New cases (ie. Upcoming cases)
-  #@param fit: To pass to forecast
-  #@return: Cluster information including growth and estimated growth for the Present year (ie. The year before the newest year in inG)
-  
-  #Obtain the new year
-  newY <- max(V(inG)$year)
-  
-  #Filter out all edges between present cases (disaggregation)
-  presV <- V(inG)[year<newY]
-  es <- E(inG)[presV %--% presV]
-  inG <- inG - es
-  
-  #Redifine new cases and present cases
-  newV <- V(inG)[year==newY]
-  presV <- V(inG)[-newV]
-  
-  #Obtain cluster information
-  clu <- components(inG)
-  
-  #Assign the previously established forecast to the cluster information
-  clu$forecast <- forecast(inG, fit)
-  
-  #Assign the growth of individual clusters (of size 1), based on the newly formatted graph
-  clu$growth <- sapply(1:clu$no, function(x){
-    members <- names(clu$membership[unname(clu$membership)==x])
-    memV <- V(inG)[name%in%members]
-    newV <- memV[year==newY]
-    return(length(newV))
-  })
-  
-  return(clu)
-}
-
-#Obtains the Growth of clusters based on which clusters hold new cases
-grow <- function(inG, fit) {
-  #@param inG: A subGraph cut based on a threshold distance, with the latest cases representing New cases (ie. Upcoming cases)
-  #@param fit: To pass to forecast
-  #@return: Cluster information including growth and estimated growth for the Present year (ie. The year before the newest year in inG)
-  
-  #Obtain the newest date
-  newY <- max(V(inG)$year)
-  
-  #Obtain cluster information
-  clu <- components(inG)
-  
-  #Assign the previously established forecast to the cluster information
-  clu$forecast <- forecast(inG, fit)
-  
-  #obtain the number of new cases
-  clu$inc <- length(V(inG)[year==newY])
-
-  #Assign cluster growth based on number of new cases embedded in clusters 
-  clu$growth <- sapply(1:clu$no, function(x) {
-    members <- names(clu$membership[unname(clu$membership)==x])
-    memV <- V(inG)[name%in%members]
-    newMV <- memV[year==newY]
-    return(length(newMV))
-  })
-  
-  return(clu)
-}
-
 #Obtains a filtered subgraph of the full graph. Vertices are removed beyond a given year and edges are removed below a cutoff
 subGraph <- function(inG, y, d) {
   #@param y: The year that represents the latest year. We forward-censor everything past this.
@@ -204,7 +103,7 @@ closeFilter <- function(inG) {
   return(outG)
 }
 
-simGrowth <- function(inG, fit, full=F) { 
+simGrow <- function(inG, fit, full=F) { 
   
   #Obtain the newest date
   newV <- V(inG)[year==newY]
@@ -223,9 +122,9 @@ simGrowth <- function(inG, fit, full=F) {
     ####- TO-DO: Use coefficients to establish age -####
     if (age==0) { return(NaN) }
     else {
-      freq <- unname(fit[age])
-      weight <- sum(sample(c(1,0), length(V(inG)[year==newY]), replace = T, prob = c(freq, 1-freq)))
-      return(weight)
+      f <- unname(fit[age])
+      #weight <- sum(sample(c(1,0), length(V(inG)[year==newY]), replace = T, prob = c(f, 1-f)))
+      return(f)
     }
   })
   
@@ -347,10 +246,10 @@ for (d in cutoffs) {
   subG <- subGraph(g,newY,d)
 
   #Obtain growth based on a restricted model
-  growth <- simGrowth(subG, fit) 
+  growth <- simGrow(subG, fit) 
   
   #Obtain growth based on a full model
-  growthF <- simGrowth(subG, fit, full=T)
+  growthF <- simGrow(subG, fit, full=T)
   
   #Group the full and restricted growth models in a list
   l <- list(growth, growthF)

@@ -23,7 +23,7 @@ vpc <- function(res=res){
 
 #Obtain the GAIC, a measure of fit between predicted and actual growth
 gaic <- function(res=res)  {
-  stat <- sapply(colnames(res), function(x) {
+  stat <- sapply(seq(1, 30,1), function(x) {
     #Extract full and fit data
     fit <- res[[1,x]]
     full <- res[[2,x]]
@@ -41,7 +41,7 @@ gaic <- function(res=res)  {
   })
   
   #Present and return data
-  plot(colnames(res), stat, ylab = "GAIC", xlab = "Cutoff")
+  plot(stat, ylab = "GAIC", xlab = "Cutoff")
   return(stat)
 }
 
@@ -83,7 +83,7 @@ ppmap <- function(res=res) {
     #zscore can be calculated based off of this diff
     diff <- fit$growth - exp
     zscore <- diff / sqrt(exp)
-    return(var(zscore))
+    return(mean(abs(zscore)))
   })
   
   #Present and return data
@@ -108,12 +108,12 @@ gr <- function(res=res) {
 }
 
 check <- function(res) {
+  cut <- seq(0,0.05, 0.001)
   stat <- sapply(1:ncol(res), function(x) {
     fit <- res[[1,x]]
-    g <- fit$growth/fit$csize
-    print(g[g>0])
+    length(fit$growth[fit$growth>0]) / fit$no
   })
-
+  plot(colnames(res), stat, ylab = "Proportion of Growing Clusters", xlab= "Distance Cutoff" )
 }
   
 
