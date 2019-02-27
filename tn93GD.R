@@ -3,12 +3,13 @@
 
 ### USAGE: Rscript tn93GD.R tn93output.csv ###
 
-####-TO
+####- TO-DO: Cross-Validate with train / test -####
 
+#Import Libraries
 library(igraph)
 library(dplyr)
 
-####
+####- TO-DO: Use coefficients from a non-linear model to establish age instead of means-####
 #library(easynls)
 
 ## Helper Functions
@@ -103,6 +104,7 @@ closeFilter <- function(inG) {
   return(outG)
 }
 
+#Simulates the growth of clusters
 simGrow <- function(inG, fit, full=F) { 
   
   #Obtain the newest date
@@ -114,21 +116,6 @@ simGrow <- function(inG, fit, full=F) {
   if (full) {
     oldG <- oldG-E(oldG)
   }
-  
-  #Assign a predicted growth value to each member of the graph
-  freq <- sapply(V(inG)$year, function(x) {
-    age <- newY - x
-    
-    ####- TO-DO: Use coefficients to establish age -####
-    if (age==0) { return(NaN) }
-    else {
-      f <- unname(fit[age])
-      #weight <- sum(sample(c(1,0), length(V(inG)[year==newY]), replace = T, prob = c(f, 1-f)))
-      return(f)
-    }
-  })
-  
-  V(inG)$freq <- freq
   
   #Obtain cluster information
   clu <- components(oldG)
@@ -162,6 +149,7 @@ input <- read.csv(args[1], stringsAsFactors = F)
 g <- graph_from_data_frame(input, directed=FALSE, vertices=NULL)
 
 #Adds the ID's and Sample collection years as different vertex attributes for each vertex
+####- TO-DO: Assign Dates by Month -####
 temp <- sapply(V(g)$name, function(x) strsplit(x, '_')[[1]])
 V(g)$name <- temp[1,]
 V(g)$year <- as.numeric(temp[2,])
@@ -169,8 +157,6 @@ V(g)$year <- as.numeric(temp[2,])
 #Obtain the range of years and the maximum input year
 years <- as.integer(levels(factor(V(g)$year)))
 newY <- max(years)
-
-g <- g - V(g)[year==newY]
 
 #Obtain the range of years and the maximum input year
 years <- as.integer(levels(factor(V(g)$year)))
@@ -239,19 +225,29 @@ for (d in cutoffs) {
   #Obtain a model of case connection frequency to new cases as predicted by individual case age 
   df <- ageD[[as.character(d)]]
   fit <- sapply(levels(factor(df$Age)), function(x) mean(df$Frequency[which(df$Age == x)]))
+  
   ####- TO-DO: Actually make fit an exponential model instead of a set of means -####
   #fit <- nlsfit(data=df,model=6, start=c(y0,1))
   
   #Obtain a subGraph at the maximum year, removing edges above the distance cutoff and ensuring no merging by removing, non-closest edges to new cases
   subG <- subGraph(g,newY,d)
+  
+  #Assign a predicted growth value to each member of the graph
+  V(subG)$freq <- sapply(V(subG)$year, function(x) {
+    
+    ####- TO-DO: Use coefficients to establish age instead of means-####
+    age <- newY - x
+    if (age==0) { return(NaN) }
+    else {
+      f <- unname(fit[age])
+      #weight <- sum(sample(c(1,0), length(V(inG)[year==newY]), replace = T, prob = c(f, 1-f)))
+      return(f)
+    }
+  })
 
-  #Obtain growth based on a restricted model
+  #Obtain growth based on two models restricted model
   growth <- simGrow(subG, fit) 
-  
-  #Obtain growth based on a full model
   growthF <- simGrow(subG, fit, full=T)
-  
-  #Group the full and restricted growth models in a list
   l <- list(growth, growthF)
   
   #Add to growing dataframe of results

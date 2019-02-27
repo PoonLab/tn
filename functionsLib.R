@@ -1,4 +1,43 @@
-#Functions Library (Old and New)
+##Functions Library (Old and New)
+####- TO-DO: Tidy, delete code that is so broken or mislead that it's not worth having -####
+
+#Obtain the VPC, a measure of variance due to the aggregate level over total variance
+vpc <- function(res=res){
+  stat <- sapply(1:(ncol(res)), function(x) {
+    #Extract full and fit data
+    fit <- res[[1,x]]
+    full <- res[[2,x]]
+    
+    #Calculate VPC
+    var(fit$growth) / var(full$growth)
+  })
+  
+  #Present and return data
+  plot(colnames(res), stat, ylab = "VPC", xlab = "Cutoff")
+  return(stat)
+}
+
+#Obtain the Poisson Probability map of relative growth
+ppmap <- function(res=res) {
+  
+  stat <- sapply(1:ncol(res), function(x) {
+    #Extract fit data
+    fit <- res[[1,x]]
+    
+    #Obtain an expectation based off of overall cluster growth
+    exp <- (fit$csize)*(sum(fit$growth)/sum(fit$csize))
+    
+    #zscore can be calculated based off of this diff
+    diff <- fit$growth - exp
+    zscore <- diff / sqrt(exp)
+    print(zscore)
+    return(var(zscore))
+  })
+  
+  #Present and return data
+  plot(colnames(res), stat, ylab = "Poisson Probability", xlab = "Cutoff")
+  return(stat)
+}
 
 #Obtains an estimate of cluster growth based on the ages of cases within
 forecast <- function(inG, fit) {
@@ -344,6 +383,22 @@ stats <- function(clu) {
   stats$var <- var(clu$growth/clu$csize) #The variance of relative growth
   
   return(stats)
+}
+
+#Obtain the proportion of growing clusters
+gr <- function(res=res) {
+  
+  stat <- sapply(1:(ncol(res)-1), function(x) {
+    #Extract fit data
+    fit <- res[[1,x]]
+    
+    #Obtain the ratio of growing clusters over total clusters
+    length(fit$growth[fit$growth>0])/fit$no
+  })
+  
+  #Present and return data
+  plot(head(colnames(res),-1), stat, ylab = "Growth Ratio", xlab = "Cutoff")
+  return(stat)
 }
 
 #Obtains statistics at a set of cutoffs for the same input graph (initially fully connected)
