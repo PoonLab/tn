@@ -3,14 +3,9 @@
 
 ### USAGE: Rscript tn93GD.R tn93output.csv ###
 
-####- TO-DO: Cross-Validate with train / test -####
-
 #Import Libraries
 library(igraph)
 library(dplyr)
-
-####- TO-DO: Use coefficients from a non-linear model to establish age instead of means-####
-#library(easynls)
 
 ## Helper Functions
 #____________________________________________________________________________________________________________________________#
@@ -105,7 +100,7 @@ closeFilter <- function(inG) {
 }
 
 #Simulates the growth of clusters
-simGrow <- function(inG, fit, full=F) { 
+simGrow <- function(inG, full=F) { 
   
   #Obtain the newest date
   newV <- V(inG)[year==newY]
@@ -158,10 +153,6 @@ V(g)$year <- as.numeric(temp[2,])
 years <- as.integer(levels(factor(V(g)$year)))
 newY <- max(years)
 
-#Obtain the range of years and the maximum input year
-years <- as.integer(levels(factor(V(g)$year)))
-newY <- max(years)
-
 ## Obtain a set models of case linkage frequency based on age
 #__________________________________________________________________________________________________________________________#
 
@@ -169,7 +160,7 @@ newY <- max(years)
 ldf <- {}
 
 #Initialize a set of cutoffs to observe
-cutoffs <- seq(0, 0.05, 0.001)
+cutoffs <- seq(0.005, 0.05, 0.001)
 
 #Progress tracking
 print("Modelling age and cutoff effects on node linkage to new cases...")
@@ -223,31 +214,25 @@ for (d in cutoffs) {
   print(noquote(paste0(as.integer(d/max(cutoffs)*100), "%")))
   
   #Obtain a model of case connection frequency to new cases as predicted by individual case age 
-  df <- ageD[[as.character(d)]]
-  fit <- sapply(levels(factor(df$Age)), function(x) mean(df$Frequency[which(df$Age == x)]))
+  ageDi <- ageD[[as.character(d)]]
+  #fit <- sapply(levels(factor(df$Age)), function(x) mean(df$Frequency[which(df$Age == x)]))
   
-  ####- TO-DO: Actually make fit an exponential model instead of a set of means -####
-  #fit <- nlsfit(data=df,model=6, start=c(y0,1))
+  #Creates an exponential model of case growth with respect to age data
+  m <- sapply(levels(factor(ageDi$Age)), function(x) {
+    mean(i$Frequency[ageDi$Age==x])
+  })
+  df <- data.frame(Age = as.numeric(names(m)), Freq = unname(m))
+  mod <- nls(Freq ~ a*Age^b, data = df, start = list(a=1, b=1))
   
   #Obtain a subGraph at the maximum year, removing edges above the distance cutoff and ensuring no merging by removing, non-closest edges to new cases
   subG <- subGraph(g,newY,d)
   
   #Assign a predicted growth value to each member of the graph
-  V(subG)$freq <- sapply(V(subG)$year, function(x) {
-    
-    ####- TO-DO: Use coefficients to establish age instead of means-####
-    age <- newY - x
-    if (age==0) { return(NaN) }
-    else {
-      f <- unname(fit[age])
-      #weight <- sum(sample(c(1,0), length(V(inG)[year==newY]), replace = T, prob = c(f, 1-f)))
-      return(f)
-    }
-  })
+  V(subG)$freq <- predict(mod, df)
 
   #Obtain growth based on two models restricted model
-  growth <- simGrow(subG, fit) 
-  growthF <- simGrow(subG, fit, full=T)
+  growth <- simGrow(subG) 
+  growthF <- simGrow(subG, full=T)
   l <- list(growth, growthF)
   
   #Add to growing dataframe of results
