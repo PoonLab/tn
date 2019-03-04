@@ -137,17 +137,28 @@ simGrow <- function(inG, full=F) {
 
 #Expecting the output from a tn93 run formatted to a csv file.
 #Expecting patient information in the format ID_Date
+#Date may simply be a year, but could also be formatted as the daily year
 args = commandArgs(trailingOnly = T)
 input <- read.csv(args[1], stringsAsFactors = F)
+dates <- FALSE ####- TO-DO: Set up as option while running from terminal-####
 
 #Creates a graph based on the inputted data frame. The tn93 Distances become edge4 attributes
 g <- graph_from_data_frame(input, directed=FALSE, vertices=NULL)
 
 #Adds the ID's and Sample collection years as different vertex attributes for each vertex
-####- TO-DO: Assign Dates by Month -####
 temp <- sapply(V(g)$name, function(x) strsplit(x, '_')[[1]])
 V(g)$name <- temp[1,]
 V(g)$year <- as.numeric(temp[2,])
+
+#To handle input as dates instead of years
+if (dates == T) {
+  y <- as.Date(temp[2,])
+  
+  #Handling day-month-year common format
+  yDMY <- as.Date(temp[2,], format="%d-%b-%y")
+  y[is.na(y)] <- yDMY[!is.na(yDMY)]
+  V(g)$year <- as.integer(as.integer(y) / 90) #Binned into 90 day blocks
+}
 
 #Obtain the range of years and the maximum input year
 years <- as.integer(levels(factor(V(g)$year)))
@@ -219,7 +230,7 @@ for (d in cutoffs) {
   
   #Creates an exponential model of case growth with respect to age data
   m <- sapply(levels(factor(ageDi$Age)), function(x) {
-    mean(i$Frequency[ageDi$Age==x])
+    mean(ageDi$Frequency[ageDi$Age==x])
   })
   df <- data.frame(Age = as.numeric(names(m)), Freq = unname(m))
   mod <- nls(Freq ~ a*Age^b, data = df, start = list(a=1, b=1))
