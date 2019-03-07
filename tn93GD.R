@@ -250,20 +250,15 @@ for (d in cutoffs) {
   subG <- subGraph(g,newY,d)
 
   #Creates an exponential model of case growth with respect to age data
-  if (model==T) {
-    m <- sapply(levels(factor(ageDi$Age)), function(x) {
-      mean(ageDi$Frequency[ageDi$Age==x])
-    })
-    df <- data.frame(Age = as.numeric(names(m)), Freq = unname(m))
-    mod <- nls(Freq ~ a*Age^b, data = df, start = list(a=1, b=1))
-    modFreq <- predict(mod)
-    
-    #Assign a predicted growth value to each member of the graph
-    V(subG)$freq <- sapply(V(subG)$age, function(x) ifelse(x==0, 1, modFreq[x]))
-  } else {
-    fit <- sapply(levels(factor(ageDi$Age)), function(x) mean(ageDi$Frequency[which(ageDi$Age == x)]))
-    V(subG)$freq  <- unlist(sapply(V(subG)$age, function(x) ifelse(x==0, 1, unname(fit[newY-x]))))
-  }
+  m <- sapply(levels(factor(ageDi$Age)), function(x) {
+    mean(ageDi$Frequency[ageDi$Age==x])
+  })
+  df <- data.frame(Age = as.numeric(names(m)), Freq = unname(m))
+  mod <- nls(Freq ~ a*Age^b, data = df, start = list(a=1, b=1))
+  modFreq <- predict(mod)
+  
+  #Assign a predicted growth value to each member of the graph
+  V(subG)$freq <- sapply(V(subG)$age, function(x) ifelse(x==0, 1, modFreq[x]))
   
   #Obtain growth based on two models restricted model
   growth <- simGrow(subG) 
