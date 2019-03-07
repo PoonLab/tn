@@ -470,3 +470,12 @@ analyzeG <- function(cutoffs,year=max(years), inG=g) {
   
   return(res)
 }
+
+#To handle input as dates instead of years (Pre-Processing for the NA dataset)
+if (dates == T) {
+  y <- as.Date(temp[2,])
+  #Handling day-month-year common format
+  yDMY <- as.Date(temp[2,], format="%d-%b-%y")
+  y[is.na(y)] <- yDMY[!is.na(yDMY)]
+  V(g)$year <- as.integer(as.integer(y) / 120) #Binned into 90 day blocks
+}

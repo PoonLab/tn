@@ -1,7 +1,8 @@
 #A process which generates cluster growth data as a function of tn93 cutoff threshold
 #Creates an external .RData file of paired cluster info sets
 
-### USAGE: Rscript tn93GD.R tn93output.csv ###
+### USAGE: Rscript tn93GD.R tn93output.txt dateFormat ###
+#input Date Format, specified with % (ie. %d-%b-%y for day, written month, 2-digit year or  %Y for simple, 4-digit year)
 
 #Import Libraries
 library(igraph)
@@ -9,6 +10,31 @@ library(dplyr)
 
 ## Helper Functions
 #____________________________________________________________________________________________________________________________#
+#Obtain the GAIC, a measure of fit between predicted and actual growth
+gaic <- function(inRes)  {
+  stat <- sapply(1:ncol(res), function(x) {
+    #Extract full and fit data
+    fit <- res[[1,x]]
+    full <- res[[2,x]]
+    
+    #Place growth and forecast data in dfs for fit and full growth
+    #df1 <- data.frame(Growth = fit$growth, Pred = fit$forecast)
+    #df2 <- data.frame(Growth = full$growth, Pred = full$forecast)
+    
+    #Place growth and forecast data in dfs for fit and full growth
+    df1 <- data.frame(Growth = fit$growth, Pred = fit$forecast)
+    df2 <- data.frame(Growth = fit$growth, Pred = fit$csize * (sum(fit$growth)/sum(fit$csize)))
+    
+    #Model growth as a function of forecast for fit and full growth models
+    mod1 <- glm(Growth ~ Pred, data = df1, family = "poisson")
+    mod2 <- glm(Growth ~ Pred, data = df2, family = "poisson")
+    
+    #Calculate GAIC
+    mod1$aic-mod2$aic
+  })
+  
+  return(stat)
+}
 
 #Models frequency of new cases being linked to old cases based on how old the old cases are
 linkFreq <- function(inG) {
@@ -115,7 +141,7 @@ simGrow <- function(inG, full=F) {
   #Obtain cluster information
   clu <- components(oldG)
 
-  #Assign cluster growth based on number of new cases embedded in clusters 
+  #Assign cluster growth based on number of new cases linked to old cases in clusters 
   temp <- sapply(1:clu$no, function(x) {
     members <- names(clu$membership[unname(clu$membership)==x])
     memV <- V(inG)[name%in%members]
@@ -125,6 +151,7 @@ simGrow <- function(inG, full=F) {
     return(c(growth,forecast))
   })
   
+  #Assign growth, forecast (based on diagnostic date), and incidence
   clu$growth <- temp[1,]
   clu$forecast <- temp[2,]
   clu$inc <- length(newV)
@@ -137,32 +164,24 @@ simGrow <- function(inG, full=F) {
 
 #Expecting the output from a tn93 run formatted to a csv file.
 #Expecting patient information in the format ID_Date
-#Date may simply be a year, but could also be formatted as the daily year
 args = commandArgs(trailingOnly = T)
 input <- read.csv(args[1], stringsAsFactors = F)
-dates <- FALSE ####- TO-DO: Set up as option while running from terminal-####
+
+#This script will give warnings due to the fact that there are low fit rates on the null model
+options(warn=-1)
 
 #Creates a graph based on the inputted data frame. The tn93 Distances become edge4 attributes
-g <- graph_from_data_frame(input, directed=FALSE, vertices=NULL)
+g <- graph_from_data_frame(input, directed=F, vertices=NULL)
 
 #Adds the ID's and Sample collection years as different vertex attributes for each vertex
 temp <- sapply(V(g)$name, function(x) strsplit(x, '_')[[1]])
 V(g)$name <- temp[1,]
 V(g)$year <- as.numeric(temp[2,])
 
-#To handle input as dates instead of years
-if (dates == T) {
-  y <- as.Date(temp[2,])
-  
-  #Handling day-month-year common format
-  yDMY <- as.Date(temp[2,], format="%d-%b-%y")
-  y[is.na(y)] <- yDMY[!is.na(yDMY)]
-  V(g)$year <- as.integer(as.integer(y) / 90) #Binned into 90 day blocks
-}
-
 #Obtain the range of years and the maximum input year
 years <- as.integer(levels(factor(V(g)$year)))
 newY <- max(years)
+V(g)$age <- sapply(V(g)$year, function(x) newY-x)
 
 ## Obtain a set models of case linkage frequency based on age
 #__________________________________________________________________________________________________________________________#
@@ -210,7 +229,7 @@ save(ageD, file = paste0(gsub("\\..*", "", args), "AD.RData"))
 ## Generate Growth data
 #__________________________________________________________________________________________________________________________#
 
-#Obtain a filtered graph for the purposes of measuring growth
+#Obtain a filtered graph and measure growth
 g <- closeFilter(g)
 
 #Initialize the dataframe of results
@@ -226,28 +245,33 @@ for (d in cutoffs) {
   
   #Obtain a model of case connection frequency to new cases as predicted by individual case age 
   ageDi <- ageD[[as.character(d)]]
-  #fit <- sapply(levels(factor(df$Age)), function(x) mean(df$Frequency[which(df$Age == x)]))
-  
-  #Creates an exponential model of case growth with respect to age data
-  m <- sapply(levels(factor(ageDi$Age)), function(x) {
-    mean(ageDi$Frequency[ageDi$Age==x])
-  })
-  df <- data.frame(Age = as.numeric(names(m)), Freq = unname(m))
-  mod <- nls(Freq ~ a*Age^b, data = df, start = list(a=1, b=1))
   
   #Obtain a subGraph at the maximum year, removing edges above the distance cutoff and ensuring no merging by removing, non-closest edges to new cases
   subG <- subGraph(g,newY,d)
-  
-  #Assign a predicted growth value to each member of the graph
-  V(subG)$freq <- predict(mod, df)
 
+  #Creates an exponential model of case growth with respect to age data
+  if (model==T) {
+    m <- sapply(levels(factor(ageDi$Age)), function(x) {
+      mean(ageDi$Frequency[ageDi$Age==x])
+    })
+    df <- data.frame(Age = as.numeric(names(m)), Freq = unname(m))
+    mod <- nls(Freq ~ a*Age^b, data = df, start = list(a=1, b=1))
+    modFreq <- predict(mod)
+    
+    #Assign a predicted growth value to each member of the graph
+    V(subG)$freq <- sapply(V(subG)$age, function(x) ifelse(x==0, 1, modFreq[x]))
+  } else {
+    fit <- sapply(levels(factor(ageDi$Age)), function(x) mean(ageDi$Frequency[which(ageDi$Age == x)]))
+    V(subG)$freq  <- unlist(sapply(V(subG)$age, function(x) ifelse(x==0, 1, unname(fit[newY-x]))))
+  }
+  
   #Obtain growth based on two models restricted model
   growth <- simGrow(subG) 
   growthF <- simGrow(subG, full=T)
   l <- list(growth, growthF)
   
   #Add to growing dataframe of results
-  res <- cbind(res, l)  
+  res <- cbind(res, l)
 } 
 
 #Label data
@@ -256,3 +280,11 @@ colnames(res) <- cutoffs
 
 #Save data in accessable file
 save(res, file = paste0(gsub("\\..*", "", args), "GD.RData"))
+
+#Measure Growth and plot, saving the result
+pdfTitle <- paste0(gsub("\\..*", "", args), "GAIC.pdf")
+stat <- gaic(res)
+save(res, file = paste0(gsub("\\..*", "", args), "GAIC.RData"))
+pdf(pdfTitle)
+plot(colnames(res), stat, ylab = "GAIC", xlab = "Cutoff", type= "l", cex.lab=1.5)
+dev.off()
