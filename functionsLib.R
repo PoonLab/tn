@@ -471,6 +471,14 @@ analyzeG <- function(cutoffs,year=max(years), inG=g) {
   return(res)
 }
 
+#To skip data that breaks the res generation
+#Questionable method
+if(max(df$Freq)==0){
+  skip <- skip+1
+  next()
+}
+#head (cutoffs, -skip) <-Especially here, V Questionable
+
 #To handle input as dates instead of years (Pre-Processing for the NA dataset)
 if (dates == T) {
   y <- as.Date(temp[2,])
@@ -479,3 +487,9 @@ if (dates == T) {
   y[is.na(y)] <- yDMY[!is.na(yDMY)]
   V(g)$year <- as.integer(as.integer(y) / 120) #Binned into 90 day blocks
 }
+
+#For the case of handling missing data
+temp <- {}
+temp$Frequency <- ageDi$Frequency[!is.nan(ageDi$Frequency)]
+temp$Age <- ageDi$Age[!is.nan(ageDi$Frequency)]
+ageDi <- temp

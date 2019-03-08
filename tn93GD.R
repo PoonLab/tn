@@ -15,11 +15,6 @@ gaic <- function(inRes)  {
   stat <- sapply(1:ncol(res), function(x) {
     #Extract full and fit data
     fit <- res[[1,x]]
-    full <- res[[2,x]]
-    
-    #Place growth and forecast data in dfs for fit and full growth
-    #df1 <- data.frame(Growth = fit$growth, Pred = fit$forecast)
-    #df2 <- data.frame(Growth = full$growth, Pred = full$forecast)
     
     #Place growth and forecast data in dfs for fit and full growth
     df1 <- data.frame(Growth = fit$growth, Pred = fit$forecast)
@@ -176,6 +171,7 @@ g <- graph_from_data_frame(input, directed=F, vertices=NULL)
 #Adds the ID's and Sample collection years as different vertex attributes for each vertex
 temp <- sapply(V(g)$name, function(x) strsplit(x, '_')[[1]])
 V(g)$name <- temp[1,]
+####-TO-DO: Work with date formatting -####
 V(g)$year <- as.numeric(temp[2,])
 
 #Obtain the range of years and the maximum input year
@@ -190,7 +186,7 @@ V(g)$age <- sapply(V(g)$year, function(x) newY-x)
 ldf <- {}
 
 #Initialize a set of cutoffs to observe
-cutoffs <- seq(0.005, 0.05, 0.001)
+cutoffs <- seq(0, 0.05, 0.001)
 
 #Progress tracking
 print("Modelling age and cutoff effects on node linkage to new cases...")
@@ -243,18 +239,19 @@ for (d in cutoffs) {
   #Progress tracking
   print(noquote(paste0(as.integer(d/max(cutoffs)*100), "%")))
   
-  #Obtain a model of case connection frequency to new cases as predicted by individual case age 
-  ageDi <- ageD[[as.character(d)]]
+  #Obtain a model of case connection frequency to new cases as predicted by individual case ag
+  #This data may contain missing cases, hense the complete cases addition
+  ageDi <- complete.cases(ageD[[as.character(d)]])
   
   #Obtain a subGraph at the maximum year, removing edges above the distance cutoff and ensuring no merging by removing, non-closest edges to new cases
   subG <- subGraph(g,newY,d)
 
-  #Creates an exponential model of case growth with respect to age data
   m <- sapply(levels(factor(ageDi$Age)), function(x) {
     mean(ageDi$Frequency[ageDi$Age==x])
   })
   df <- data.frame(Age = as.numeric(names(m)), Freq = unname(m))
-  mod <- nls(Freq ~ a*Age^b, data = df, start = list(a=1, b=1))
+  
+  mod <- nls(Freq ~ a*Age^b, data = df, start = list(a=1, b=1), control = list(maxiter=1000))
   modFreq <- predict(mod)
   
   #Assign a predicted growth value to each member of the graph

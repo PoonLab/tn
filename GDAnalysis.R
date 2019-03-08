@@ -44,6 +44,6 @@ load(args)
 ## Skeleton Code For plotting
 stat <- sapply(1:ncol(res), function(x) {
   fit <- res[[1,x]]
-  
+  print(fit)
 })
 plot(colnames(res), stat, ylab = "" , xlab= "")
