@@ -1,7 +1,7 @@
 #A process which generates cluster growth data as a function of tn93 cutoff threshold
 #Creates an external .RData file of paired cluster info sets
 
-### USAGE: Rscript tn93GD.R tn93output.txt dateFormat ###
+### USAGE: Rscript ~/git/tn/tn93GD.R tn93__.txt dateFormat ###
 #input Date Format, specified with % (ie. %d-%b-%y for day, written month, 2-digit year or  %Y for simple, 4-digit year)
 
 #Import Libraries
@@ -11,15 +11,23 @@ library(dplyr)
 ## Helper Functions
 #____________________________________________________________________________________________________________________________#
 #Obtain the GAIC, a measure of fit between predicted and actual growth
-gaic <- function(inRes)  {
-  stat <- sapply(1:ncol(res), function(x) {
+gaic <- function(inRes, agg = F)  {
+  stat <- sapply(1:ncol(inRes), function(x) {
     #Extract full and fit data
-    fit <- res[[1,x]]
+    fit <- inRes[[1,x]]
+    full <- inRes[[2,x]]
     
     #Place growth and forecast data in dfs for fit and full growth
     df1 <- data.frame(Growth = fit$growth, Pred = fit$forecast)
-    df2 <- data.frame(Growth = fit$growth, Pred = fit$csize * (sum(fit$growth)/sum(fit$csize)))
     
+    #For the alternative model comparison (Aggregate, vs. disaggregate, both weighted)
+    if (agg) {
+      df2 <- data.frame(Growth = full$growth, Pred = full$forecast)
+    }
+    else {
+      df2 <- data.frame(Growth = fit$growth, Pred = fit$csize * (sum(fit$growth)/sum(fit$csize)))
+    }
+        
     #Model growth as a function of forecast for fit and full growth models
     mod1 <- glm(Growth ~ Pred, data = df1, family = "poisson")
     mod2 <- glm(Growth ~ Pred, data = df2, family = "poisson")
@@ -186,7 +194,7 @@ V(g)$age <- sapply(V(g)$year, function(x) newY-x)
 ldf <- {}
 
 #Initialize a set of cutoffs to observe
-cutoffs <- seq(0, 0.05, 0.001)
+cutoffs <- seq(0.005, 0.05, 0.001)
 
 #Progress tracking
 print("Modelling age and cutoff effects on node linkage to new cases...")
@@ -220,7 +228,7 @@ ageD <- lapply(1:nrow(ldf), function(x) bind_rows(ldf[x,]))
 names(ageD) <- cutoffs
 
 #Save data in accessable file
-save(ageD, file = paste0(gsub("\\..*", "", args), "AD.RData"))
+saveRDS(ageD, file = paste0(gsub("\\..*", "", args), "AD.RDS"))
 
 ## Generate Growth data
 #__________________________________________________________________________________________________________________________#
@@ -241,7 +249,7 @@ for (d in cutoffs) {
   
   #Obtain a model of case connection frequency to new cases as predicted by individual case ag
   #This data may contain missing cases, hense the complete cases addition
-  ageDi <- complete.cases(ageD[[as.character(d)]])
+  ageDi <- ageD[[as.character(d)]]
   
   #Obtain a subGraph at the maximum year, removing edges above the distance cutoff and ensuring no merging by removing, non-closest edges to new cases
   subG <- subGraph(g,newY,d)
@@ -271,12 +279,10 @@ rownames(res) <- c("Restricted", "Full")
 colnames(res) <- cutoffs
 
 #Save data in accessable file
-save(res, file = paste0(gsub("\\..*", "", args), "GD.RData"))
+saveRDS(res, file = paste0(gsub("\\..*", "", args), "GD.RDS"))
 
 #Measure Growth and plot, saving the result
-pdfTitle <- paste0(gsub("\\..*", "", args), "GAIC.pdf")
-stat <- gaic(res)
-save(res, file = paste0(gsub("\\..*", "", args), "GAIC.RData"))
-pdf(pdfTitle)
-plot(colnames(res), stat, ylab = "GAIC", xlab = "Cutoff", type= "l", cex.lab=1.5)
-dev.off()
+UnW <- gaic(res)
+saveRDS(res, file = paste0(gsub("\\..*", "", args), "UnW.RDS"))
+DisA <- gaic(res, agg=T)
+saveRDS(res, file = paste0(gsub("\\..*", "", args), "DisA.RDS"))
