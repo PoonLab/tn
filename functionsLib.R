@@ -79,3 +79,10 @@ temp <- {}
 temp$Frequency <- ageDi$Frequency[!is.nan(ageDi$Frequency)]
 temp$Age <- ageDi$Age[!is.nan(ageDi$Frequency)]
 ageDi <- temp
+
+## Skeleton Code For plotting From GD results
+stat <- sapply(1:(ncol(res)-1), function(x) {
+  fit <- res[[1,x]]
+  mean(fit$growth)
+})
+plot(head(colnames(res), -1), stat, ylab = "Mean Cluster Growth" , xlab= "Cutoff Threshold", cex.lab = 1.65, cex.axis = 1.3, cex = 1.5, pch = 20)

@@ -194,7 +194,7 @@ V(g)$age <- sapply(V(g)$year, function(x) newY-x)
 ldf <- {}
 
 #Initialize a set of cutoffs to observe
-cutoffs <- seq(0.005, 0.05, 0.001)
+cutoffs <- seq(0, 0.03, 0.0005)
 
 #Progress tracking
 print("Modelling age and cutoff effects on node linkage to new cases...")
@@ -228,7 +228,7 @@ ageD <- lapply(1:nrow(ldf), function(x) bind_rows(ldf[x,]))
 names(ageD) <- cutoffs
 
 #Save data in accessable file
-saveRDS(ageD, file = paste0(gsub("\\..*", "", args), "AD.RDS"))
+saveRDS(ageD, file = paste0(gsub("\\..*", "", args), "AD.rds"))
 
 ## Generate Growth data
 #__________________________________________________________________________________________________________________________#
@@ -279,10 +279,10 @@ rownames(res) <- c("Restricted", "Full")
 colnames(res) <- cutoffs
 
 #Save data in accessable file
-saveRDS(res, file = paste0(gsub("\\..*", "", args), "GD.RDS"))
+saveRDS(res, file = paste0(gsub("\\..*", "", args), "GD.rds"))
 
 #Measure Growth and plot, saving the result
 UnW <- gaic(res)
-saveRDS(res, file = paste0(gsub("\\..*", "", args), "UnW.RDS"))
+saveRDS(UnW, file = paste0(gsub("\\..*", "", args), "UnW.rds"))
 DisA <- gaic(res, agg=T)
-saveRDS(res, file = paste0(gsub("\\..*", "", args), "DisA.RDS"))
+saveRDS(UnW, file = paste0(gsub("\\..*", "", args), "DisA.rds"))

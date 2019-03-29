@@ -22,4 +22,3 @@ clu <- list()
 clu$membership <- res$clusters
 clu$csize <- unname(table(res$clusters)) #Cluster number 0 is reserved for all singletons 
 clu$no <- clu1$csize[[1]] + (length(clu1$csize) - 1)
-
