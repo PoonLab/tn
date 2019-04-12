@@ -179,7 +179,6 @@ g <- graph_from_data_frame(input, directed=F, vertices=NULL)
 #Adds the ID's and Sample collection years as different vertex attributes for each vertex
 temp <- sapply(V(g)$name, function(x) strsplit(x, '_')[[1]])
 V(g)$name <- temp[1,]
-####-TO-DO: Work with date formatting -####
 V(g)$year <- as.numeric(temp[2,])
 
 #Obtain the range of years and the maximum input year
@@ -190,11 +189,11 @@ V(g)$age <- sapply(V(g)$year, function(x) newY-x)
 ## Obtain a set models of case linkage frequency based on age
 #__________________________________________________________________________________________________________________________#
 
+#Initialize a set of cutoffs to observe
+cutoffs <- seq(0.005, 0.05, 0.001)
+
 #Initialize a list of cases
 ldf <- {}
-
-#Initialize a set of cutoffs to observe
-cutoffs <- seq(0, 0.03, 0.0005)
 
 #Progress tracking
 print("Modelling age and cutoff effects on node linkage to new cases...")
@@ -230,6 +229,7 @@ names(ageD) <- cutoffs
 #Save data in accessable file
 saveRDS(ageD, file = paste0(gsub("\\..*", "", args), "AD.rds"))
 
+
 ## Generate Growth data
 #__________________________________________________________________________________________________________________________#
 
@@ -259,7 +259,8 @@ for (d in cutoffs) {
   })
   df <- data.frame(Age = as.numeric(names(m)), Freq = unname(m))
   
-  mod <- nls(Freq ~ a*Age^b, data = df, start = list(a=1, b=1), control = list(maxiter=1000))
+  #mod <- nls(Freq ~ a*Age^b, data = df, start = list(a=1, b=1), control = list(maxiter=1000))
+  mod <- lm(Freq~Age,data=df)
   modFreq <- predict(mod)
   
   #Assign a predicted growth value to each member of the graph
@@ -279,10 +280,10 @@ rownames(res) <- c("Restricted", "Full")
 colnames(res) <- cutoffs
 
 #Save data in accessable file
-saveRDS(res, file = paste0(gsub("\\..*", "", args), "GD.rds"))
+saveRDS(res, file = paste0(gsub("\\..*", "", args), "GD2.rds"))
 
 #Measure Growth and plot, saving the result
 UnW <- gaic(res)
-saveRDS(UnW, file = paste0(gsub("\\..*", "", args), "UnW.rds"))
+saveRDS(UnW, file = paste0(gsub("\\..*", "", args), "UnW2.rds"))
 DisA <- gaic(res, agg=T)
 saveRDS(UnW, file = paste0(gsub("\\..*", "", args), "DisA.rds"))

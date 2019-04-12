@@ -1,4 +1,5 @@
 library(ggplot2)
+library(MASS)
 
 #Plot Making Age Data Figure 1
 fig1 <- function(ageD,letter) {
@@ -50,7 +51,7 @@ fig1 <- function(ageD,letter) {
   dev.off()
 }
 
-fig2 <- function(res, letter) {
+fig2 <- function(res, letter) {C
   
   stat <- sapply(1:(ncol(res)), function(x) {
     fit <- res[[1,x]]
@@ -102,49 +103,117 @@ fig3 <- function(gaicD, letter) {
   dev.off()
 }
 
-ADtn <- readRDS("Tennessee/tn93TnAD.rds")
-ADst <- readRDS("Seattle/tn93StAD.rds")
-ADna <- readRDS("NAlberta/tn93NAAD.rds")
+ADfit2 <- function(ageD) {
+  cuts <- sapply(ageD, function(i) {
+    m <- sapply(levels(factor(i$Age)), function(x) {mean(i$Frequency[i$Age==x])}) 
+    fit <- fitdistr(m, "exponential")
+    test <- ks.test(m, "pexp", fit$estimate)
+    return(test[[2]])
+  })
+  return(cuts)
+}
+
+ADfit1 <- function(ageD) {
+  p <- sapply(ageD, function(i) {
+    df <- data.frame(Age = as.numeric(levels(factor(i$Age))),  
+                     Frequency = sapply(levels(factor(i$Age)), function(x) {mean(i$Frequency[i$Age==x])}), 
+                     Null = rep(mean(i$Frequency), length(levels(factor(i$Age)))))
+    fit <- lm(Frequency ~ Age, data=df)
+    summary(fit)$r.squared
+  })
+  return(p)
+}
+
+edgeFreq <- function(ageD){
+  cuts <- sapply(ageD, function(i){
+    sapply(levels(factor(i$Age)), function(x) {
+      mean(i$Frequency[i$Age==x])
+    })
+  })
+  return(meancuts)
+}
+
+justGrowth <- function(res){
+  stat <- sapply(1:(ncol(res)), function(x) {
+    fit <- res[[1,x]]
+    mean(fit$growth)
+  })
+  return(stat)
+}
+
+ADtn <- readRDS("ColDateData/tnDAD.rds")
+ADst <- readRDS("ColDateData/stDAD.rds")
+ADna <- readRDS("ColDateData/naDAD.rds")
+ADna_dates <- readRDS("ColDateData/naDDAD.rds")
+
+GDtn <- readRDS("ColDateData/tnDGD.rds")
+GDst <- readRDS("ColDateData/stDGD.rds")
+GDna <- readRDS("ColDateData/naDGD.rds")
+GDna_dates <- readRDS("ColDateData/naDDGD.rds")
+
+DisAtn <- readRDS("ColDateData/tnDDisA.rds")
+DisAst <- readRDS("ColDateData/stDDisA.rds")
+DisAna <- readRDS("ColDateData/naDDisA.rds")
+DisAna_dates <- readRDS("ColDateData/naDDUnW.rds")
+
+UnWtn <- readRDS("ColDateData/tnDUnW.rds")
+UnWst <- readRDS("ColDateData/stDUnW.rds")
+UnWna <- readRDS("ColDateData/naDUnW.rds")
+UnWna_dates <- readRDS("ColDateData/naDDDisA.rds")
 
 fig1(ADtn, "A")
 fig1(ADst, "B")
 fig1(ADna, "C")
-
-GDtn <- readRDS("Tennessee/tn93TnGD.rds")
-GDst <- readRDS("Seattle/tn93StGD.rds")
-GDna <- readRDS("NAlberta/tn93NAGD.rds")
-
-LastMin <- function(res,args) {
-  UnW <- gaic(res)
-  saveRDS(UnW, file = paste0(gsub("\\..*", "", args), "UnW.rds"))
-  DisA <- gaic(res, agg=T)
-  saveRDS(UnW, file = paste0(gsub("\\..*", "", args), "DisA.rds"))
-}
-
-LastMin(GDtn, "Tennessee/tn93Tn.txt")
-LastMin(GDst, "Seattle/tn93St.txt")
-LastMin(GDna, "NAlberta/tn93NA.txt")
+fig1(ADna_dates, "")
 
 fig2(GDtn, "A")
 fig2(GDst, "B")
 fig2(GDna, "C")
-
-DisAtn <- readRDS("Tennessee/tn93TnDisA.rds")
-DisAst <- readRDS("Seattle/tn93StDisA.rds")
-DisAna <- readRDS("NAlberta/tn93NADisA.rds")
+fig2(GDna_dates, "")
 
 fig3(DisAtn, "A")
 fig3(DisAst, "B")
 fig3(DisAna, "C")
-
-UnWtn <- readRDS("Tennessee/tn93TnUnW.rds")
-UnWst <- readRDS("Seattle/tn93StUnW.rds")
-UnWna <- readRDS("NAlberta/tn93NAUnW.rds")
+fig3(DisAna_dates, "")
 
 fig3(UnWtn, "A")
 fig3(UnWst, "B")
 fig3(UnWna, "C")
+fig3(UnWna_dates, "")
+
+###############
+#Linear Update
+####################################################################
+
+GDst <- readRDS("pub1/stDGD2.rds")
+GDna <- readRDS("pub1/naDGD2.rds")
+GDna_dates <- readRDS("pub1/naDDGD2.rds")
+
+UnWst <- readRDS("pub1/stDUnW2.rds")
+UnWna <- readRDS("pub1/naDUnW2.rds")
+UnWna_dates <- readRDS("pub1/naDDUnW2.rds")
+
+ADst <- readRDS("pub1/stDAD.rds")
+ADna <- readRDS("pub1/naDAD.rds")
+ADna_dates <- readRDS("pub1/naDDAD.rds")
+
+mean(ADfit1(ADst))
+mean(ADfit1(ADna))
+mean(ADfit1(ADna_dates))
+
+sd(ADfit1(ADst))
+sd(ADfit1(ADna))
+sd(ADfit1(ADna_dates))
 
 
+plot(ADfit2(ADst))
+plot(ADfit2(ADna))
+plot(ADfit2(ADna_dates))
 
+GD <- justGrowth(GDst)
+GD <- head(GD,-1)
+df <- data.frame(Cutoff = seq(0.005,0.049, 0.001), Growth = GD)
+fit <- nls(Growth ~ a*Cutoff^b, data = df, start = list(a=1,b=1))
 
+justGrowth(GDna)
+justGrowth(GDna_dates)

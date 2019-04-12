@@ -86,3 +86,15 @@ stat <- sapply(1:(ncol(res)-1), function(x) {
   mean(fit$growth)
 })
 plot(head(colnames(res), -1), stat, ylab = "Mean Cluster Growth" , xlab= "Cutoff Threshold", cex.lab = 1.65, cex.axis = 1.3, cex = 1.5, pch = 20)
+
+#For GAIC edits on already processed Data
+LastMin <- function(res,args) {
+  UnW <- gaic(res)
+  saveRDS(UnW, file = paste0(gsub("\\..*", "", args), "UnW.rds"))
+  DisA <- gaic(res, agg=T)
+  saveRDS(UnW, file = paste0(gsub("\\..*", "", args), "DisA.rds"))
+}
+
+LastMin(GDtn, "ColDateData/tnDGD.rds")
+LastMin(GDst, "ColDateData/stDGD.rds")
+LastMin(GDna, "ColDateData/naDGD.rds")
