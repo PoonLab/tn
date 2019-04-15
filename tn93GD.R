@@ -262,6 +262,7 @@ for (d in cutoffs) {
   #mod <- nls(Freq ~ a*Age^b, data = df, start = list(a=1, b=1), control = list(maxiter=1000))
   mod <- lm(Freq~Age,data=df)
   modFreq <- predict(mod)
+  modFreq[modFreq<0] <- 0
   
   #Assign a predicted growth value to each member of the graph
   V(subG)$freq <- sapply(V(subG)$age, function(x) ifelse(x==0, 1, modFreq[x]))

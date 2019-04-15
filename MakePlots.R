@@ -118,8 +118,7 @@ ADfit1 <- function(ageD) {
     df <- data.frame(Age = as.numeric(levels(factor(i$Age))),  
                      Frequency = sapply(levels(factor(i$Age)), function(x) {mean(i$Frequency[i$Age==x])}), 
                      Null = rep(mean(i$Frequency), length(levels(factor(i$Age)))))
-    fit <- lm(Frequency ~ Age, data=df)
-    summary(fit)$r.squared
+    lm(Frequency ~ Age, data=df)
   })
   return(p)
 }
@@ -204,6 +203,7 @@ mean(ADfit1(ADna_dates))
 sd(ADfit1(ADst))
 sd(ADfit1(ADna))
 sd(ADfit1(ADna_dates))
+
 
 
 plot(ADfit2(ADst))
