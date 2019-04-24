@@ -7,6 +7,7 @@
 #Import Libraries
 library(igraph)
 library(dplyr)
+library(MASS)
 
 ## Helper Functions
 #____________________________________________________________________________________________________________________________#
@@ -54,15 +55,16 @@ linkFreq <- function(inG) {
   frequency <- sapply(years, function(x) {
     presV <- V(inG)[year==x]
     bridgeE <- E(inG)[presV%--%newV]
-    freq <- length(bridgeE) / (length(presV)*length(newV))
-    return(freq)
+    pos <- length(bridgeE)
+    tot <- length(presV)*length(newV)
+    return(c(pos,tot))
   })
   
   #Assign age to every case
   age <- sapply(years, function(x) maxY-x)
 
   #Create a data frame of case attachment frequency and case age
-  df <- data.frame(Age = age, Frequency = frequency)
+  df <- data.frame(Age = age, Positive = frequency[1,], Total = frequency[2,])
 
   return(df)
 }
@@ -186,11 +188,28 @@ years <- as.integer(levels(factor(V(g)$year)))
 newY <- max(years)
 V(g)$age <- sapply(V(g)$year, function(x) newY-x)
 
+#Initialize a set of cutoffs to observe
+cutoffs <- seq(0.005, 0.05, 0.001)
+
+#Create a set of subgraphs at each cutoff
+gs <- lapply(cutoffs, function(d) {
+  print(d)
+  subGraph(g,max(years),d)
+}) 
+names(gs) <- cutoffs
+
 ## Obtain a set models of case linkage frequency based on age
 #__________________________________________________________________________________________________________________________#
 
-#Initialize a set of cutoffs to observe
-cutoffs <- seq(0.005, 0.05, 0.001)
+##TO-DO: Reformat this output, it is significantly faster
+AD <- lapply(gs, function(graph){
+  sapply(rev(tail(years,-2)), function(y){
+    print(y)
+    subG <- closeFilter(induced_subgraph(graph, V(graph)[year<y]))
+    linkFreq(subG)
+  })
+}) 
+
 
 #Initialize a list of cases
 ldf <- {}
@@ -236,30 +255,25 @@ saveRDS(ageD, file = paste0(gsub("\\..*", "", args), "AD.rds"))
 #Obtain a filtered graph and measure growth
 g <- closeFilter(g)
 
-#Initialize the dataframe of results
-res <- {}
-
 #Progress tracking
 print("Modelling cutoff effects on case growth...")
 
-#Generate growth data for each cutoff in a series of cutoffs
-for (d in cutoffs) {
+res <- lapply(cutoffs, function(d) {
   #Progress tracking
   print(noquote(paste0(as.integer(d/max(cutoffs)*100), "%")))
+  
+  #Obtain a subGraph at the maximum year, removing edges above the distance cutoff and ensuring no merging by removing, non-closest edges to new cases
+  subG <- gs[[as.character(d)]]
   
   #Obtain a model of case connection frequency to new cases as predicted by individual case ag
   #This data may contain missing cases, hense the complete cases addition
   ageDi <- ageD[[as.character(d)]]
+  ageDi$Frequency <- ageDi$Positive/ageDi$Total
   
-  #Obtain a subGraph at the maximum year, removing edges above the distance cutoff and ensuring no merging by removing, non-closest edges to new cases
-  subG <- subGraph(g,newY,d)
-
   m <- sapply(levels(factor(ageDi$Age)), function(x) {
     mean(ageDi$Frequency[ageDi$Age==x])
   })
   df <- data.frame(Age = as.numeric(names(m)), Freq = unname(m))
-  
-  #mod <- nls(Freq ~ a*Age^b, data = df, start = list(a=1, b=1), control = list(maxiter=1000))
   mod <- lm(Freq~Age,data=df)
   modFreq <- predict(mod)
   modFreq[modFreq<0] <- 0
@@ -269,15 +283,10 @@ for (d in cutoffs) {
   
   #Obtain growth based on two models restricted model
   growth <- simGrow(subG) 
-  growthF <- simGrow(subG, full=T)
-  l <- list(growth, growthF)
-  
-  #Add to growing dataframe of results
-  res <- cbind(res, l)
-} 
+  growth
+})
 
 #Label data
-rownames(res) <- c("Restricted", "Full")
 colnames(res) <- cutoffs
 
 #Save data in accessable file
