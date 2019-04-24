@@ -1,3 +1,0 @@
-.*  # skip hidden directories and files
-*.fas  # ignore FASTA files
-
