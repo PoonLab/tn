@@ -13,34 +13,6 @@ require(parallel)
 
 ## Helper Functions
 #____________________________________________________________________________________________________________________________#
-#Obtain the GAIC, a measure of fit between predicted and actual growth
-gaic <- function(inRes, agg = F)  {
-  stat <- sapply(1:ncol(inRes), function(x) {
-    #Extract full and fit data
-    fit <- inRes[[1,x]]
-    full <- inRes[[2,x]]
-    
-    #Place growth and forecast data in dfs for fit and full growth
-    df1 <- data.frame(Growth = fit$growth, Pred = fit$forecast)
-    
-    #For the alternative model comparison (Aggregate, vs. disaggregate, both weighted)
-    if (agg) {
-      df2 <- data.frame(Growth = full$growth, Pred = full$forecast)
-    }
-    else {
-      df2 <- data.frame(Growth = fit$growth, Pred = fit$csize * (sum(fit$growth)/sum(fit$csize)))
-    }
-        
-    #Model growth as a function of forecast for fit and full growth models
-    mod1 <- glm(Growth ~ Pred, data = df1, family = "poisson")
-    mod2 <- glm(Growth ~ Pred, data = df2, family = "poisson")
-    
-    #Calculate GAIC
-    mod1$aic-mod2$aic
-  })
-  
-  return(stat)
-}
 
 #Models frequency of new cases being linked to old cases based on how old the old cases are
 linkFreq <- function(inG) {
@@ -204,48 +176,12 @@ names(gs) <- cutoffs
 #__________________________________________________________________________________________________________________________#
 
 ##TO-DO: Reformat this output, it is significantly faster
-AD <- mclapply(gs, function(graph){
-  sapply(rev(tail(years,-2)), function(y){
-    #print(y)
-    subG <- closeFilter(induced_subgraph(graph, V(graph)[year<y]))
+ageD <- mclapply(gs, function(graph){
+  bind_rows(mclapply(rev(tail(years,-2)), function(y){
+    subG <- closeFilter(induced_subgraph(graph, V(graph)[year<=y]))
     linkFreq(subG)
-  })
+  }, mc.cores = 8))
 }, mc.cores=8) 
-
-
-#Initialize a list of cases
-ldf <- {}
-
-#Progress tracking
-print("Modelling age and cutoff effects on node linkage to new cases...")
-
-#Create a set of frequency data, representing the frequency of new case additions as a function of old case age
-for (y in years) {
-  #Progress tracking
-  print(noquote(paste0(as.integer((1-(newY-y)/length(years))*100) , "%")))
-  
-  #Obtain a subgraph of cases below a given year and close-filtered edges to the new year
-  cfG <- g - V(g)[year>y]
-  cfG <- closeFilter(cfG)
-  
-  #To catch the first year of a set of years (no retrospective years to count to)
-  if (y==min(years)) {
-    next()
-  }
-  
-  #Obtain a set of link frequencies for this year at various cutoffs
-  ldfy <- mclapply(cutoffs, function(d) {
-    subG <- subGraph(cfG, y, d)
-    linkFreq(subG)
-  }, mc.cores=8)
-
-  #Add the set of link frequencies to our growing data set
-  ldf <- cbind(ldf, ldfy)
-}
-
-#Collapse data to a dataframe per cutoff, with case Age and Frequency data for each data frame
-ageD <- lapply(1:nrow(ldf), function(x) bind_rows(ldf[x,]))
-names(ageD) <- cutoffs
 
 #Save data in accessable file
 saveRDS(ageD, file = paste0(gsub("\\..*", "", args), "AD.rds"))
@@ -257,20 +193,10 @@ saveRDS(ageD, file = paste0(gsub("\\..*", "", args), "AD.rds"))
 #Obtain a filtered graph and measure growth
 g <- closeFilter(g)
 
-#Progress tracking
-print("Modelling cutoff effects on case growth...")
-
 res <- mclapply(cutoffs, function(d) {
-  #Progress tracking
-  print(noquote(paste0(as.integer(d/max(cutoffs)*100), "%")))
-  
   #Obtain a subGraph at the maximum year, removing edges above the distance cutoff and ensuring no merging by removing, non-closest edges to new cases
   subG <- gs[[as.character(d)]]
-  
-  #Obtain a model of case connection frequency to new cases as predicted by individual case ag
-  #This data may contain missing cases, hense the complete cases addition
   ageDi <- ageD[[as.character(d)]]
-  #ageDi$Frequency <- ageDi$Positive/ageDi$Total
   
   mod <- glm(cbind(Positive, Total) ~ Age, data=ageDi, family='binomial')
   
@@ -278,18 +204,24 @@ res <- mclapply(cutoffs, function(d) {
   V(subG)$freq <- predict(mod, data.frame(Age=V(subG)$age), type='response')
   
   #Obtain growth based on two models restricted model
-  growth <- simGrow(subG) 
-  growth
+  clu <- simGrow(subG)
+  
+  #Place growth and forecast data in dfs for fit and full growth
+  df1 <- data.frame(Growth = clu$growth, Pred = clu$forecast)
+  df2 <- data.frame(Growth = clu$growth, Pred = clu$csize*(sum(clu$growth)/sum(clu$csize)))
+  
+  #Model growth as a function of forecast for fit and full growth models
+  mod1 <- glm(Growth ~ Pred, data = df1, family = "poisson")
+  mod2 <- glm(Growth ~ Pred, data = df2, family = "poisson")
+  
+  #Calculate GAIC
+  clu$gaic <- mod1$aic-mod2$aic
+  
+  return(clu)
 }, mc.cores=8)
 
 #Label data
-#names(res) <- cutoffs
+names(res) <- cutoffs
 
 #Save data in accessable file
-saveRDS(res, file = paste0(gsub("\\..*", "", args), "GD2.rds"))
-
-#Measure Growth and plot, saving the result
-UnW <- gaic(res)
-saveRDS(UnW, file = paste0(gsub("\\..*", "", args), "UnW2.rds"))
-DisA <- gaic(res, agg=T)
-saveRDS(UnW, file = paste0(gsub("\\..*", "", args), "DisA.rds"))
+saveRDS(res, file = paste0(gsub("\\..*", "", args), "GD.rds"))
