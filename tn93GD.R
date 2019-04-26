@@ -9,6 +9,8 @@ library(igraph)
 library(dplyr)
 library(MASS)
 
+require(parallel)
+
 ## Helper Functions
 #____________________________________________________________________________________________________________________________#
 #Obtain the GAIC, a measure of fit between predicted and actual growth
@@ -192,23 +194,23 @@ V(g)$age <- sapply(V(g)$year, function(x) newY-x)
 cutoffs <- seq(0.005, 0.05, 0.001)
 
 #Create a set of subgraphs at each cutoff
-gs <- lapply(cutoffs, function(d) {
+gs <- mclapply(cutoffs, function(d) {
   print(d)
   subGraph(g,max(years),d)
-}) 
+}, mc.cores=8) 
 names(gs) <- cutoffs
 
 ## Obtain a set models of case linkage frequency based on age
 #__________________________________________________________________________________________________________________________#
 
 ##TO-DO: Reformat this output, it is significantly faster
-AD <- lapply(gs, function(graph){
+AD <- mclapply(gs, function(graph){
   sapply(rev(tail(years,-2)), function(y){
-    print(y)
+    #print(y)
     subG <- closeFilter(induced_subgraph(graph, V(graph)[year<y]))
     linkFreq(subG)
   })
-}) 
+}, mc.cores=8) 
 
 
 #Initialize a list of cases
@@ -232,10 +234,10 @@ for (y in years) {
   }
   
   #Obtain a set of link frequencies for this year at various cutoffs
-  ldfy <- lapply(cutoffs, function(d) {
+  ldfy <- mclapply(cutoffs, function(d) {
     subG <- subGraph(cfG, y, d)
     linkFreq(subG)
-  })
+  }, mc.cores=8)
 
   #Add the set of link frequencies to our growing data set
   ldf <- cbind(ldf, ldfy)
@@ -258,7 +260,7 @@ g <- closeFilter(g)
 #Progress tracking
 print("Modelling cutoff effects on case growth...")
 
-res <- lapply(cutoffs, function(d) {
+res <- mclapply(cutoffs, function(d) {
   #Progress tracking
   print(noquote(paste0(as.integer(d/max(cutoffs)*100), "%")))
   
@@ -268,26 +270,20 @@ res <- lapply(cutoffs, function(d) {
   #Obtain a model of case connection frequency to new cases as predicted by individual case ag
   #This data may contain missing cases, hense the complete cases addition
   ageDi <- ageD[[as.character(d)]]
-  ageDi$Frequency <- ageDi$Positive/ageDi$Total
+  #ageDi$Frequency <- ageDi$Positive/ageDi$Total
   
-  m <- sapply(levels(factor(ageDi$Age)), function(x) {
-    mean(ageDi$Frequency[ageDi$Age==x])
-  })
-  df <- data.frame(Age = as.numeric(names(m)), Freq = unname(m))
-  mod <- lm(Freq~Age,data=df)
-  modFreq <- predict(mod)
-  modFreq[modFreq<0] <- 0
+  mod <- glm(cbind(Positive, Total) ~ Age, data=ageDi, family='binomial')
   
   #Assign a predicted growth value to each member of the graph
-  V(subG)$freq <- sapply(V(subG)$age, function(x) ifelse(x==0, 1, modFreq[x]))
+  V(subG)$freq <- predict(mod, data.frame(Age=V(subG)$age), type='response')
   
   #Obtain growth based on two models restricted model
   growth <- simGrow(subG) 
   growth
-})
+}, mc.cores=8)
 
 #Label data
-colnames(res) <- cutoffs
+#names(res) <- cutoffs
 
 #Save data in accessable file
 saveRDS(res, file = paste0(gsub("\\..*", "", args), "GD2.rds"))
