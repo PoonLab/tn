@@ -95,6 +95,14 @@ LastMin <- function(res,args) {
   saveRDS(UnW, file = paste0(gsub("\\..*", "", args), "DisA.rds"))
 }
 
+denZero <- function(inG){
+  stat <- sapply(as.integer(levels(as.factor(V(in$year))), function(i) {
+    gsub <- induced_subgraph(g, V(g)[year==i])
+    edge_density(gsub)
+  })
+  return(stat)
+}
+
 LastMin(GDtn, "ColDateData/tnDGD.rds")
 LastMin(GDst, "ColDateData/stDGD.rds")
 LastMin(GDna, "ColDateData/naDGD.rds")
