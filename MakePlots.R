@@ -2,6 +2,7 @@ library(ggplot2)
 library(gghighlight)
 library(MASS)
 library(egg)
+library(igraph)
 
 #Plot Making Age Data Figure 
 expAge <- function(ageD,letter) {
@@ -111,16 +112,15 @@ graphPlot <- function(inG, y, d, col) {
 }
 
 linAge <- function(ageD, letter) {
-  cuts <- sapply(seq(6,16,5), function(x){
-    i <- ageD[[x]]
-    sapply(levels(factor(i$Age)), function(x) {
-      mean(i$Frequency[i$Age==x])
+  cuts <- sapply(seq(1,16,5), function(x){
+    ageDi <- ageD[[x]]
+    mod <- glm(cbind(Positive, Total) ~ Age, data=ageDi, family='binomial')
+    predict(mod, data.frame(Age=seq(1,12,1)), type='response')
     })
-  })
-  df <- data.frame(Age=as.numeric(levels(factor(ageD[[1]]$Age))), pt1=cuts[,1], pt2= cuts[,2], pt3=cuts[,3])
   
+  df <- data.frame(Age = seq(1,12,1), pt1 = cuts[,1], pt2 = cuts[,2], pt3 = cuts[,3], pt4 = cuts[,4] )
+  lines <- c("0.005"= "royalblue", "0.010" = "blue", "0.015" = "dark blue", "0.020" = "black")
   
-  lines <- c("0.010" = "blue", "0.015" = "dark blue", "0.020" = "black")
   p <- ggplot(df, aes(x=Age)) +
     labs(title=letter, x="Time Difference (collection year)", y="Mean of Edge Density in Bipartite Graph") +
     theme(axis.title.x = element_text(size=12, margin=margin(t=10)),
@@ -130,32 +130,27 @@ linAge <- function(ageD, letter) {
           plot.title = element_text(size=20, hjust=0.5, vjust=-0.1, margin = margin(b=10, t=10)),
           legend.text = element_text(size=12),
           legend.title = element_text(size=15)) +
-    geom_point(aes(y=pt1, colour="0.010")) +
-    geom_point(aes(y=pt2, colour="0.015")) +
-    geom_point(aes(y=pt3, colour="0.020")) +
-    geom_smooth(aes(y=pt1, colour="0.010"), method = "lm", se=F) +
-    geom_smooth(aes(y=pt2, colour="0.015"), method = "lm", se=F) +
-    geom_smooth(aes(y=pt3, colour="0.020"), method = "lm", se=F) +
+    geom_line(aes(y=pt1, colour="0.005")) +
+    geom_line(aes(y=pt2, colour="0.010")) +
+    geom_line(aes(y=pt3, colour="0.015")) +
+    geom_line(aes(y=pt4, colour="0.020")) +
     scale_colour_manual(name="TN93 Cutoff Threshold", values=lines)
+  print(p)
   
   return(p)
 }
 
 linGrowth <- function(growthD) {
   
-  st <- sapply(1:(ncol(growthD[[1]])), function(x) {
-    res <- growthD[[1]]
-    fit <- res[[1,x]]
-    c(sum(fit$growth), mean(fit$growth))
+  st <- sapply(growthD[[1]], function(x) {
+    c(sum(x$growth), mean(x$growth))
   })
   
-  na <- sapply(1:(ncol(growthD[[2]])), function(x) {
-    res <- growthD[[2]]
-    fit <- res[[1,x]]
-    c(sum(fit$growth), mean(fit$growth))
-  }) 
+  na <- sapply(growthD[[2]], function(x) {
+    c(sum(x$growth), mean(x$growth))
+  })
   
-  lines <- c("Seattle" = "blue", "North Alberta" = "gold")
+  lines <- c("Seattle" = "blue", "North Alberta" = "orangered3")
   lines2<- c("Mean Growth" = "solid", "Sum Growth"="dashed")
   df <- data.frame(Threshold = seq(0.005,0.05,0.001), stTotalGrowth = st[1,], stMeanGrowth = st[2,],
                    naTotalGrowth = na[1,], naMeanGrowth = na[2,])
@@ -176,10 +171,14 @@ linGrowth <- function(growthD) {
     scale_linetype_manual(name="", values =lines2 )
 }
 
-gaicPlot <- function(gaicD) {
+gaicPlot <- function(growthD) {
   
-  df <- data.frame(Threshold = seq(0.005,0.04,0.001), GAIC1 = head(gaicD[[1]], -10), GAIC2= head(gaicD[[2]], -10))
-  lines <- c("Seattle" = "blue", "North Alberta" = "gold")
+  st <- sapply(growthD[[1]], function(x) {x$gaic})
+  na <- sapply(growthD[[2]], function(x) {x$gaic})
+  
+  
+  df <- data.frame(Threshold = seq(0.005,0.04,0.001), GAIC1 = head(st, -10), GAIC2= head(na, -10))
+  lines <- c("Seattle" = "blue", "North Alberta" = "orangered")
   
   ggplot(df, aes(x=Threshold)) +
     theme(axis.title.x = element_text(size=12, margin=margin(t=10)),
@@ -191,34 +190,48 @@ gaicPlot <- function(gaicD) {
     geom_line(aes(y=GAIC1, colour="Seattle"), size=1.2)+
     geom_line(aes(y=GAIC2, colour="North Alberta"), size=1.2)+
     geom_vline(xintercept = c(df$Threshold[df$GAIC1==min(df$GAIC1)],df$Threshold[df$GAIC2==min(df$GAIC2)]),linetype=4, colour="black", alpha=0.5)+
+    geom_text(aes(df$Threshold[df$GAIC1==min(df$GAIC1)],5,label = df$Threshold[df$GAIC1==min(df$GAIC1)],vjust =1.5))+
+    geom_text(aes(df$Threshold[df$GAIC2==min(df$GAIC2)],5,label = df$Threshold[df$GAIC2==min(df$GAIC2)],vjust =1.5))+
     labs(title="", x= "TN93 Distance Cutoff Threshold", y="GAIC")+ 
     scale_colour_manual(name="", values=lines)
 }
 
-distPlot <- function(inG, letter, col) {
-  ed <- data.frame(Distance=E(inG)$Distance)
-
-  ggplot(ed, aes(x=Distance)) +
-    labs(title=letter, x="Weight of Edge (TN93 Distance)", y="") +
+distPlot <- function(inG1,inG2) {
+  h1 <- hist(E(inG1)$Distance, plot=F)
+  h2 <- hist(E(inG2)$Distance, plot=F, breaks=h1$breaks)
+  
+  df <- data.frame(st = h1$counts/choose(length(V(inG1)),2), na = h2$counts/choose(length(V(inG2)),2))
+  
+  lines <- c("Seattle" = "blue", "North Alberta" = "orangered3")
+  
+  ggplot(df, aes(x=head(h1$breaks, -1))) +
+    labs(title="", x="Weight of Edge (TN93 Distance)", y="Frequency") +
     theme(axis.title.x = element_text(size=12, margin = margin(t=10)),
           axis.text.x = element_text(size=10), 
           axis.text.y = element_text(size=10),
           plot.title = element_text(size=20, hjust=0.5, vjust=-0.1, margin = margin(b=10)))+
-    stat_bin(binwidth = 0.001, colour=col, fill="grey") + 
-    xlim(0.005,0.05)
+    geom_bar(aes(y=st, fill="Seattle"), stat="identity", alpha=0.5) + 
+    geom_bar(aes(y=na, fill="North Alberta"), stat="identity",  alpha=0.5 ) + 
+    scale_fill_manual(name="", values=lines) 
 }
 
-yearPlot <- function(inG, col) {
-  yd <- data.frame(Year=V(inG)$year)
+yearPlot <- function(inG1, inG2) {
+  h1 <- unname(table(V(inG1)$year))
+  h2 <- unname(table(V(inG2)$year))
   
-  ggplot(yd, aes(x=Year)) +
-    labs(title="", y="", x="Year of Vertex (Sequence Collection Year)") +
-    theme(axis.title.x = element_text(size=12, margin = margin(t=15)),
+  df <- data.frame(st = c(h1,0), na = c(0,0,0,0,0,0,0, h2) )
+  
+  lines <- c("Seattle" = "blue", "North Alberta" = "orangered3")
+  
+  ggplot(df, aes(x=seq(2000,2013))) +
+    labs(title="", y="Frequency", x="Year of Vertex (Sequence Collection Year)") +
+    theme(axis.title.x = element_text(size=12, margin = margin(t=10)),
           axis.text.x = element_text(size=10), 
-          axis.text.y = element_text(size=10)+
-    scale_x_continuous(breaks = seq(min(V(inG)$year), max(V(inG)$year), 1)))+
-    stat_bin(binwidth = 1, colour=col, fill="grey")+
-    stat_bin(binwidth = 1, geom="text", aes(label=..count..), vjust=-1)
+          axis.text.y = element_text(size=10),
+          plot.title = element_text(size=20, hjust=0.5, vjust=-0.1, margin = margin(b=10)))+
+    geom_bar(aes(y=st, fill="Seattle"), stat="identity", alpha=0.5) + 
+    geom_bar(aes(y=na, fill="North Alberta"), stat="identity",  alpha=0.5 ) + 
+    scale_fill_manual(name="", values=lines) 
 }
 
 ###############
@@ -228,12 +241,10 @@ yearPlot <- function(inG, col) {
 ggarrange(linAge(ADst, "Seattle"), linAge(ADna, "North Alberta"), 
           nrow = 2, padding=10, labels = c("A", "B"), label.args = list(gp = grid::gpar(font = 1, cex =1.5)))
 linGrowth(list(GDst,GDna))
-gaicPlot(list(UnWst,UnWna))
-ggarrange(distPlot(g1, "Seattle",  "blue"),
-          distPlot(g2, "North Alberta", "gold"),
-          yearPlot(g1, "blue"),
-          yearPlot(g2, "gold"),
-          nrow = 2, ncol=2, padding=10, labels = c("A", "B", "C", "D"), label.args = list(gp = grid::gpar(font = 1, cex =1.5)))
+gaicPlot(list(GDst,GDna))
+ggarrange(distPlot(g1, g2),
+          yearPlot(g1, g2),
+          nrow = 2, padding=10, labels = c("A", "B"), label.args = list(gp = grid::gpar(font = 1, cex =1.5)))
 
 par(mfrow=c(1,2))
 graphPlot(g1, 2011, 0.013, "blue")
@@ -243,11 +254,8 @@ graphPlot(g2, 2012, 0.011, "orange")
 title("North Alberta data at d=0.011",line=-3)
 title("B", line=1, adj=0, cex.main=3)
 
-GDst <- readRDS("pub1/stDGD2.rds")
-GDna <- readRDS("pub1/naDGD2.rds")
-
-UnWst <- readRDS("pub1/stDUnW2.rds")
-UnWna <- readRDS("pub1/naDUnW2.rds")
+GDst <- readRDS("pub1/stDGD.rds")
+GDna <- readRDS("pub1/naDGD.rds")
 
 ADst <- readRDS("pub1/stDAD.rds")
 ADna <- readRDS("pub1/naDAD.rds")
