@@ -65,13 +65,10 @@ ADfit2 <- function(ageD) {
 }
 
 ADfit1 <- function(ageD) {
-  p <- sapply(ageD, function(i) {
-    df <- data.frame(Age = as.numeric(levels(factor(i$Age))),  
-                     Frequency = sapply(levels(factor(i$Age)), function(x) {mean(i$Frequency[i$Age==x])}), 
-                     Null = rep(mean(i$Frequency), length(levels(factor(i$Age)))))
-    lm(Frequency ~ Age, data=df)
+  lapply(ageD, function(ageDi) {
+    mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
+    summary(mod)
   })
-  return(p)
 }
 
 edgeFreq <- function(ageD){
@@ -135,9 +132,6 @@ linAge <- function(ageD, letter) {
     geom_line(aes(y=pt3, colour="0.015")) +
     geom_line(aes(y=pt4, colour="0.020")) +
     scale_colour_manual(name="TN93 Cutoff Threshold", values=lines)
-  print(p)
-  
-  return(p)
 }
 
 linGrowth <- function(growthD) {

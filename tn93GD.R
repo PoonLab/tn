@@ -1,7 +1,7 @@
 #A process which generates cluster growth data as a function of tn93 cutoff threshold
 #Creates an external .RData file of paired cluster info sets
 
-### USAGE: Rscript ~/git/tn/tn93GD.R tn93__.txt dateFormat ###
+### USAGE: Rscript ~/git/tn/tn93GD.R tn93__.txt ###
 #input Date Format, specified with % (ie. %d-%b-%y for day, written month, 2-digit year or  %Y for simple, 4-digit year)
 
 #Import Libraries
@@ -139,13 +139,16 @@ names(gs) <- cutoffs
 
 ## Obtain a set models of case linkage frequency based on age
 ageD <- mclapply(gs, function(x){
-  l <- mclapply(rev(tail(years,-2)), function(y){
+  l <- mclapply(rev(tail(years, -1)), function(y){
+    print(y)
     subG <- minFilt(induced_subgraph(x, V(x)[year<=y]))
     bpeFreq(subG)
-  }, mc.cores=8)
+  } , mc.cores=8)
   bind_rows(l) 
 }, mc.cores=8) 
 
+#Save data in accessable file
+saveRDS(ageD, file = paste0(gsub("\\..*", "", args), "AD.rds"))
 
 ## Generate Growth data
 #__________________________________________________________________________________________________________________________#
@@ -157,7 +160,6 @@ res <- mclapply(cutoffs, function(d) {
   #Obtain a model of case connection frequency to new cases as predicted by individual case ag
   #This data may contain missing cases, hense the complete cases addition
   ageDi <- ageD[[as.character(d)]]
-  #ageDi$Frequency <- ageDi$Positive/ageDi$Total
   
   mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
   
@@ -182,13 +184,7 @@ res <- mclapply(cutoffs, function(d) {
 }, mc.cores=8)
 
 #Label data
-#names(res) <- cutoffs
+names(res) <- cutoffs
 
-#Save data in accessable file
-saveRDS(res, file = paste0(gsub("\\..*", "", args), "GD2.rds"))
-
-#Measure Growth and plot, saving the result
-UnW <- gaic(res)
-saveRDS(UnW, file = paste0(gsub("\\..*", "", args), "UnW2.rds"))
-DisA <- gaic(res, agg=T)
-saveRDS(UnW, file = paste0(gsub("\\..*", "", args), "DisA.rds"))
+#Save data in accessable files
+saveRDS(res, file = paste0(gsub("\\..*", "", args), "GD.rds"))
