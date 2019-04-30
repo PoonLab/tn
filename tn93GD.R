@@ -13,21 +13,27 @@ require(parallel)
 ## Helper Functions
 #____________________________________________________________________________________________________________________________#
 
-#Obtains a data set of all possible Bipartite Edge Frequencies in a given subgraph, with the bipartite subsets of vertices representing a given year of data
 bpeFreq <- function(iG) {
-  #@param ig: A subGraph cut based on a threshold distance, with the latest cases representing New cases (ie. Upcoming cases)
-  #@return: A data frame of Number of positives (edges from one year to the newest year) with total possible edges and time difference (in years) between the two years
+  # Obtains a data set of all possible Bipartite Edge Frequencies in a 
+  # given subgraph, with the bipartite subsets of vertices representing 
+  # a given year of data
+  #
+  #@param ig: A subGraph cut based on a threshold distance, with the latest 
+  #           cases representing New cases (ie. Upcoming cases)
+  #@return: A data frame of Number of positives (edges from one year to the 
+  #         newest year) with total possible edges and time difference (in 
+  #         years) between the two years
   
-  #Obtain the range of years
+  # Obtain the range of years
   maxY <- max(V(iG)$year)
   minY <- min(V(iG)$year)
   ys <- seq(minY, (maxY-1), 1)
-  nV <- V(iG)[year==maxY]
+  nV <- V(iG)[year==maxY]  # nodes in more recent year of subgraph
   
-  #Obtain the frequency of new cases being connected to each year
+  # Obtain the frequency of new cases being connected to each year
   frequency <- sapply(ys, function(x) {
-    pV <- V(iG)[year==x]
-    bE <- E(iG)[pV%--%nV]
+    pV <- V(iG)[year==x]  # nodes in older year
+    bE <- E(iG)[pV%--%nV]  # bipartite edges
     pos <- length(bE)
     tot <- length(pV)*length(nV)
     return(c(pos,tot))
@@ -139,12 +145,13 @@ names(gs) <- cutoffs
 
 ## Obtain a set models of case linkage frequency based on age
 ageD <- mclapply(gs, function(x){
-  l <- mclapply(rev(tail(years, -1)), function(y){
-    print(y)
+  # (x) now holds a graph at a different cutoff
+  l <- lapply(rev(years[2:(length(years)-1)]), function(y){
+    #print(y)
     subG <- minFilt(induced_subgraph(x, V(x)[year<=y]))
     bpeFreq(subG)
-  } , mc.cores=8)
-  bind_rows(l) 
+  })
+  bind_rows(l)
 }, mc.cores=8) 
 
 #Save data in accessable file
