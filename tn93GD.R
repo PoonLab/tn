@@ -1,7 +1,7 @@
 #A process which generates cluster growth data as a function of tn93 cutoff threshold
 #Creates an external .RData file of paired cluster info sets
 
-### USAGE: Rscript ~/git/tn/tn93GD.R tn93__.txt ###
+### USAGE: ###
 #input Date Format, specified with % (ie. %d-%b-%y for day, written month, 2-digit year or  %Y for simple, 4-digit year)
 
 #Import Libraries
@@ -137,29 +137,21 @@ gs <- mclapply(cutoffs, function(d) {
 }, mc.cores=8) 
 names(gs) <- cutoffs
 
-## Obtain a set models of case linkage frequency based on age
-ageD <- mclapply(gs, function(x){
-  l <- mclapply(rev(tail(years, -1)), function(y){
-    print(y)
-    subG <- minFilt(induced_subgraph(x, V(x)[year<=y]))
-    bpeFreq(subG)
-  } , mc.cores=8)
-  bind_rows(l) 
-}, mc.cores=8) 
-
-#Save data in accessable file
-saveRDS(ageD, file = paste0(gsub("\\..*", "", args), "AD.rds"))
-
 ## Generate Growth data
 #__________________________________________________________________________________________________________________________#
 
 res <- mclapply(cutoffs, function(d) {
+  print(d)
+  
   #Obtain a subGraph at the maximum year, removing edges above the distance cutoff and ensuring no merging by removing, non-closest edges to new cases
   subG <- gs[[as.character(d)]]
   
   #Obtain a model of case connection frequency to new cases as predicted by individual case ag
-  #This data may contain missing cases, hense the complete cases addition
-  ageDi <- ageD[[as.character(d)]]
+  ageDi <- mclapply(rev(tail(years, -2)), function(y){
+    ssubG <- minFilt(induced_subgraph(subG, V(subG)[year<y]))
+    bpeFreq(ssubG)
+  }, mc.cores=8)
+  ageDi <- bind_rows(ageDi) 
   
   mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
   
@@ -169,6 +161,9 @@ res <- mclapply(cutoffs, function(d) {
   #Obtain growth based on two models restricted model
   clu <- simGrow(subG)
   
+  #Save model Data
+  clu$ageD <- mod
+    
   #Place growth and forecast data in dfs for fit and full growth
   df1 <- data.frame(Growth = clu$growth, Pred = clu$forecast)
   df2 <- data.frame(Growth = clu$growth, Pred = clu$csize * (sum(clu$growth)/sum(clu$csize)))

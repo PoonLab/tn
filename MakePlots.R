@@ -64,10 +64,10 @@ ADfit2 <- function(ageD) {
   return(cuts)
 }
 
-ADfit1 <- function(ageD) {
-  lapply(ageD, function(ageDi) {
-    mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
-    summary(mod)
+ADfitbn <- function {
+  sapply(ageD, function(ageDi) {
+    mod <- 
+    mod$coefficients[[2]]
   })
 }
 
@@ -80,12 +80,14 @@ edgeFreq <- function(ageD){
   return(cuts)
 }
 
-res <- GDna
-sapply(1:(ncol(res)), function(x) {
-  fit <- res[[1,x]]
-  sum(fit$growth)
+sapply(GDna, function(x) {
+  mod <- x$ageD
+  1-mod$deviance/mod$null.deviance
 })
 
+sapply(GDna, function(x) {
+  x$gaic
+})
 
 ####Actual Figs
 
@@ -111,8 +113,8 @@ graphPlot <- function(inG, y, d, col) {
 linAge <- function(ageD, letter) {
   cuts <- sapply(seq(1,16,5), function(x){
     ageDi <- ageD[[x]]
-    mod <- glm(cbind(Positive, Total) ~ Age, data=ageDi, family='binomial')
-    predict(mod, data.frame(Age=seq(1,12,1)), type='response')
+    mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
+    predict(mod, data.frame(tDiff=seq(1,12,1)), type='response')
     })
   
   df <- data.frame(Age = seq(1,12,1), pt1 = cuts[,1], pt2 = cuts[,2], pt3 = cuts[,3], pt4 = cuts[,4] )
@@ -251,5 +253,10 @@ title("B", line=1, adj=0, cex.main=3)
 GDst <- readRDS("pub1/stDGD.rds")
 GDna <- readRDS("pub1/naDGD.rds")
 
-ADst <- readRDS("pub1/stDAD.rds")
-ADna <- readRDS("pub1/naDAD.rds")
+ADst <- 
+ADna <-
+
+################################################################
+max(ADfitbn(ADst))
+plot(ADfitbn(ADna))
+
