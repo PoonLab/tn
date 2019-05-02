@@ -7,6 +7,37 @@ limits <- par('usr')
 
 
 ageD <- readRDS("stDAD.rds")
+cutoffs <- names(ageD)
+r2 <- {}
+for (cutoff in cutoffs) {
+   ageDi <- ageD[[cutoff]]
+   mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
+   r2 <- c(r2, 1-mod$deviance/mod$null.deviance)
+}
+
+
+par(mar=c(5,5,1,1))
+plot(cutoffs, r2, type='l', col='dodgerblue', ylim=c(0, 0.65),
+     xlab='TN93 distance cutoff', ylab=expression("R"^2), cex.lab=1.2)
+points(cutoffs, r2, pch=21, col='white', bg='dodgerblue', cex=1.2)
+
+
+ageD <- readRDS("naDAD.rds")
+cutoffs <- names(ageD)
+r2 <- {}
+for (cutoff in cutoffs) {
+   ageDi <- ageD[[cutoff]]
+   mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
+   r2 <- c(r2, 1-mod$deviance/mod$null.deviance)
+}
+
+lines(cutoffs, r2, col='orange2')
+
+
+#========================================================#
+
+
+ageD <- readRDS("stDAD.rds")
 ageDi <- ageD[["0.01"]]
 mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
 
