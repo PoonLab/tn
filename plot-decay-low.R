@@ -1,6 +1,5 @@
 
-# log transformed plot  
-pdf(file='~/papers/maup/images/decaylow.pdf', width=5, height=5)
+
 
 par(mar=c(5,5,1,1))
 limits <- par('usr')
@@ -17,7 +16,7 @@ for (cutoff in cutoffs) {
 
 
 par(mar=c(5,5,1,1))
-plot(cutoffs, r2, type='l', col='dodgerblue', ylim=c(0, 0.65),
+plot(cutoffs, r2, type='l', col='dodgerblue', ylim=c(0.2, 0.65),
      xlab='TN93 distance cutoff', ylab=expression("R"^2), cex.lab=1.2)
 points(cutoffs, r2, pch=21, col='white', bg='dodgerblue', cex=1.2)
 
@@ -32,33 +31,36 @@ for (cutoff in cutoffs) {
 }
 
 lines(cutoffs, r2, col='orange2')
-
+points(cutoffs, r2, pch=21, col='white', bg='orange2', cex=1.2)
 
 #========================================================#
 
+# log transformed plot  
+pdf(file='~/papers/maup/images/decaylow.pdf', width=4.5, height=4.5)
 
+par(mar=c(5,5,1,1))
 ageD <- readRDS("stDAD.rds")
-ageDi <- ageD[["0.01"]]
+ageDi <- ageD[["0.005"]]
 mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
 
 set.seed(1)  # for reproducible jitter
 plot(jitter(ageDi$tDiff), 
      ageDi$Positive/ageDi$Total, 
-     log='y',
+#     log='y',
      type='n',
      xlab='Time lag (years)', 
      ylab=expression('Bipartite edge density ' %*%10^-4), 
-     cex.lab=1.2, yaxt='n', ylim=c(4e-5, 0.003))
+     cex.lab=1.2, yaxt='n')
  
 # draw background
-bg <- par('usr')
-rect(xl=bg[1], yb=10^(bg[3]), xr=bg[2], yt=10^(bg[4]), col='linen', border=NA)
-abline(h=axTicks(side=2), col='white', lwd=3, lend=2)
-#abline(h=axTicks(side=2)+diff(axTicks(side=2))[1]/2, col='white', lend=2)
-abline(v=axTicks(side=1), col='white', lwd=3, lend=2)
-abline(v=axTicks(side=1)+diff(axTicks(side=1))[1]/2, col='white', lend=2)
-abline(h=0, lty=2, lwd=3, col='grey50')
-box()
+#bg <- par('usr')
+#rect(xl=bg[1], yb=10^(bg[3]), xr=bg[2], yt=10^(bg[4]), col='linen', border=NA)
+#abline(h=axTicks(side=2), col='white', lwd=3, lend=2)
+##abline(h=axTicks(side=2)+diff(axTicks(side=2))[1]/2, col='white', lend=2)
+#abline(v=axTicks(side=1), col='white', lwd=3, lend=2)
+#abline(v=axTicks(side=1)+diff(axTicks(side=1))[1]/2, col='white', lend=2)
+#abline(h=0, lty=2, lwd=3, col='grey50')
+#box()
 
 points(jitter(ageDi$tDiff), ageDi$Positive/ageDi$Total, 
        pch=21, bg='dodgerblue', col='white', cex=1.5)
@@ -67,14 +69,14 @@ axis(2, at=axTicks(side=2),
      labels=axTicks(side=2) * 10^4,
      las=2)
 
-legend(x=8, y=0.001, legend=c('Seattle', 'N.Alberta'), pch=c(21,22), pt.cex=1.5,
+legend(x=7, y=6e-4, legend=c('Seattle', 'N.Alberta'), pch=c(21,22), pt.cex=1.5,
        col='white', pt.bg=c('dodgerblue', 'orange2'), bty='n')
 
 # indicate location of zeroes
-y <- ageDi$Positive/ageDi$Total
-ymin <- min(y[y>0], na.rm=T)
-points(jitter(ageDi$tDiff[ageDi$Positive==0]), 
-       rep(ymin, sum(ageDi$Positive==0)), pch=4, lwd=2, col='dodgerblue')
+#y <- ageDi$Positive/ageDi$Total
+#ymin <- min(y[y>0], na.rm=T)
+#points(jitter(ageDi$tDiff[ageDi$Positive==0]), 
+#       rep(ymin, sum(ageDi$Positive==0)), pch=4, lwd=2, col='dodgerblue')
 lines(smooth.spline(x=ageDi$tDiff, y=mod$fitted.values), 
       lwd=2, col='dodgerblue')
 
@@ -87,7 +89,7 @@ lines(smooth.spline(x=ageDi$tDiff, y=mod$fitted.values),
 # North Alberta
 
 ageD <- readRDS("naDAD.rds")
-ageDi <- ageD[["0.01"]]
+ageDi <- ageD[["0.005"]]
 
 mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
 
