@@ -107,6 +107,7 @@ gaicPlot <- function(growthD,  thresh = cutoffs) {
   gaicD <- sapply(growthD, function(x) {x$gaic})
   
   df <- data.frame(Threshold = thresh, GAIC1 = gaicD)
+  min <- df$Threshold[which(df$GAIC1==min(df$GAIC1))[[1]]]
   
   ggplot(df, aes(x=Threshold)) +
     theme(axis.title.x = element_text(size=12, margin=margin(t=10)),
@@ -116,8 +117,8 @@ gaicPlot <- function(growthD,  thresh = cutoffs) {
           plot.title = element_text(size=20, hjust=-0.05, vjust=-0.05),
           legend.text = element_text(size=15)) +
     geom_line(aes(y=GAIC1), size=1.2)+
-    geom_vline(xintercept = df$Threshold[df$GAIC1==min(df$GAIC1)],linetype=4, colour="black", alpha=0.5)+
-    geom_text(aes(df$Threshold[df$GAIC1==min(df$GAIC1)],5,label = df$Threshold[df$GAIC1==min(df$GAIC1)],vjust =1.5))+
+    geom_vline(xintercept = min, linetype=4, colour="black", alpha=0.5)+
+    geom_text(aes(min, 5, label = min, vjust =1.5))+
     labs(title="", x= "TN93 Distance Cutoff Threshold", y="GAIC") 
 }
 
@@ -203,7 +204,7 @@ names(res) <- cutoffs
 #__________________________________________________________________________________________________________________________#
 
 gaics <- sapply(res, function(x) {x$gaic})
-do <- names(which(gaics==min(gaics)))
+do <- names(which(gaics==min(gaics))[1])
 opt <- gs[[do]]
 
 #Plot option ignores clusters of size 1 and provides a graph (for ease of overview, not for calculations)
