@@ -4,36 +4,36 @@ library(MASS)
 library(egg)
 library(igraph)
 
-#Plot Making Age Data Figure 
-expAge <- function(ageD,letter) {
+#Plot Making tDiff Data Figure 
+exptDiff <- function(ageD,letter) {
   cuts <- sapply(seq(6,16,5), function(x){
     i <- ageD[[x]]
-    sapply(levels(factor(i$Age)), function(x) {
-      mean(i$Frequency[i$Age==x])
+    sapply(levels(factor(i$tDiff)), function(x) {
+      mean(i$Frequency[i$tDiff==x])
     })
   })
-  df <- data.frame(Age=as.numeric(levels(factor(ageD[[1]]$Age))), pt1=cuts[,1], pt2= cuts[,2], pt3=cuts[,3])
+  df <- data.frame(tDiff=as.numeric(levels(factor(ageD[[1]]$tDiff))), pt1=cuts[,1], pt2= cuts[,2], pt3=cuts[,3])
   
   pngTitle <- paste0("fig1", letter,".png")
   png(pngTitle, width=1500, height=1000)
   
-  mod1 <- lm(pt1 ~ a*Age^b, data = df, start = list(a=1,b=1), control = list(maxiter=1000) )
+  mod1 <- lm(pt1 ~ a*tDiff^b, data = df, start = list(a=1,b=1), control = list(maxiter=1000) )
   a1 <- mod1$m$getPars()[[1]]
   b1 <- mod1$m$getPars()[[2]]
-  df$mod1 <- a1*df$Age^b1
+  df$mod1 <- a1*df$tDiff^b1
   
-  mod2 <- nls(pt2 ~ a*Age^b, data = df, start = list(a=1,b=1), control = list(maxiter=1000) )
+  mod2 <- nls(pt2 ~ a*tDiff^b, data = df, start = list(a=1,b=1), control = list(maxiter=1000) )
   a2 <- mod2$m$getPars()[[1]]
   b2 <- mod2$m$getPars()[[2]]
-  df$mod2 <- a2*df$Age^b2
+  df$mod2 <- a2*df$tDiff^b2
   
-  mod3 <- nls(pt3 ~ a*Age^b, data = df, start = list(a=1,b=1), control = list(maxiter=1000) )
+  mod3 <- nls(pt3 ~ a*tDiff^b, data = df, start = list(a=1,b=1), control = list(maxiter=1000) )
   a3 <- mod3$m$getPars()[[1]]
   b3 <- mod3$m$getPars()[[2]]
-  df$mod3 <- a3*df$Age^b3
+  df$mod3 <- a3*df$tDiff^b3
   
   lines <- c("0.010" = "blue", "0.015" = "black", "0.020" = "orange")
-  p <- ggplot(df, aes(x=Age)) +
+  p <- ggplot(df, aes(x=tDiff)) +
     labs(title=letter, x="Time Between Case Sample Collection", y="Mean Frequency of Bipartite Edges") +
     theme(axis.title.x = element_text(size=20, margin=margin(t=20)),
           axis.title.y = element_text(size=20, margin=margin(r=20)), 
@@ -56,7 +56,7 @@ expAge <- function(ageD,letter) {
 
 ADfit2 <- function(ageD) {
   cuts <- sapply(ageD, function(i) {
-    m <- sapply(levels(factor(i$Age)), function(x) {mean(i$Frequency[i$Age==x])}) 
+    m <- sapply(levels(factor(i$tDiff)), function(x) {mean(i$Frequency[i$tDiff==x])}) 
     fit <- fitdistr(m, "exponential")
     test <- ks.test(m, "pexp", fit$estimate)
     return(test[[2]])
@@ -64,7 +64,7 @@ ADfit2 <- function(ageD) {
   return(cuts)
 }
 
-ADfitbn <- function {
+ADfitbn <- function(ageD) {
   sapply(ageD, function(ageDi) {
     mod <- 
     mod$coefficients[[2]]
@@ -73,8 +73,8 @@ ADfitbn <- function {
 
 edgeFreq <- function(ageD){
   cuts <- sapply(ageD, function(i){
-    sapply(levels(factor(i$Age)), function(x) {
-      mean(i$Frequency[i$Age==x])
+    sapply(levels(factor(i$tDiff)), function(x) {
+      mean(i$Frequency[i$tDiff==x])
     })
   })
   return(cuts)
@@ -110,17 +110,17 @@ graphPlot <- function(inG, y, d, col) {
   #sub=paste0(title, " Network, at d=", d),
 }
 
-linAge <- function(ageD, letter) {
+lintDiff <- function(ageD, letter) {
   cuts <- sapply(seq(1,16,5), function(x){
     ageDi <- ageD[[x]]
     mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
     predict(mod, data.frame(tDiff=seq(1,12,1)), type='response')
     })
   
-  df <- data.frame(Age = seq(1,12,1), pt1 = cuts[,1], pt2 = cuts[,2], pt3 = cuts[,3], pt4 = cuts[,4] )
+  df <- data.frame(tDiff = seq(1,12,1), pt1 = cuts[,1], pt2 = cuts[,2], pt3 = cuts[,3], pt4 = cuts[,4] )
   lines <- c("0.005"= "royalblue", "0.010" = "blue", "0.015" = "dark blue", "0.020" = "black")
   
-  p <- ggplot(df, aes(x=Age)) +
+  p <- ggplot(df, aes(x=tDiff)) +
     labs(title=letter, x="Time Difference (collection year)", y="Mean of Edge Density in Bipartite Graph") +
     theme(axis.title.x = element_text(size=12, margin=margin(t=10)),
           axis.title.y = element_text(size=12, margin=margin(r=10)), 
@@ -234,29 +234,27 @@ yearPlot <- function(inG1, inG2) {
 #Linear Update
 ####################################################################
 
-ggarrange(linAge(ADst, "Seattle"), linAge(ADna, "North Alberta"), 
-          nrow = 2, padding=10, labels = c("A", "B"), label.args = list(gp = grid::gpar(font = 1, cex =1.5)))
+GDst <- readRDS("stDGD.rds")
+GDna <- readRDS("naDGD.rds")
+
+ADst <- readRDS("stDAD.rds")
+ADna <- readRDS("naDAD.rds")
+
+ggarrange(lintDiff(ADst, "Seattle"), lintDiff(ADna, "North Alberta"), 
+          nrow = 2, padding=10, labels = c("A", "B"), 
+          label.args = list(gp = grid::gpar(font = 1, cex =1.5)))
 linGrowth(list(GDst,GDna))
 gaicPlot(list(GDst,GDna))
+
+# where do g1 and g2 come from?
 ggarrange(distPlot(g1, g2),
           yearPlot(g1, g2),
           nrow = 2, padding=10, labels = c("A", "B"), label.args = list(gp = grid::gpar(font = 1, cex =1.5)))
 
 par(mfrow=c(1,2))
-graphPlot(g1, 2011, 0.013, "blue")
+graphPlot(g1, 2011, 0.013, "dodgerblue")
 title("Seatte at d=0.013", line=-3)
 title("A", line=1, adj=0,cex.main=3)
-graphPlot(g2, 2012, 0.011, "orange") 
+graphPlot(g2, 2012, 0.011, "orange2") 
 title("North Alberta data at d=0.011",line=-3)
 title("B", line=1, adj=0, cex.main=3)
-
-GDst <- readRDS("pub1/stDGD.rds")
-GDna <- readRDS("pub1/naDGD.rds")
-
-ADst <- 
-ADna <-
-
-################################################################
-max(ADfitbn(ADst))
-plot(ADfitbn(ADna))
-
