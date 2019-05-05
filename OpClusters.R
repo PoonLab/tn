@@ -1,21 +1,11 @@
-#A process which generates cluster growth data as a function of tn93 cutoff threshold
-#Creates an external .RData file of paired cluster info sets
-
-### USAGE: ###
-#input Date Format, specified with % (ie. %d-%b-%y for day, written month, 2-digit year or  %Y for simple, 4-digit year)
-
 #Import Libraries
-library(igraph)
-library(dplyr)
-library(MASS)
-library(parallel)
-library(ggplot2)
-library(gghighlight)
-library(egg)
+library(igraph,verbose = FALSE)
+library(dplyr,verbose = FALSE)
+library(parallel,verbose = FALSE)
+library(ggplot2,verbose = FALSE)
 
-
-## Helper Functions
-#____________________________________________________________________________________________________________________________#
+#Expecting tn93 output as second param
+## USAGE: Rscript ~/git/tn/OpClusters.R ___D.txt ##
 
 bpeFreq <- function(iG) {
   # Obtains a data set of all possible Bipartite Edge Frequencies in a 
@@ -45,10 +35,10 @@ bpeFreq <- function(iG) {
   
   #Assign age to every case
   tDiff <- sapply(ys, function(x) maxY-x)
-
+  
   #Create a data frame of case attachment frequency and case age
   df <- data.frame(tDiff = tDiff, Positive = frequency[1,], Total = frequency[2,])
-
+  
   return(df)
 }
 
@@ -76,7 +66,7 @@ minFilt <- function(iG) {
     
     #Remove the entries from new cases that dont connect to  old cases
     cE <- unname(unlist(cE[cE!=0]))
-
+    
     #Filter out all edges except for the closest edges
     if(!is.null(cE)){
       iG <- iG - difference(bE, E(iG)[cE])
@@ -93,7 +83,7 @@ simGrow <- function(iG) {
   nV <- V(iG)[year==max(V(iG)$year)]
   pG <- induced_subgraph(iG, V(iG)[year<max(V(iG)$year)])
   clu <- components(pG)
-
+  
   #Assign cluster growth based on number of new cases linked to old cases in clusters 
   temp <- sapply(1:clu$no, function(x) {
     members <- names(clu$membership[unname(clu$membership)==x])
@@ -110,6 +100,26 @@ simGrow <- function(iG) {
   clu$inc <- length(nV)
   
   return(clu)
+}
+
+gaicPlot <- function(growthD,  thresh = cutoffs) {
+  
+  gaicD <- sapply(growthD, function(x) {x$gaic})
+  
+  df <- data.frame(Threshold = thresh, GAIC1 = gaicD)
+  min <- df$Threshold[which(df$GAIC1==min(df$GAIC1))[[1]]]
+  
+  ggplot(df, aes(x=Threshold)) +
+    theme(axis.title.x = element_text(size=12, margin=margin(t=10)),
+          axis.title.y = element_text(size=12), 
+          axis.text.x = element_text(size=10), 
+          axis.text.y = element_text(size=10),
+          plot.title = element_text(size=20, hjust=-0.05, vjust=-0.05),
+          legend.text = element_text(size=15)) +
+    geom_line(aes(y=GAIC1), size=1.2)+
+    geom_vline(xintercept = min, linetype=4, colour="black", alpha=0.5)+
+    geom_text(aes(min, 5, label = min, vjust =1.5))+
+    labs(title="", x= "TN93 Distance Cutoff Threshold", y="GAIC") 
 }
 
 ## Importing Case data
@@ -137,7 +147,8 @@ nY <- max(years)
 V(g)$tDiff <- sapply(V(g)$year, function(x) nY-x)
 
 #Initialize a set of cutoffs to observe
-cutoffs <- seq(0.005, 0.05, 0.001)
+steps <- head(hist(E(g)$Distance, plot=FALSE)$breaks,-5)
+cutoffs <- seq(0 , max(steps), max(steps)/50)
 
 g <- minFilt(g)
 
@@ -147,30 +158,20 @@ gs <- mclapply(cutoffs, function(d) {
 }, mc.cores=8) 
 names(gs) <- cutoffs
 
-## Obtain a set models of case linkage frequency based on age
-ageD <- mclapply(gs, function(x){
-  # (x) now holds a graph at a different cutoff
-  l <- lapply(rev(years[2:(length(years)-1)]), function(y){
-    #print(y)
-    subG <- minFilt(induced_subgraph(x, V(x)[year<=y]))
-    bpeFreq(subG)
-  })
-  bind_rows(l)
-}, mc.cores=8) 
-
-#Save data in accessable file
-saveRDS(ageD, file = paste0(gsub("\\..*", "", args), "AD.rds"))
-
 ## Generate Growth data
 #__________________________________________________________________________________________________________________________#
 
 res <- mclapply(cutoffs, function(d) {
-  print(d)
-  
+  cat(paste0("\r", "Running Analysis ", d/max(cutoffs)*100, "%"))
   #Obtain a subGraph at the maximum year, removing edges above the distance cutoff and ensuring no merging by removing, non-closest edges to new cases
   subG <- gs[[as.character(d)]]
-  
-  ageDi <- ageD[[as.character(d)]]
+
+  #Obtain a model of case connection frequency to new cases as predicted by individual case ag
+  #This data may contain missing cases, hense the complete cases addition
+  ageDi <- bind_rows(lapply(rev(tail(years,-2)), function(y){
+    ssubG <- minFilt(induced_subgraph(subG, V(subG)[year<y]))
+    bpeFreq(subG)
+  }))
   
   mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
   
@@ -180,9 +181,6 @@ res <- mclapply(cutoffs, function(d) {
   #Obtain growth based on two models restricted model
   clu <- simGrow(subG)
   
-  #Save model Data
-  clu$ageD <- mod
-    
   #Place growth and forecast data in dfs for fit and full growth
   df1 <- data.frame(Growth = clu$growth, Pred = clu$forecast)
   df2 <- data.frame(Growth = clu$growth, Pred = clu$csize * (sum(clu$growth)/sum(clu$csize)))
@@ -191,8 +189,10 @@ res <- mclapply(cutoffs, function(d) {
   mod1 <- glm(Growth ~ Pred, data = df1, family = "poisson")
   mod2 <- glm(Growth ~ Pred, data = df2, family = "poisson")
   
-  #Calculate GAIC
+  #Save, gaic, model and age data
   clu$gaic <- mod1$aic-mod2$aic
+  clu$mod <- mod
+  clu$ageD <- ageDi
   
   return(clu)
 }, mc.cores=8)
@@ -200,5 +200,32 @@ res <- mclapply(cutoffs, function(d) {
 #Label data
 names(res) <- cutoffs
 
+## Generate Pictures and output
+#__________________________________________________________________________________________________________________________#
+
+gaics <- sapply(res, function(x) {x$gaic})
+do <- names(which(gaics==min(gaics))[1])
+opt <- gs[[do]]
+
+#Plot option ignores clusters of size 1 and provides a graph (for ease of overview, not for calculations)
+optPG <- subgraph.edges(opt, E(opt), delete.vertices = T)
+
+pdf(file = paste0(gsub("\\..*", "", args), "VS.pdf"))
+
+gaicPlot(res)
+plot(optPG, vertex.size = 2, vertex.label = NA, vertex.color= "orange",
+     edge.width = 0.65, edge.color = 'black', 
+     margin = c(0,0,0,0))
+
+dev.off()
+
+optClu <- components(opt)
+optClu$years <- table(V(g)$year)
+optClu$no <- NULL
+optClu$csize <- sort(table(optClu$membership)[table(optClu$membership)>1], decreasing =T)
+print(optClu)
+
 #Save data in accessable files
 saveRDS(res, file = paste0(gsub("\\..*", "", args), "GD.rds"))
+
+cat(paste0("\n","Done" ))
