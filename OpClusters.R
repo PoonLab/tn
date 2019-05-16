@@ -7,16 +7,11 @@ library(ggplot2,verbose = FALSE)
 #Expecting tn93 output as second param
 ## USAGE: Rscript ~/git/tn/OpClusters.R ___D.txt ##
 
+#Obtain the frequency of edges in a bipartite Graph between two different years as a function of the difference between those years
 bpeFreq <- function(iG) {
-  # Obtains a data set of all possible Bipartite Edge Frequencies in a 
-  # given subgraph, with the bipartite subsets of vertices representing 
-  # a given year of data
-  #
-  #@param ig: A subGraph cut based on a threshold distance, with the latest 
-  #           cases representing New cases (ie. Upcoming cases)
-  #@return: A data frame of Number of positives (edges from one year to the 
-  #         newest year) with total possible edges and time difference (in 
-  #         years) between the two years
+  #@param iG: A subGraph cut based on a threshold distance, with the latest cases representing New cases (ie. Upcoming cases)
+  #@return: A data frame of Number of positives (edges from one year to the newest year) 
+  #         with total possible edges and time difference (in years) between the two years
   
   # Obtain the range of years
   maxY <- max(V(iG)$year)
@@ -45,7 +40,7 @@ bpeFreq <- function(iG) {
 #Filters the input graph such that all new cases are only linked to old cases by their closest edge to old cases
 minFilt <- function(iG) {
   #@param iG: A subGraph cut based on a threshold distance, with the latest cases representing New cases (ie. Upcoming cases)
-  #@return: A filtered version of this same graph
+  #@return: A filtered version of this same graph, with all new cases holding only one edge to old cases
   
   #Obtain the new year
   nY <- max(V(iG)$year)
@@ -76,8 +71,10 @@ minFilt <- function(iG) {
   return(iG)
 }
 
-#Simulates the growth of clusters
+#Obtains the growth of predefined old clusters based on the addition of new clusters
 simGrow <- function(iG) { 
+  #@param iG: A subGraph cut based on a threshold distance, with the latest cases representing New cases (ie. Upcoming cases)
+  #@return: The cluster information for that subgraph, annotated with the growth of each cluster
   
   #Split the input graph into the new cases and present clusters
   nV <- V(iG)[year==max(V(iG)$year)]
@@ -102,13 +99,20 @@ simGrow <- function(iG) {
   return(clu)
 }
 
+#Plot the GAIC between an informed and uninformed function over a set of thresholds
 gaicPlot <- function(growthD,  thresh = cutoffs) {
+  #@param growthD: A list of clustering information at various cutoffs, annotated with growth (simGrow, output)
+  #@param thresh: A list of cutoff thresholds to representing the independant variable
+  #@return: A visual graph of plotted GAIC between two models over the course of @thresh (a list of cutoffs)
   
+  #Extract GAIC measurements
   gaicD <- sapply(growthD, function(x) {x$gaic})
   
+  #PLace Data into frame
   df <- data.frame(Threshold = thresh, GAIC1 = gaicD)
   min <- df$Threshold[which(df$GAIC1==min(df$GAIC1))[[1]]]
   
+  #Generate plot
   ggplot(df, aes(x=Threshold)) +
     theme(axis.title.x = element_text(size=12, margin=margin(t=10)),
           axis.title.y = element_text(size=12), 
@@ -203,6 +207,7 @@ names(res) <- cutoffs
 ## Generate Pictures and output
 #__________________________________________________________________________________________________________________________#
 
+#Obtain Minimum GAIC estemating cutoff threshold and the network associated with it
 gaics <- sapply(res, function(x) {x$gaic})
 do <- names(which(gaics==min(gaics))[1])
 opt <- gs[[do]]
@@ -210,22 +215,27 @@ opt <- gs[[do]]
 #Plot option ignores clusters of size 1 and provides a graph (for ease of overview, not for calculations)
 optPG <- subgraph.edges(opt, E(opt), delete.vertices = T)
 
+#Create output pdf
 pdf(file = paste0(gsub("\\..*", "", args), "VS.pdf"))
 
+#Plot GAIC
 gaicPlot(res)
+
+#Plot Network
 plot(optPG, vertex.size = 2, vertex.label = NA, vertex.color= "orange",
      edge.width = 0.65, edge.color = 'black', 
      margin = c(0,0,0,0))
 
 dev.off()
 
+#Obtain the information from opt cluster and print it to stOut
 optClu <- components(opt)
 optClu$years <- table(V(g)$year)
 optClu$no <- NULL
 optClu$csize <- sort(table(optClu$membership)[table(optClu$membership)>1], decreasing =T)
 print(optClu)
 
-#Save data in accessable files
+#Save all growth data in accessable files
 saveRDS(res, file = paste0(gsub("\\..*", "", args), "GD.rds"))
 
 cat(paste0("\n","Done" ))
