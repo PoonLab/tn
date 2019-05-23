@@ -132,7 +132,7 @@ gaicPlot <- function(growthD,  thresh = cutoffs) {
 #Expecting the output from a tn93 run formatted to a csv file.
 #Expecting patient information in the format ID_Date
 args = commandArgs(trailingOnly = T)
-input <- read.csv("stdin", stringsAsFactors = F)
+input <- read.csv(args[1], stringsAsFactors = F)
 
 #This script will give warnings due to the fact that there are low fit rates on the null model
 options(warn=-1)
@@ -148,7 +148,11 @@ V(g)$year <- as.numeric(temp[2,])
 #Obtain the range of years and the maximum input year
 years <- as.integer(levels(factor(V(g)$year)))
 nY <- max(years)
-while (length(V(g)[year==nY])<63) {nY <- nY-1}
+inputFilter <- as.numeric(args[2])
+while (length(V(g)[year==nY])<63 || inputFilter>0) {
+  nY <- nY-1
+  if (length(V(g)[year==nY])>63){inputFilter <- inputFilter-1}
+}
 g <- induced_subgraph(g, V(g)[year<=nY])
 
 years <- as.integer(levels(factor(V(g)$year)))
@@ -220,7 +224,7 @@ opt <- gs[[do]]
 optPG <- subgraph.edges(opt, E(opt), delete.vertices = T)
 
 #Create output pdf
-pdf(file = paste0(gsub("\\..*", "", args), "VS.pdf"))
+pdf(file = paste0(gsub("\\..*", "", args[3]), "VS.pdf"))
 
 #Plot GAIC
 gaicPlot(res)
@@ -240,6 +244,6 @@ optClu$csize <- sort(table(optClu$membership)[table(optClu$membership)>1], decre
 print(optClu)
 
 #Save all growth data in accessable files
-saveRDS(res, file = paste0(gsub("\\..*", "", args), "GD.rds"))
+saveRDS(res, file = paste0(gsub("\\..*", "", args[3]), "GD.rds"))
 
 cat(paste0("\n","Done" ))
