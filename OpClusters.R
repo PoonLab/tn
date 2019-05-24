@@ -132,7 +132,7 @@ gaicPlot <- function(growthD,  thresh = cutoffs) {
 #Expecting the output from a tn93 run formatted to a csv file.
 #Expecting patient information in the format ID_Date
 args = commandArgs(trailingOnly = T)
-input <- read.csv(args, stringsAsFactors = F)
+input <- read.csv(args[1], stringsAsFactors = F)
 
 #This script will give warnings due to the fact that there are low fit rates on the null model
 options(warn=-1)
@@ -148,103 +148,102 @@ V(g)$year <- as.numeric(temp[2,])
 #Obtain the range of years and the maximum input year
 years <- as.integer(levels(factor(V(g)$year)))
 nY <- max(years)
-while (length(V(g)[year==nY])<63) {nY <- nY-1}
+inputFilter <- as.numeric(args[2])
+while (length(V(g)[year==nY])<63 || inputFilter>0) {
+  nY <- nY-1
+  if (length(V(g)[year==nY])>63){inputFilter <- inputFilter-1}
+}
+g <- induced_subgraph(g, V(g)[year<=nY])
 
-for (i in 0:5){
-  args <- paste0("run", i)
-  rY <- nY-i
-  g <- induced_subgraph(g, V(g)[year<=rY])
+years <- as.integer(levels(factor(V(g)$year)))
+V(g)$tDiff <- sapply(V(g)$year, function(x) nY-x)
+
+#Initialize a set of cutoffs to observe
+steps <- head(hist(E(g)$Distance, plot=FALSE)$breaks,-5)
+cutoffs <- seq(0 , max(steps), max(steps)/50)
+
+g <- minFilt(g)
+
+#Create a set of subgraphs at each cutoff
+gs <- mclapply(cutoffs, function(d) {
+  subgraph.edges(g,E(g)[Distance<=d], delete.vertices = F)
+}, mc.cores=8) 
+names(gs) <- cutoffs
+
+## Generate Growth data
+#__________________________________________________________________________________________________________________________#
+
+res <- mclapply(cutoffs, function(d) {
+  cat(paste0("\r", "Running Analysis ", d/max(cutoffs)*100, "%"))
+  #Obtain a subGraph at the maximum year, removing edges above the distance cutoff and ensuring no merging by removing, non-closest edges to new cases
+  subG <- gs[[as.character(d)]]
   
-  years <- as.integer(levels(factor(V(g)$year)))
-  V(g)$tDiff <- sapply(V(g)$year, function(x) rY-x)
+  #Obtain a model of case connection frequency to new cases as predicted by individual case ag
+  #This data may contain missing cases, hense the complete cases addition
+  ageDi <- bind_rows(lapply(rev(tail(years,-2)), function(y){
+    ssubG <- minFilt(induced_subgraph(subG, V(subG)[year<y]))
+    bpeFreq(subG)
+  }))
   
-  #Initialize a set of cutoffs to observe
-  steps <- head(hist(E(g)$Distance, plot=FALSE)$breaks,-5)
-  cutoffs <- seq(0 , max(steps), max(steps)/50)
+  mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
   
-  g <- minFilt(g)
+  #Assign a predicted growth value to each member of the graph
+  V(subG)$freq <- predict(mod, data.frame(tDiff=V(subG)$tDiff), type='response')
   
-  #Create a set of subgraphs at each cutoff
-  gs <- mclapply(cutoffs, function(d) {
-    subgraph.edges(g,E(g)[Distance<=d], delete.vertices = F)
-  }, mc.cores=8) 
-  names(gs) <- cutoffs
+  #Obtain growth based on two models restricted model
+  clu <- simGrow(subG)
   
-  ## Generate Growth data
-  #__________________________________________________________________________________________________________________________#
+  #Place growth and forecast data in dfs for fit and full growth
+  df1 <- data.frame(Growth = clu$growth, Pred = clu$forecast)
+  df2 <- data.frame(Growth = clu$growth, Pred = clu$csize * (sum(clu$growth)/sum(clu$csize)))
   
-  res <- mclapply(cutoffs, function(d) {
-    cat(paste0("\r", "Running Analysis ", d/max(cutoffs)*100, "%"))
-    #Obtain a subGraph at the maximum year, removing edges above the distance cutoff and ensuring no merging by removing, non-closest edges to new cases
-    subG <- gs[[as.character(d)]]
-    
-    #Obtain a model of case connection frequency to new cases as predicted by individual case ag
-    #This data may contain missing cases, hense the complete cases addition
-    ageDi <- bind_rows(lapply(rev(tail(years,-2)), function(y){
-      ssubG <- minFilt(induced_subgraph(subG, V(subG)[year<y]))
-      bpeFreq(subG)
-    }))
-    
-    mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
-    
-    #Assign a predicted growth value to each member of the graph
-    V(subG)$freq <- predict(mod, data.frame(tDiff=V(subG)$tDiff), type='response')
-    
-    #Obtain growth based on two models restricted model
-    clu <- simGrow(subG)
-    
-    #Place growth and forecast data in dfs for fit and full growth
-    df1 <- data.frame(Growth = clu$growth, Pred = clu$forecast)
-    df2 <- data.frame(Growth = clu$growth, Pred = clu$csize * (sum(clu$growth)/sum(clu$csize)))
-    
-    #Model growth as a function of forecast for fit and full growth models
-    mod1 <- glm(Growth ~ Pred, data = df1, family = "poisson")
-    mod2 <- glm(Growth ~ Pred, data = df2, family = "poisson")
-    
-    #Save, gaic, model and age data
-    clu$gaic <- mod1$aic-mod2$aic
-    clu$mod <- mod
-    clu$ageD <- ageDi
-    
-    return(clu)
-  }, mc.cores=8)
+  #Model growth as a function of forecast for fit and full growth models
+  mod1 <- glm(Growth ~ Pred, data = df1, family = "poisson")
+  mod2 <- glm(Growth ~ Pred, data = df2, family = "poisson")
   
-  #Label data
-  names(res) <- cutoffs
+  #Save, gaic, model and age data
+  clu$gaic <- mod1$aic-mod2$aic
+  clu$mod <- mod
+  clu$ageD <- ageDi
   
-  ## Generate Pictures and output
-  #__________________________________________________________________________________________________________________________#
-  
-  #Obtain Minimum GAIC estemating cutoff threshold and the network associated with it
-  gaics <- sapply(res, function(x) {x$gaic})
-  do <- names(which(gaics==min(gaics))[1])
-  opt <- gs[[do]]
-  
-  #Plot option ignores clusters of size 1 and provides a graph (for ease of overview, not for calculations)
-  optPG <- subgraph.edges(opt, E(opt), delete.vertices = T)
-  
-  #Create output pdf
-  pdf(file = paste0(gsub("\\..*", "", args), "VS.pdf"))
-  
-  #Plot GAIC
-  gaicPlot(res)
-  
-  #Plot Network
-  plot(optPG, vertex.size = 2, vertex.label = NA, vertex.color= "orange",
-       edge.width = 0.65, edge.color = 'black', 
-       margin = c(0,0,0,0))
-  
-  dev.off()
-  
-  #Obtain the information from opt cluster and print it to stOut
-  optClu <- components(opt)
-  optClu$years <- table(V(g)$year)
-  optClu$no <- NULL
-  optClu$csize <- sort(table(optClu$membership)[table(optClu$membership)>1], decreasing =T)
-  print(optClu)
-  
-  #Save all growth data in accessable files
-  saveRDS(res, file = paste0(gsub("\\..*", "", args), "GD.rds"))
-  
-  cat(paste0("\n","Done" ))
-} 
+  return(clu)
+}, mc.cores=8)
+
+#Label data
+names(res) <- cutoffs
+
+## Generate Pictures and output
+#__________________________________________________________________________________________________________________________#
+
+#Obtain Minimum GAIC estemating cutoff threshold and the network associated with it
+gaics <- sapply(res, function(x) {x$gaic})
+do <- names(which(gaics==min(gaics))[1])
+opt <- gs[[do]]
+
+#Plot option ignores clusters of size 1 and provides a graph (for ease of overview, not for calculations)
+optPG <- subgraph.edges(opt, E(opt), delete.vertices = T)
+
+#Create output pdf
+pdf(file = paste0(gsub("\\..*", "", args[3]), "VS.pdf"))
+
+#Plot GAIC
+gaicPlot(res)
+
+#Plot Network
+plot(optPG, vertex.size = 2, vertex.label = NA, vertex.color= "orange",
+     edge.width = 0.65, edge.color = 'black', 
+     margin = c(0,0,0,0))
+
+dev.off()
+
+#Obtain the information from opt cluster and print it to stOut
+optClu <- components(opt)
+optClu$years <- table(V(g)$year)
+optClu$no <- NULL
+optClu$csize <- sort(table(optClu$membership)[table(optClu$membership)>1], decreasing =T)
+print(optClu)
+
+#Save all growth data in accessable files
+saveRDS(res, file = paste0(gsub("\\..*", "", args[3]), "GD.rds"))
+
+cat(paste0("\n","Done" ))
