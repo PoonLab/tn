@@ -1,10 +1,11 @@
 #Import Libraries
 library(igraph,verbose = FALSE)
 library(dplyr,verbose = FALSE)
-library(parallel,verbose = FALSE)
+#library(parallel,verbose = FALSE)
 library(ggplot2,verbose = FALSE)
 
 #Expecting tn93 output as second param
+#Altered version for use on computers without parallel functionality. This does not use mclapply for any loops
 ## USAGE: Rscript ~/git/tn/OpClusters.R ___D.txt ##
 
 #Obtain the frequency of edges in a bipartite Graph between two different years as a function of the difference between those years

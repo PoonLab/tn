@@ -100,8 +100,14 @@ simGrow <- function(iG) {
   return(clu)
 }
 
+#Function version of OpClusters main Results section 
+## TO-DO: Send this to a Modules file and make sure it can use parallel
 optFind <- function(iG) {
+  #@param iG: A subGraph cut based on a threshold distance, with the latest cases representing New cases (ie. Upcoming cases)
+  #@return: The cluster information for that subgraph this is annotated with the growth of each cluster
+  #in addition, the GAIC to a Null model and, a model object and some forcast data that this model predicts
   
+  #Calculate time difference from the newest year for each node
   years <- as.integer(levels(factor(V(iG)$year)))
   nY <- max(years)
   V(iG)$tDiff <- sapply(V(iG)$year, function(x) nY-x)
@@ -187,6 +193,7 @@ while (length(V(g)[year==nY])<63) {nY <- nY-1}
 
 g <- induced_subgraph(g, V(g)[year<=nY])
 
+#10 Runs of 
 for (i in 1:10){
   fname <- paste0(args[2],"St8s",i,".rds")
   res1 <- induced_subgraph(g,sample(V(g), round(length(V(g))*0.80)))

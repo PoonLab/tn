@@ -150,11 +150,17 @@ years <- as.integer(levels(factor(V(g)$year)))
 nY <- max(years)
 while (length(V(g)[year==nY])<63) {nY <- nY-1}
 
+
+#Essentially A copy of OpClustersHome and Opcluster, but with a central loop to obtain multiple filtered results
+##TO DO: Set up functions in a source file as these alternate versions call the same code in slightly different ways
 for (i in 0:5){
+  #Each run creates a lngitudinally filtered graph
   args <- paste0("run", i)
   rY <- nY-i
+  while (length(V(g)[year==rY])<63) {rY <- nY-1}
   g <- induced_subgraph(g, V(g)[year<=rY])
   
+  #Calculate time differences from the newest year.
   years <- as.integer(levels(factor(V(g)$year)))
   V(g)$tDiff <- sapply(V(g)$year, function(x) rY-x)
   
