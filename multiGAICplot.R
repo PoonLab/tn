@@ -1,14 +1,9 @@
-#Import Libraries
-library(ggplot2,verbose = FALSE)
-library(easynls,verbose = FALSE)
-
 ## args <- "~/WWData/WWGD"
 
 GDs <- lapply(list.files(args), function(x) {readRDS(file=paste0(args, "/", x))})
 
 gaics <- lapply(GDs, function(run){sapply(run, function(x) {x$gaic})})
-
-dev.off()
+size <- sapply(GDs, function(run){sum(run[[1]]$csize)})
 minsLoc <- sapply(gaics, function(x){0.0008*(which(x==min(x))[[1]]-1)}) 
 mins <- sapply(gaics, function(x){min(x)}) 
 maxs <- sapply(gaics, function(x){max(x)})
@@ -40,38 +35,40 @@ legend("bottomright", legend=countries, fill=clrs, title = "Sources of Data")
 
 
 inp <- read.csv("~/WWData/NationalEpiData.csv",header=T)
-df <- data.frame(row.names = countries, MGAICE = minsLoc, MinGAIC = mins, 
+df <- data.frame(row.names = countries, MGAICE = minsLoc, MinGAIC = mins, SampleS = size, 
            Incidence=sapply(1:nrow(inp), function(x){mean((inp[x,1:3])[!is.na(inp[x,1:3])])}), 
-           Prevalence=sapply(1:nrow(inp), function(x){mean((inp[x,4:6])[!is.na(inp[x,4:6])])}), 
+           Prevalence=sapply(1:nrow(inp), function(x){inp[x,11]*0.01*mean((inp[x,4:6])[!is.na(inp[x,4:6])])}), 
            Diagnosed=inp$Diag, Treatment=inp$Treat, Suppressed=inp$Sup)
 
 
 
 par(mfrow=c(2,2))
 
-plot(df$MGAICE,df$Prevalence, xlab = "MGAICE: The point where the minimum GAIC is obtained", ylab= "Mean Prevalence (age 15-45), from 2005, 2010 and 2017 Data")
+plot(df$MGAICE,df$Prevalence, xlab = "MGAICE: The point where the minimum GAIC is obtained", ylab= "Mean Prevalence, from 2005, 2010 and 2017 Data")
 fit1<-lm(Prevalence~MGAICE, data =df)
 lines(df$MGAICE, fitted(fit1))
-legend("topright", bty="n", legend=paste("R2 is", format(summary(fit1)$r.squared, digits=4)))
+legend("topright", bty="n", legend=paste0("Pearson Correlation: ", format(cor(df$MGAICE, df$Prevalence, method="pearson"), digits=4)))
 text(df$MGAICE, df$Prevalence, labels=countriesShort, cex= 0.7, pos=4)
 
-plot(df$MGAICE,df$Incidence, xlab = "MGAICE: The point where the minimum GAIC is obtained", ylab= "Mean Incidence (per 1000 individuals), from 2005, 2010 and 2017 Data")
-fit2<-lm(Incidence~MGAICE, data =df)
-lines(df$MGAICE, fitted(fit2))
-legend("topright", bty="n", legend=paste("R2 is", format(summary(fit2)$r.squared, digits=4)))
-text(df$MGAICE, df$Incidence, labels=countriesShort, cex= 0.7, pos=4)
+plot(df$MGAICE,df$SampleS/df$Prevalence, xlab = "MGAICE: The point where the minimum GAIC is obtained", ylab= "Sample Size, Relative to Prevalence")
+fit1<-lm(SampleS/Prevalence~MGAICE, data =df)
+lines(df$MGAICE, fitted(fit1))
+legend("topright", bty="n", legend=paste0("Pearson Correlation: ", format(cor(df$MGAICE, df$SampleS/df$Prevalence, method="pearson"), digits=4)))
+text(df$MGAICE, df$SampleS/df$Prevalence, labels=countriesShort, cex= 0.7, pos=4)
 
-plot(df$MGAICE,log(df$Prevalence), xlab = "MGAICE: The point where the minimum GAIC is obtained", ylab= "Mean Prevalence (age 15-45), from 2005, 2010 and 2017 Data", main = "LOG-SCALE")
+
+plot(df$MGAICE,log(df$Prevalence), xlab = "MGAICE: The point where the minimum GAIC is obtained", ylab= "Mean Prevalence , from 2005, 2010 and 2017 Data", main = "LOG-SCALE")
 fit3<-lm(log(Prevalence)~MGAICE, data =df)
 lines(df$MGAICE, fitted(fit3))
-legend("topright", bty="n", legend=paste("R2 is", format(summary(fit3)$r.squared, digits=4)))
+legend("topright", bty="n", legend=paste0("Pearson Correlation: ", format(cor(df$MGAICE, log(df$Prevalence), method="pearson"), digits=4)))
 text(df$MGAICE, log(df$Prevalence), labels=countriesShort, cex= 0.7, pos=4)
 
+plot(df$MGAICE,log(df$SampleS/df$Prevalence), xlab = "MGAICE: The point where the minimum GAIC is obtained", ylab= "Sample Size, Relative to Prevalence", main = "LOG-SCALE")
+fit3<-lm(log(df$SampleS/Prevalence)~MGAICE, data =df)
+lines(df$MGAICE, fitted(fit3))
+legend("topright", bty="n", legend=paste0("Pearson Correlation: ", format(cor(df$MGAICE, log(df$SampleS/df$Prevalence), method="pearson"), digits=4)))
+text(df$MGAICE, log(df$SampleS/df$Prevalence), labels=countriesShort, cex= 0.7, pos=4)
 
-plot(df$MGAICE,log(df$Incidence), xlab = "MGAICE: The point where the minimum GAIC is obtained", ylab= "Mean Incidence (per 1000 individuals), from 2005, 2010 and 2017 Data", main = "LOG-SCALE")
-fit4<-lm(log(Incidence)~MGAICE, data =df)
-lines(df$MGAICE, fitted(fit4))
-legend("topright", bty="n", legend=paste("R2 is", format(summary(fit4)$r.squared, digits=4)))
-text(df$MGAICE, log(df$Incidence), labels=countriesShort, cex= 0.7, pos=4)
+
 
 
