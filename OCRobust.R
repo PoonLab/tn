@@ -3,7 +3,7 @@ source("~/git/tn/CluLib.R")
 
 #Expecting tn93 output as second param
 ## USAGE: Rscript ~/git/tn/OpClusters.R ___D.txt ##
-#EX: runArgs <- list("~/Seattle/tn93St.txt", NA, "0", "20")
+#EX: runArgs <- c("~/Seattle/tn93St.txt", NA, "0", "20")
 
 ## Generating Analysis
 #____________________________________________________________________________________________________________________________#
@@ -31,8 +31,11 @@ runlist <- rep(c(0.8,0.6,0.4), repeats)
 #Create Multiple Runs at various sub-samples
 runs <- mclapply(runlist, function(run) {
   
+  #Create a sample subgraph
+  subG <- induced_subgraph(g,sample(V(g), round(length(V(g))*run)))
+  
   #Create a set of subgraphs
-  gs <- multiGraph(g)
+  gs <- multiGraph(subG)
   names(gs) <- cutoffs
                  
   #Generate Growth data
