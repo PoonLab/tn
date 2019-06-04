@@ -1,3 +1,10 @@
+#Import Libraries
+library(igraph,verbose = FALSE)
+library(dplyr,verbose = FALSE)
+library(parallel,verbose = FALSE)
+library(ggplot2,verbose = FALSE)
+
+
 #Obtain the frequency of edges in a bipartite Graph between two different years as a function of the difference between those years
 bpeFreq <- function(iG) {
   #@param iG: A subGraph cut based on a threshold distance, with the latest cases representing New cases (ie. Upcoming cases)
@@ -129,8 +136,16 @@ gaicPlot <- function(growthD,  thresh = cutoffs) {
     labs(title="", x= "TN93 Distance Cutoff Threshold", y="GAIC") 
 }
 
-
+#Analyze a given Graph to establish the difference between the performance of a null model and 
 clusterAnalyze <- function(subG) {
+  #@param subG: A subGraph cut based on a threshold distance, expecting a member of the multiGraph set
+  #@return: A list of cluster information: 
+    #A table to show membership, cluster sizes, number of clusters, a proposed model predicting cluster growth
+    #In addition: Actual cluster growth and forecasted growth (from simGrow) and gaic (difference in fit between 2 models)
+  
+  #Established here for ageDi purposes  
+  years <- as.integer(levels(factor(V(subG)$year)))
+  
   #Obtain a model of case connection frequency to new cases as predicted by individual case ag
   #This data may contain missing cases, hense the complete cases addition
   ageDi <- bind_rows(lapply(rev(tail(years,-2)), function(y){
@@ -162,11 +177,14 @@ clusterAnalyze <- function(subG) {
   return(clu)
 }
 
-createGraphSet <- function(runArgs){
-  infile <- runArgs[1]
-  outfile <- ifelse(exists(runArgs[2]), runArgs[2], infile)
-  inputFilter <- as.numeric(runArgs[3])
-  
+#Creates a graph based on some inputted run arguments and potentially patient meta-data
+createGraph <- function(infile, inputFilter, metData){
+  #@param infile: The name/path of the input file (expecting tn93 output)
+  #@param inputFilter: Will drop x of the most recent years from the total data set based on this input
+  #@param metData: the filename for a dataframe of associated metadata (optional).
+  #@return: A graph with each vertex having a name and an id as well as every edge representing some measure of distance.
+
+  #From the input file.
   input <- read.csv(infile, stringsAsFactors = F)
   
   #This script will give warnings due to the fact that there are low fit rates on the null model
@@ -180,6 +198,30 @@ createGraphSet <- function(runArgs){
   V(g)$name <- temp[1,]
   V(g)$year <- as.numeric(temp[2,])
   
+  #Obtain metaData
+  if (!missing(metData)) {
+    metD <- read.csv(metData, stringsAsFactors = F)
+    V(g)$Age <- sapply(V(g)$name, function(x){
+      if(identical(as.numeric(metD[metD$ID==x, 2]), numeric(0))){NA}
+      else {as.numeric(metD[metD$ID==x, 2])}
+    })
+    V(g)$Sex <- sapply(V(g)$name, function(x){
+      if(identical(as.numeric(metD[metD$ID==x, 3]), numeric(0))){NA}
+      else {as.numeric(metD[metD$ID==x, 3])}
+    })
+    V(g)$Risk <- sapply(V(g)$name, function(x){
+      metD[metD$ID==x, 4]
+    })
+    V(g)$year <- sapply(V(g)$name, function(x){
+      if(identical(as.numeric(metD[metD$ID==x, 5]), numeric(0))){NA}
+      else {as.numeric(metD[metD$ID==x, 5])}
+    })
+  }
+  
+  
+  #Filter out empty year data
+  g <- induced.subgraph(g, V(g)[!is.na(year)])
+  
   #Obtain the range of years and the maximum input year
   years <- as.integer(levels(factor(V(g)$year)))
   nY <- max(years)
@@ -187,23 +229,36 @@ createGraphSet <- function(runArgs){
     nY <- nY-1
     if (length(V(g)[year==nY])>63){inputFilter <- inputFilter-1}
   }
-  g <- induced_subgraph(g, V(g)[year<=nY])
   
+  #Reset the years based on a newly trimmed graph and obtain the time difference
+  g <- induced_subgraph(g, V(g)[year<=nY])
   years <- as.integer(levels(factor(V(g)$year)))
   V(g)$tDiff <- sapply(V(g)$year, function(x) nY-x)
   
-  #Initialize a set of cutoffs to observe
-  steps <- head(hist(E(g)$Distance, plot=FALSE)$breaks,-5)
-  cutoffs <- seq(0 , max(steps), max(steps)/50)
+  return(g)
+}
+  
+#Return a set of subgraphsover somne set of cutoffs (parameters)
+multiGraph <- function(g, home = F) {
+  #@param g: The complete graph created with createGraph
+  #@param cutoffs: A list of cutoffs which we will build graphs based off of
+  #@return: A list of multiple graph objects filtered to different cutoffs
   
   #Resolve potential for merging clusters
   g <- minFilt(g)
   
   #Create a set of subgraphs at each cutoff
-  gs <- mclapply(cutoffs, function(d) {
-    subgraph.edges(g,E(g)[Distance<=d], delete.vertices = F)
-  }, mc.cores=8) 
-  names(gs) <- cutoffs
-  
+  #Avoid parallel functionality (breaks home computer)
+  if (home) {
+    gs <- mclapply(cutoffs, function(d) {
+      subgraph.edges(g,E(g)[Distance<=d], delete.vertices = F)
+    }, mc.cores=8) 
+  }
+  else{
+    gs <- mclapply(cutoffs, function(d) {
+      subgraph.edges(g,E(g)[Distance<=d], delete.vertices = F)
+    }, mc.cores=8) 
+  }
+
   return(gs)
 }
