@@ -110,8 +110,6 @@ simGrow <- function(iG) {
   return(clu)
 }
 
-
-
 #Analyze a given Graph to establish the difference between the performance of a null model and 
 clusterAnalyze <- function(subG) {
   #@param subG: A subGraph cut based on a threshold distance, expecting a member of the multiGraph set
@@ -174,8 +172,8 @@ createGraph <- function(infile, inputFilter, metData){
   V(g)$name <- temp[1,]
   V(g)$year <- as.numeric(temp[2,])
   
-  #Obtain metaData
-  if (!missing(metData)) {
+  #Obtain metaData if provided
+  if (!is.na(metData)) {
     metD <- read.csv(metData, stringsAsFactors = F)
     V(g)$Age <- sapply(V(g)$name, function(x){
       if(identical(as.numeric(metD[metD$ID==x, 2]), numeric(0))){NA}
@@ -193,7 +191,6 @@ createGraph <- function(infile, inputFilter, metData){
       else {as.numeric(metD[metD$ID==x, 5])}
     })
   }
-  
   
   #Filter out empty year data
   g <- induced.subgraph(g, V(g)[!is.na(year)])

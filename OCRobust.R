@@ -16,9 +16,10 @@ infile <- runArgs[1]
 outfile <- ifelse(exists(runArgs[2]), runArgs[2], infile)
 inputFilter <- as.numeric(runArgs[3])
 repeats <- as.numeric(runArgs[4])
+metData <- runArgs[5]
 
 #Save all growth data in accessable files
-g <- createGraph(infile, inputFilter)
+g <- createGraph(infile, inputFilter, metData)
 saveRDS(g, file = paste0(outfile, "G.rds"))
 
 #Initialize a set of cutoffs to observe

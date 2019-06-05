@@ -3,7 +3,7 @@ source("~/git/tn/CluLib.R")
 
 #Expecting tn93 output as second param
 ## USAGE: Rscript ~/git/tn/OpClusters.R ___D.txt ##
-#EX: runArgs <- c("~/Seattle/tn93St.txt", NA, "0", "F")
+#EX: runArgs <- c("~/Seattle/tn93St.txt", NA, "0", "F", NA)
 
 #Plot the GAIC between an informed and uninformed function over a set of thresholds
 gaicPlot <- function(growthD,  thresh = cutoffs) {
@@ -38,14 +38,15 @@ gaicPlot <- function(growthD,  thresh = cutoffs) {
 #Expecting the output from a tn93 run formatted to a csv file.
 #Expecting patient information in the format ID_Date
 #The name/path of the output file, will both a pdf summary, a set of all clustering data, and a complete version of the graph in question 
-runArgs <- commandArgs(trailingOnly = T, defaults = c("stdin",NA,0,F))
+runArgs <- commandArgs(trailingOnly = T, defaults = c("stdin",NA,0,"F",NA))
 infile <- runArgs[1]
-outfile <- ifelse(exists(runArgs[2]), runArgs[2], infile)
+outfile <- ifelse(is.na(runArgs[2]), runArgs[2], infile)
 inputFilter <- as.numeric(runArgs[3])
 home <- as.logical(runArgs[4])
+metData <- runArgs[5]
 
 #Save all growth data in accessable files
-g <- createGraph(infile, inputFilter)
+g <- createGraph(infile, inputFilter, metData)
 saveRDS(g, file = paste0(outfile, "G.rds"))
 
 #Initialize a set of cutoffs to observe

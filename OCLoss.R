@@ -11,17 +11,18 @@ source("~/git/tn/CluLib.R")
 #Expecting the output from a tn93 run formatted to a csv file.
 #Expecting patient information in the format ID_Date
 #The name/path of the output file, will both a pdf summary, a set of all clustering data, and a complete version of the graph in question 
-runArgs <- commandArgs(trailingOnly = T, defaults = c("stdin",NA,4,F))
+runArgs <- commandArgs(trailingOnly = T, defaults = c("stdin",NA,"4","F"))
 infile <- runArgs[1]
 outfile <- ifelse(exists(runArgs[2]), runArgs[2], infile)
 filterRange <- seq(0,as.numeric(runArgs[3]),1)
 home <- as.logical(runArgs[4])
+metData <- runArgs[5]
 
 #Create Multiple Runs at various longitudinal cuts
 runs <- mclapply(filterRange, function(x) {
   
   #Save all growth data in accessable files
-  g <- createGraph(infile, x)
+  g <- createGraph(infile, x, metData)
   saveRDS(g, file = paste0(outfile, "G.rds"))
   
   #Initialize a set of cutoffs to observe
@@ -51,8 +52,6 @@ saveRDS(runs, file = paste0(outfile, "GD.rds"))
 
 ## Generate Pictures and output summary
 #__________________________________________________________________________________________________________________________#
-
-
 
 #Obtain a list of vectors of GAICs for each filtered run
 gaics <- lapply(rev(runs), function(run){sapply(run, function(x) {x$gaic})})
