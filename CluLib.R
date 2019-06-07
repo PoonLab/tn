@@ -213,6 +213,9 @@ multiGraph <- function(iG, cutoffs, threads) {
   #Create a set of subgraphs at each cutoff
   #Avoid parallel functionality (breaks threads computer)
   gs <- mclapply(cutoffs, function(d) {
+    #Progress Tracking
+    if (tracking){cat(paste0("\r", "Building Graphs  ", d/max(cutoffs)*100, "%")) }
+    
     subgraph.edges(g,E(g)[Distance<=d], delete.vertices = F)
   }, mc.cores=threads) 
   
@@ -220,10 +223,9 @@ multiGraph <- function(iG, cutoffs, threads) {
 }
 
 #Do a run across a set of several graphs, analyzing GAIC at each
-gaicRun <- function(gs, cutoffs, threads, tracking=T) {
+gaicRun <- function(gs, cutoffs, threads) {
   #@param gs: A set of graphs, each created with slightly different parameters
   #@param cutoffs: A list of cutoffs which we will build graphs based off of
-  #@param tracking: Determine whether or not to print a percentage output to report progress
   #@param threads: To define how many threads to use for parallel functionality
   #@return: A data frame of each runs cluster information (clusterAnalyze output)
   

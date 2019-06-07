@@ -1,9 +1,16 @@
 ##TO-DO: Specify source-file Location
 source("~/git/tn/CluLib.R")
 
-#Expecting tn93 output as second param
-## USAGE: Rscript ~/git/tn/OpClusters.R ___D.txt ##
-#EX: runArgs <- list(f="~/Seattle/tn93St.txt",o=NA,y=0,t=1,m=NA,r=2)
+## USAGE: Rscript ~/git/tn/OpClusters.R.R __tn93output.txt__##
+#Options...
+# -f: The full file name (with path) to a tn93 output file, by default, this takes the standard input.
+# -o: The output file without an extension (with path). Several files outputs will be made distinguished by letters.
+# -y: A number for the purposes of filtering by year. Removes n years from the end of a data set (defaults to 0)
+# -t: Threads - how many parallel processes will be run at once (defaults to 1).
+# -m: Takes the name and path of a meta-data csv. Containing Age, sex, risk and Diagnostic Year (overwrites collection year)
+# -r: How many yeasrs beyond the most recent year will be examined
+
+#EX: runArgs <- list(f="~/Seattle/tn93St.txt", o=NA, y=0, t=1, m=NA, r=2)
 
 ## Generating Analysis
 #____________________________________________________________________________________________________________________________#
@@ -11,9 +18,9 @@ source("~/git/tn/CluLib.R")
 #Expecting the output from a tn93 run formatted to a csv file.
 #Expecting patient information in the format ID_Date
 #The name/path of the output file, will both a pdf summary, a set of all clustering data, and a complete version of the graph in question 
-runArgs <- commandArgs(trailingOnly=T, asValues=T, defaults = list(f="stdin",o=NA,y=0,t=1,m=NA,r=4))
+runArgs <- commandArgs(trailingOnly=T, asValues=T, defaults = list(f="stdin",o=NA,y=0,t=8,m=NA,r=4))
 infile <- runArgs$f
-outfile <- ifelse(is.na(runArgs$o), runArgs$f, infile)
+outfile <- ifelse(is.na(runArgs$o), gsub(".txt$", "", infile), runArgs$o)
 inputFilter <- as.numeric(runArgs$y)
 threads <- as.logical(runArgs$t)
 metData <- runArgs$m
@@ -24,7 +31,7 @@ runs <- lapply(1:length(filterRange), function(i) {
   
   #Progress Tracking
   run <- filterRange[[i]]
-  cat(paste0("\r", "Running Analysis ", i/length(runlist)*100, "%")) 
+  cat(paste0("\r", "                 ", "     - Total Progress ", round(i/length(runlist)*100,1), "%")) 
   
   
   #Save all growth data in accessable files

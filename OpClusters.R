@@ -1,9 +1,15 @@
 ##TO-DO: Specify source-file Location
 source("~/git/tn/CluLib.R")
 
-#Expecting tn93 output as second param
-## USAGE: Rscript ~/git/tn/OpClusters.R 
-#EX: runArgs <- list(f="~/Seattle/tn93St.txt",o=NA,y=0,t=4,m=NA,y=0)
+## USAGE: Rscript ~/git/tn/OpClusters.R.R __tn93output.txt__##
+#Options...
+# -f: The full file name (with path) to a tn93 output file, by default, this takes the standard input.
+# -o: The output file without an extension (with path). Several files outputs will be made distinguished by letters.
+# -y: A number for the purposes of filtering by year. Removes n years from the end of a data set (defaults to 0)
+# -t: Threads - how many parallel processes will be run at once (defaults to 1).
+# -m: Takes the name and path of a meta-data csv. Containing Age, sex, risk and Diagnostic Year (overwrites collection year)
+
+#EX: runArgs <- list(f="~/Seattle/tn93St.txt", o=NA, y=0, t=1, m=NA)
 
 #Plot the GAIC between an informed and uninformed function over a set of thresholds
 gaicPlot <- function(growthD,  thresh = cutoffs) {
@@ -40,7 +46,7 @@ gaicPlot <- function(growthD,  thresh = cutoffs) {
 #The name/path of the output file, will both a pdf summary, a set of all clustering data, and a complete version of the graph in question 
 runArgs <- commandArgs(trailingOnly=T, asValues=T, defaults = list(f="stdin",o=NA,y=0,t=1,m=NA))
 infile <- runArgs$f
-outfile <- ifelse(is.na(runArgs$o), runArgs$f, infile)
+outfile <- ifelse(is.na(runArgs$o), gsub(".txt$", "", infile), runArgs$o)
 inputFilter <- as.numeric(runArgs$y)
 threads <- as.numeric(runArgs$t)
 metData <- runArgs$m
