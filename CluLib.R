@@ -36,9 +36,8 @@ bpeFreq <- function(iG) {
 }
 
 #Filters the input graph such that all new cases are only linked to old cases by their closest edge to old cases
-minFilt <- function(iG, threads) {
+minFilt <- function(iG) {
   #@param iG: A subGraph cut based on a threshold distance, with the latest cases representing New cases (ie. Upcoming cases)
-  #@param threads: To define how many threads to use for parallel functionality
   #@return: A filtered version of this same graph, with all new cases holding only one edge to old cases
   
   #Obtain the new year
@@ -54,11 +53,10 @@ minFilt <- function(iG, threads) {
     cE <- mclapply(V(iG)[year==nY], function(x) {
       xE <- bE[inc(x)]
 
-        
       #To catch a case that is new, but has no linkages to old cases
       ret <- ifelse(length(xE)==0, 0, (xE[Distance == min(Distance)])[1] ) 
         
-    }, mc.cores = threads)
+    })
     
     
     #Remove the entries from new cases that dont connect to  old cases
@@ -102,9 +100,8 @@ simGrow <- function(iG) {
 }
 
 #Analyze a given Graph to establish the difference between the performance of a null model and 
-clusterAnalyze <- function(subG, threads) {
+clusterAnalyze <- function(subG) {
   #@param subG: A subGraph cut based on a threshold distance, expecting a member of the multiGraph set
-  #@param threads: To define how many threads to use for parallel functionality
   #@return: A list of cluster information: 
     #A table to show membership, cluster sizes, number of clusters, a proposed model predicting cluster growth
     #In addition: Actual cluster growth and forecasted growth (from simGrow) and gaic (difference in fit between 2 models)
@@ -115,7 +112,7 @@ clusterAnalyze <- function(subG, threads) {
   #Obtain a model of case connection frequency to new cases as predicted by individual case ag
   #This data may contain missing cases, hense the complete cases addition
   ageDi <- bind_rows(lapply(rev(tail(years,-2)), function(y){
-    ssubG <- minFilt(induced_subgraph(subG, V(subG)[year<y]), threads)
+    ssubG <- minFilt(induced_subgraph(subG, V(subG)[year<y]))
     bpeFreq(subG)
   }))
   
@@ -211,7 +208,7 @@ multiGraph <- function(iG, cutoffs, threads) {
   #@return: A list of multiple graph objects filtered to different cutoffs
   
   #Resolve potential for merging clusters
-  iG <- minFilt(iG, threads)
+  iG <- minFilt(iG)
   
   #Create a set of subgraphs at each cutoff
   #Avoid parallel functionality (breaks threads computer)
@@ -239,7 +236,7 @@ gaicRun <- function(gs, cutoffs, threads, tracking=T) {
     subG <- gs[[as.character(d)]]
     
     #Obtain cluster information for this subgraph
-    clusterAnalyze(subG, threads)
+    clusterAnalyze(subG)
     
   }, mc.cores=threads)
   

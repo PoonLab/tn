@@ -3,7 +3,7 @@ source("~/git/tn/CluLib.R")
 
 #Expecting tn93 output as second param
 ## USAGE: Rscript ~/git/tn/OCRobust.R 
-#EX: runArgs <- list(f="~/Seattle/tn93St.txt",o=NA,y=0,t=1,m=NA,r=30)
+#EX: runArgs <- list(f="~/Seattle/tn93St.txt",o=NA,y=0,t=4,m=NA,r=30)
 
 ## Generating Analysis
 #____________________________________________________________________________________________________________________________#
@@ -31,12 +31,11 @@ cutoffs <- seq(0 , max(steps), max(steps)/50)
 runlist <- rep(c(0.8,0.6,0.4), repeats)
 
 #Create Multiple Runs at various sub-samples
-runs <- mclapply(1:length(runlist), function(i) {
+runs <- lapply(1:length(runlist), function(i) {
   
   #Progress Tracking
   run <- runlist[[i]]
-  cat(paste0("\r", "Running Analysis ", round(i/length(runlist)*100), "%")) 
-  
+  cat(paste0("\r", "Running Analysis ", "     - ", round(i/length(runlist)*100,1), "%")) 
   
   #Create a sample subgraph
   subG <- induced_subgraph(g,sample(V(g), round(length(V(g))*run)))
@@ -46,13 +45,13 @@ runs <- mclapply(1:length(runlist), function(i) {
   names(gs) <- cutoffs
                  
   #Generate Growth data
-  res <- gaicRun(gs, cutoffs, threads, tracking=F)
+  res <- gaicRun(gs, cutoffs, threads, tracking=T)
 
   #Label data
   names(res) <- cutoffs
   
   return(res)
-}, mc.cores = threads)
+})
 
 #Save all growth data in accessable files
 saveRDS(runs, file = paste0(outfile, "RD.rds"))

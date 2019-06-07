@@ -1,0 +1,6 @@
+Rscript ~/git/tn/OpClusters.R f=~/Seattle/tn93St.txt 
+Rscript ~/git/tn/OCLoss.R f=~/Seattle/tn93St.txt r=4
+Rscript ~/git/tn/OCRobust.R f=~/Seattle/tn93St.txt r=30 t=4
+Rscript ~/git/tn/OCRobust.R f=~/Tennessee/tn93Tn.txt m=~/Tennessee/TnMetD/tnMD.csv r=30 t=4
+Rscript ~/git/tn/OCLoss.R f=~/Tennessee/tn93Tn.txt m=~/Tennessee/TnMetD/tnMD.csv r=30
+

@@ -3,7 +3,7 @@ source("~/git/tn/CluLib.R")
 
 #Expecting tn93 output as second param
 ## USAGE: Rscript ~/git/tn/OpClusters.R 
-#EX: runArgs <- list(f="~/Seattle/tn93St.txt",o=NA,y=0,t=1,m=NA,y=0)
+#EX: runArgs <- list(f="~/Seattle/tn93St.txt",o=NA,y=0,t=4,m=NA,y=0)
 
 #Plot the GAIC between an informed and uninformed function over a set of thresholds
 gaicPlot <- function(growthD,  thresh = cutoffs) {

@@ -20,7 +20,7 @@ metData <- runArgs$m
 filterRange <- 0:runArgs$r
 
 #Create Multiple Runs at various longitudinal cuts
-runs <- mclapply(1:length(filterRange), function(i) {
+runs <- lapply(1:length(filterRange), function(i) {
   
   #Progress Tracking
   run <- filterRange[[i]]
@@ -54,7 +54,7 @@ runs <- mclapply(1:length(filterRange), function(i) {
   names(res) <- cutoffs
   
   return(res)
-}, mc.cores = threads)
+})
 
 #Save all growth data in accessable files
 saveRDS(runs, file = paste0(outfile, "LD.rds"))
