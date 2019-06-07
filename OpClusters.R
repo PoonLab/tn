@@ -2,8 +2,8 @@
 source("~/git/tn/CluLib.R")
 
 #Expecting tn93 output as second param
-## USAGE: Rscript ~/git/tn/OpClusters.R ___D.txt ##
-#EX: runArgs <- c("~/Seattle/tn93St.txt", NA, "0", "F", NA)
+## USAGE: Rscript ~/git/tn/OpClusters.R 
+#EX: runArgs <- list(f="~/Seattle/tn93St.txt",o=NA,y=0,t=1,m=NA,y=0)
 
 #Plot the GAIC between an informed and uninformed function over a set of thresholds
 gaicPlot <- function(growthD,  thresh = cutoffs) {
@@ -38,12 +38,12 @@ gaicPlot <- function(growthD,  thresh = cutoffs) {
 #Expecting the output from a tn93 run formatted to a csv file.
 #Expecting patient information in the format ID_Date
 #The name/path of the output file, will both a pdf summary, a set of all clustering data, and a complete version of the graph in question 
-runArgs <- commandArgs(trailingOnly = T, defaults = c("stdin",NA,0,"F",NA))
-infile <- runArgs[1]
-outfile <- ifelse(is.na(runArgs[2]), runArgs[2], infile)
-inputFilter <- as.numeric(runArgs[3])
-home <- as.logical(runArgs[4])
-metData <- runArgs[5]
+runArgs <- commandArgs(trailingOnly=T, asValues=T, defaults = list(f="stdin",o=NA,y=0,t=1,m=NA))
+infile <- runArgs$f
+outfile <- ifelse(is.na(runArgs$o), runArgs$f, infile)
+inputFilter <- as.numeric(runArgs$y)
+threads <- as.numeric(runArgs$t)
+metData <- runArgs$m
 
 #Save all growth data in accessable files
 g <- createGraph(infile, inputFilter, metData)
@@ -54,11 +54,11 @@ steps <- head(hist(E(g)$Distance, plot=FALSE)$breaks,-5)
 cutoffs <- seq(0 , max(steps), max(steps)/50)
 
 #Create a set of subgraphs based off of differing cluster parameter
-gs <- multiGraph(g)
+gs <- multiGraph(g, cutoffs, threads)
 names(gs) <- cutoffs
 
 #Obtain cluster info for all subgraphs
-res <- gaicRun(gs)
+res <- gaicRun(gs, cutoffs, threads)
 
 #Label data
 names(res) <- cutoffs

@@ -3,7 +3,7 @@ library(igraph,verbose = FALSE)
 library(dplyr,verbose = FALSE)
 library(parallel,verbose = FALSE)
 library(ggplot2,verbose = FALSE)
-
+library(R.utils,verbose = FALSE)
 
 #Obtain the frequency of edges in a bipartite Graph between two different years as a function of the difference between those years
 bpeFreq <- function(iG) {
@@ -36,9 +36,9 @@ bpeFreq <- function(iG) {
 }
 
 #Filters the input graph such that all new cases are only linked to old cases by their closest edge to old cases
-minFilt <- function(iG, home=F) {
+minFilt <- function(iG, threads) {
   #@param iG: A subGraph cut based on a threshold distance, with the latest cases representing New cases (ie. Upcoming cases)
-  #@param home: To define whether or not to use parallel functionality and risk errors
+  #@param threads: To define how many threads to use for parallel functionality
   #@return: A filtered version of this same graph, with all new cases holding only one edge to old cases
   
   #Obtain the new year
@@ -50,25 +50,16 @@ minFilt <- function(iG, home=F) {
   #To catch a case where no new cases link to old ones
   if (length(bE) > 0) {
     
-    #Resolve Parallel problem
-    if (home) {
-      #Obtain the closest edges for each new case
-      cE <- lapply(V(iG)[year==nY], function(x) {
-        xE <- bE[inc(x)]
+    #Obtain the closest edges for each new case
+    cE <- mclapply(V(iG)[year==nY], function(x) {
+      xE <- bE[inc(x)]
+
         
-        #To catch a case that is new, but has no linkages to old cases
-        ifelse(length(xE)==0, 0, (xE[Distance == min(Distance)])[1] ) 
-      }, mc.cores=8)
+      #To catch a case that is new, but has no linkages to old cases
+      ret <- ifelse(length(xE)==0, 0, (xE[Distance == min(Distance)])[1] ) 
+        
+    }, mc.cores = threads)
     
-    } else {
-      #Obtain the closest edges for each new case
-      cE <-mclapply(V(iG)[year==nY], function(x) {
-        xE <- bE[inc(x)]
-        
-        #To catch a case that is new, but has no linkages to old cases
-        ifelse(length(xE)==0, 0, (xE[Distance == min(Distance)])[1] ) 
-      }, mc.cores=8)
-    }
     
     #Remove the entries from new cases that dont connect to  old cases
     cE <- unname(unlist(cE[cE!=0]))
@@ -111,19 +102,20 @@ simGrow <- function(iG) {
 }
 
 #Analyze a given Graph to establish the difference between the performance of a null model and 
-clusterAnalyze <- function(subG) {
+clusterAnalyze <- function(subG, threads) {
   #@param subG: A subGraph cut based on a threshold distance, expecting a member of the multiGraph set
+  #@param threads: To define how many threads to use for parallel functionality
   #@return: A list of cluster information: 
     #A table to show membership, cluster sizes, number of clusters, a proposed model predicting cluster growth
     #In addition: Actual cluster growth and forecasted growth (from simGrow) and gaic (difference in fit between 2 models)
   
   #Established here for ageDi purposes  
-  years <- as.integer(levels(factor(V(subG)$year)))
+  years <- as.integer(levels(factor(V(subG)$year)), threads)
   
   #Obtain a model of case connection frequency to new cases as predicted by individual case ag
   #This data may contain missing cases, hense the complete cases addition
   ageDi <- bind_rows(lapply(rev(tail(years,-2)), function(y){
-    ssubG <- minFilt(induced_subgraph(subG, V(subG)[year<y]))
+    ssubG <- minFilt(induced_subgraph(subG, V(subG)[year<y]), threads)
     bpeFreq(subG)
   }))
   
@@ -164,7 +156,7 @@ createGraph <- function(infile, inputFilter, metData){
   #This script will give warnings due to the fact that there are low fit rates on the null model
   options(warn=-1)
   
-  #Creates a graph based on the inputted data frame. The tn93 Distances become edge4 attributes
+  #Creates a graph based on the inputted data frame. The tn93 Distances become edge attributes
   g <- graph_from_data_frame(input, directed=F, vertices=NULL)
   
   #Adds the ID's and Sample collection years as different vertex attributes for each vertex
@@ -199,8 +191,8 @@ createGraph <- function(infile, inputFilter, metData){
   years <- as.integer(levels(factor(V(g)$year)))
   nY <- max(years)
   while (length(V(g)[year==nY])<63 || inputFilter>0) {
-    nY <- nY-1
     if (length(V(g)[year==nY])>63){inputFilter <- inputFilter-1}
+    nY <- nY-1
   }
   
   #Reset the years based on a newly trimmed graph and obtain the time difference
@@ -212,62 +204,44 @@ createGraph <- function(infile, inputFilter, metData){
 }
   
 #Return a set of subgraphsover somne set of cutoffs (parameters)
-multiGraph <- function(g, cutoffs, home = F) {
+multiGraph <- function(iG, cutoffs, threads) {
   #@param g: The complete graph created with createGraph
-  #@param home: To define whether or not to use parallel functionality and risk errors
+  #@param threads: To define how many threads to use for parallel functionality
   #@param cutoffs: A list of cutoffs which we will build graphs based off of
   #@return: A list of multiple graph objects filtered to different cutoffs
   
   #Resolve potential for merging clusters
-  g <- minFilt(g)
+  iG <- minFilt(iG, threads)
   
   #Create a set of subgraphs at each cutoff
-  #Avoid parallel functionality (breaks home computer)
-  if (home) {
-    gs <- mclapply(cutoffs, function(d) {
-      subgraph.edges(g,E(g)[Distance<=d], delete.vertices = F)
-    }, mc.cores=8) 
-  }
-  else{
-    gs <- mclapply(cutoffs, function(d) {
-      subgraph.edges(g,E(g)[Distance<=d], delete.vertices = F)
-    }, mc.cores=8) 
-  }
-
+  #Avoid parallel functionality (breaks threads computer)
+  gs <- mclapply(cutoffs, function(d) {
+    subgraph.edges(g,E(g)[Distance<=d], delete.vertices = F)
+  }, mc.cores=threads) 
+  
   return(gs)
 }
 
 #Do a run across a set of several graphs, analyzing GAIC at each
-gaicRun <- function(gs, home=F) {
+gaicRun <- function(gs, cutoffs, threads, tracking=T) {
   #@param gs: A set of graphs, each created with slightly different parameters
-  #@param home: To define whether or not to use parallel functionality and risk errors
+  #@param cutoffs: A list of cutoffs which we will build graphs based off of
+  #@param tracking: Determine whether or not to print a percentage output to report progress
+  #@param threads: To define how many threads to use for parallel functionality
   #@return: A data frame of each runs cluster information (clusterAnalyze output)
   
-  if (home) {
-    #Generate Growth data
-    res <- lapply(cutoffs, function(d) {
-      cat(paste0("\r", "Running Analysis ", d/max(cutoffs)*100, "%"))
-      
-      #Obtain a subGraph at the maximum year, removing edges above the distance cutoff and ensuring no merging by removing, non-closest edges to new cases
-      subG <- gs[[as.character(d)]]
-      
-      #Obtain cluster information for this subgraph
-      clusterAnalyze(subG)
-      
-    })
-  } else {
-    #Generate Growth data
-    res <- mclapply(cutoffs, function(d) {
-      cat(paste0("\r", "Running Analysis ", d/max(cutoffs)*100, "%"))
-      
-      #Obtain a subGraph at the maximum year, removing edges above the distance cutoff and ensuring no merging by removing, non-closest edges to new cases
-      subG <- gs[[as.character(d)]]
-      
-      #Obtain cluster information for this subgraph
-      clusterAnalyze(subG)
-      
-    }, mc.cores=8)
-  }
+  #Generate Growth data
+  res <- mclapply(cutoffs, function(d) {
+    
+    if (tracking){cat(paste0("\r", "Running Analysis ", d/max(cutoffs)*100, "%")) }
+    
+    #Obtain a subGraph at the maximum year, removing edges above the distance cutoff and ensuring no merging by removing, non-closest edges to new cases
+    subG <- gs[[as.character(d)]]
+    
+    #Obtain cluster information for this subgraph
+    clusterAnalyze(subG, threads)
+    
+  }, mc.cores=threads)
   
   return(res)
 }
