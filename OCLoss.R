@@ -26,13 +26,12 @@ threads <- as.logical(runArgs$t)
 metData <- runArgs$m
 filterRange <- 0:runArgs$r
 
-#Create Multiple Runs at various longitudinal cuts
+#Create Multiple Runs at various longitudinal cuts (with different amounts of new years truncated)
 runs <- lapply(1:length(filterRange), function(i) {
   
   #Progress Tracking
   run <- filterRange[[i]]
   cat(paste0("\r", "                 ", "     - Total Progress ", round(i/length(runlist)*100,1), "%")) 
-  
   
   #Save all growth data in accessable files
   g <- createGraph(infile, x, metData)
@@ -72,13 +71,15 @@ saveRDS(runs, file = paste0(outfile, "LD.rds"))
 #Obtain a list of vectors of GAICs for each filtered run
 gaics <- lapply(rev(runs), function(run){sapply(run, function(x) {x$gaic})})
 
-#The stepdistance between cutoff points
+#The step distance between cutoff points
 step <- max(cutoffs) / (length(cutoffs)-1)
 
 #The cutoff values which aquire the minimum GAIC. Also called the Minimum GAIC Estimator (MGAICE).
 minsLoc <- sapply(gaics, function(x){step*(which(x==min(x))[[1]]-1)}) 
 mins <- sapply(gaics, function(x){min(x)}) 
 maxs <- sapply(gaics, function(x){max(x)})
+
+#For defining range on a plot
 minmin <- min(mins)
 maxmax <- max(maxs)
 
@@ -88,6 +89,7 @@ pdf(file = paste0(outfile,"LVS.pdf"),width=20, height=10)
 #Plot Generation
 par(mfrow=c(3, 1))
 
+#Make multiple plots for each run of GAICs with minimum labelled
 for (i in 1:length(gaics)) {
   GAIC <- gaics[[i]]
   plot(cutoffs, GAIC, main = paste0(minY, "-", (maxY-length(runs))+i), ylim = c(minmin,maxmax))

@@ -19,7 +19,7 @@ source("~/git/tn/CluLib.R")
 #Expecting patient information in the format ID_Date
 #The name/path of the output file, will both a pdf summary, a set of all clustering data, and a complete version of the graph in question 
 runArgs <- commandArgs(trailingOnly=T, asValues=T, defaults = list(f="stdin",o=NA,y=0,t=1,m=NA,r=20))
-infile <- runArgs$f
+infile <- runArgs$fD
 outfile <- ifelse(is.na(runArgs$o), gsub(".txt$", "", infile), runArgs$o)
 inputFilter <- as.numeric(runArgs$y)
 threads <- as.logical(runArgs$t)
@@ -79,6 +79,8 @@ minsLoc <- sapply(gaics, function(x){step*(which(x==min(x))[[1]]-1)})
 df <- data.frame(Cutoff=as.numeric(names(unlist(gaics))), GAIC=unname(unlist(gaics)))
 mins <- sapply(gaics, function(x){min(x)}) 
 maxs <- sapply(gaics, function(x){max(x)})
+
+#For defining range on a plot
 minmin <- min(mins)
 maxmax <- max(maxs)
 
@@ -95,8 +97,12 @@ title(xlab= "Cutoff values used to construct models and measure growth",
 plot.window(xlim = c(min(cutoffs), max(cutoffs)), ylim = c(minmin, maxmax))
 axis(2, at=round(seq(minmin,maxmax,((maxmax-minmin)/10))), labels = round(seq(minmin,maxmax,((maxmax-minmin)/10))), las=2, pos = 0)
 axis(1, at=cutoffs, labels=cutoffs)
+
+#Add lines and a smooth average
 for (i in gaics){lines(as.numeric(names(i)), unname(i), col="grey")}
 smooth <- smooth.spline(df)
+
+#Add and make clear the absolute minimum of the trendline
 smthmin <- predict(smooth)$x[predict(smooth)$y == min(predict(smooth)$y)]
 lines(smooth, lwd=2)
 abline(v=smthmin, lty=2)
@@ -104,12 +110,13 @@ axis(3, smthmin)
 range <- c((smthmin+sd(minsLoc)),(smthmin-sd(minsLoc)))
 axis(3, at=range, pos=maxmax, labels=F)
 
-#Density Plot generation
+#Density data generation
 d <- density(minsLoc)
 d1 <- density(minsLoc[seq(1,(repeats*3-2),3)])
 d2 <- density(minsLoc[seq(2,(repeats*3-1),3)])
 d3 <- density(minsLoc[seq(3,(repeats*3),3)])
 
+#Density plot generation
 plot(d,ylim=(c(0,500)), col="white", main = "Kernal Density of MGAICE (Bandwidth = 0.0007)", xlab = "Cutoffs")
 polygon(d2, col=alpha("orange",0.6))
 polygon(d3, col=alpha("yellow",0.4))
