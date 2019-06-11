@@ -46,7 +46,7 @@ minFilt <- function(iG) {
   
   #Obtain the new year
   nY <- max(V(iG)$year)
-  s
+  
   #Obtain edge id's of all of the shortest edge lengths from new cases (A new case can only be linked to 1 case)
   bE <- E(iG)[V(iG)[year==nY]%--%V(iG)[year<nY]]
   
@@ -58,7 +58,7 @@ minFilt <- function(iG) {
       xE <- bE[inc(x)]
 
       #To catch a case that is new, but has no linkages to old cases
-      ret <- ifelse(length(xE)==0, 0, (xE[Distance == min(Distance)])[1] ) z
+      ret <- ifelse(length(xE)==0, 0, (xE[Distance == min(Distance)])[1] )
     })
     
     #Remove the entries from new cases that dont connect to old cases
@@ -225,9 +225,9 @@ multiGraph <- function(iG, cutoffs, threads) {
   #Create a set of subgraphs at each cutoff, removing any edge with weight above the cutoff
   gs <- mclapply(cutoffs, function(d) {
     #Progress Tracking
-    if (tracking){cat(paste0("\r", "Building Graphs  ", d/max(cutoffs)*100, "%")) }
+    cat(paste0("\r", "Building Graphs  ", d/max(cutoffs)*100, "%"))
     
-    subgraph.edges(g,E(g)[Distance<=d], delete.vertices = F)
+    subgraph.edges(iG,E(iG)[Distance<=d], delete.vertices = F)
   }, mc.cores=threads) 
   
   return(gs)
@@ -240,10 +240,13 @@ gaicRun <- function(gs, cutoffs, threads) {
   #@param threads: To define how many threads to use for parallel functionality
   #@return: A data frame of each runs cluster information (clusterAnalyze output)
   
+  #This script will give warnings because of poor null model fit and lack of convergence
+  options(warn=-1)
+  
   #Generate cluster data for each graph in gs
   res <- mclapply(cutoffs, function(d) {
     #Progress Tracking
-    if (tracking){cat(paste0("\r", "Running Analysis ", d/max(cutoffs)*100, "%")) }
+    cat(paste0("\r", "Running Analysis   ", d/max(cutoffs)*100, "%")) 
     
     #Obtain a subGraph at the maximum year, removing edges above the distance cutoff and ensuring no merging by removing, non-closest edges to new cases
     subG <- gs[[as.character(d)]]
