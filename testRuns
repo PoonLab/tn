@@ -2,6 +2,6 @@ Rscript ~/git/tn/OpClusters.R f=~/Seattle/tn93St.txt
 Rscript ~/git/tn/OpClusters.R f=~/Tennessee/tn93Tn.txt m=~/Tennessee/TnMetD/tnMD.csv t=8 
 Rscript ~/git/tn/OCLoss.R f=~/Seattle/tn93St.txt r=4
 Rscript ~/git/tn/OCRobust.R f=~/Seattle/tn93St.txt t=8 r=30
-Rscript ~/git/tn/OCLoss.R f=~/Tennessee/tn93Tn.txt o=~/Tennessee/tn93TnMet m=~/Tennessee/TnMetD/tnMD.csv t=8 r=12
-Rscript ~/git/tn/OCLoss.R f=~/Tennessee/tn93Tn.txt t=8 r=12
+Rscript ~/git/tn/OCLoss.R f=~/Tennessee/tn93Tn.txt o=~/Tennessee/tn93TnMet m=~/Tennessee/TnMetD/tnMD.csv t=8 r=4
+Rscript ~/git/tn/OCLoss.R f=~/Tennessee/tn93Tn.txt t=8 r=4
 Rscript ~/git/tn/OCRobust.R f=~/Tennessee/tn93Tn.txt m=~/Tennessee/TnMetD/tnMD.csv t=8 r=30

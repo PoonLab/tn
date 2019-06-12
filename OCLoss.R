@@ -10,7 +10,7 @@ source("~/git/tn/CluLib.R")
 # -m: Takes the name and path of a meta-data csv. Containing Age, sex, risk and Diagnostic Year (overwrites collection year)
 # -r: How many yeasrs beyond the most recent year will be examined
 
-#EX: runArgs <- list(f="~/Seattle/tn93St.txt", o=NA, y=0, t=1, m=NA, r=2)
+#EX: runArgs <- list(f="~/Seattle/tn93St.txt", o=NA, y=0, t=8, m=NA, r=2)
 
 ## Generating Analysis
 #____________________________________________________________________________________________________________________________#
@@ -66,7 +66,7 @@ runs <- lapply(1:length(filterRange), function(i) {
 #Save all growth data in accessable files
 saveRDS(runs, file = paste0(outfile, "LD.rds"))
 
-# runs <- readRDS("~/Tennessee/tn93TnLD.rds")
+# runs <- readRDS("~/Seattle/tn93StLD.rds")
 
 ## Generate Pictures and output summary
 #__________________________________________________________________________________________________________________________#
@@ -87,24 +87,32 @@ minmin <- min(mins)
 maxmax <- max(maxs)
 
 #Create output pdf
-pdf(file = paste0(outfile,"LVS.pdf"),width=20, height=10)
+pdf(file = paste0(outfile,"LVS.pdf"))
 
 #Plot Generation
-par(mfrow=c(3, 1))
+par(mfrow=c(length(filterRange), 1), mar = c(1,4,1,2), xlab="Cutoffs")
 
 #Make multiple plots for each run of GAICs with minimum labelled
 for (i in 1:length(gaics)) {
+  
+  #To insure that the bottom Cutoff label is shown
+  if (i==length(filterRange)){par(mar=c(5,4,1,2))}
+  
   GAIC <- gaics[[i]]
-  plot(cutoffs, GAIC, main = paste0(minY, "-", (maxY-length(runs))+i), ylim = c(minmin,maxmax))
+  plot(cutoffs, GAIC, ylim = c(minmin+(0.2*minmin),maxmax), xlab="", ylab = "GAIC")
   lines(cutoffs, GAIC)
-  abline(v=minsLoc[i], lty=2, lwd=1.5)
+  legend("bottomright", legend = paste0("Years ", minY, "-", (maxY-length(runs))+i), cex = 2)
+  
+  points(x=c(minsLoc[i], minsLoc[i-1]), y=c(mins[i], GAIC[as.character(minsLoc[i-1])]), cex=2.5, col="red" )
   
   #Represents the location of the past run's MGAICE, Loss Ratio = minGAIC / Past minGAIC
-  if (i>1){
-    abline(v=minsLoc[i-1], lty=2, col="orangered")
-    lossRat <- GAIC[as.character(minsLoc[i-1])]/GAIC[as.character(minsLoc[i])]
-    legend("bottomright", legend = paste0("Loss Ratio: ", round(lossRat,2)))
-  }
+  if (i>1){abline(v=minsLoc[i-1], lty=2, col="orangered")}
+  
+  #Draws an arrow to represent the follow through of the previous minimum
+  if (i<length(filterRange)){arrows(minsLoc[i], mins[i], minsLoc[i], minmin+(0.2*minmin))}
+  
+  #To creat the Cutoff label
+  if (i==length(filterRange)){title(xlab="Cutoffs", cex.lab=2)}
 }
 
 dev.off()
