@@ -30,9 +30,8 @@ filterRange <- 0:runArgs$r
 runs <- lapply(1:length(filterRange), function(i) {
   
   #Progress Tracking
-  run <- filterRange[[i]]
-  cat(paste0("\r", "                 ", "     - Total Progress ", round(i/length(runlist)*100,1), "%")) 
-  
+  x <- filterRange[[i]]
+
   #Save all growth data in accessable files
   g <- createGraph(infile, x, metData)
   
@@ -58,6 +57,8 @@ runs <- lapply(1:length(filterRange), function(i) {
   
   #Label data
   names(res) <- cutoffs
+  
+  cat(paste0("\r", "                 ", "     - Total Progress ", round(i/length(filterRange)*100,1), "%")) 
   
   return(res)
 })

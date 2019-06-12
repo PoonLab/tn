@@ -10,7 +10,8 @@ source("~/git/tn/CluLib.R")
 # -m: Takes the name and path of a meta-data csv. Containing Age, sex, risk and Diagnostic Year (overwrites collection year)
 # -r: How many repeats of 0.8, 0.6, and 0.4 resamples will be taken. (defaults to 20)
 
-#EX: runArgs <- list(f="~/Seattle/tn93St.txt", o=NA, y=0, t=8, m=NA, r=1)
+#EX1: runArgs <- list(f="~/Seattle/tn93St.txt", o=NA, y=0, t=8, m=NA, r=1)
+#EX2: runArgs <- list(f="~/Seattle/tn93St.txt", o=NA, y=0, t=8, m=NA, r=30)
 
 ## Generating Analysis
 #____________________________________________________________________________________________________________________________#
@@ -64,6 +65,7 @@ runs <- lapply(1:length(runProps), function(i) {
 
 #Save all growth data in accessable files
 saveRDS(runs, file = paste0(outfile, "RD.rds"))
+# runs <- readRDS("~/Seattle/tn93StRD.rds")
 
 ## Generate Pictures and output
 #__________________________________________________________________________________________________________________________#
@@ -119,7 +121,7 @@ d2 <- density(minsLoc[seq(2,(repeats*3-1),3)])
 d3 <- density(minsLoc[seq(3,(repeats*3),3)])
 
 #Density plot generation
-plot(d,ylim=(c(0,500)), col="white", main = "Kernal Density of MGAICE (Bandwidth = 0.0007)", xlab = "Cutoffs")
+plot(d, ylim=c(0,max(d1$y)), col="white", main = "Kernal Density of MGAICE (Bandwidth = 0.0007)", xlab = "Cutoffs")
 polygon(d2, col=alpha("orange",0.6))
 polygon(d3, col=alpha("yellow",0.4))
 polygon(d1,col=alpha("red",0.5))
