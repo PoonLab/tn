@@ -65,6 +65,7 @@ runs <- lapply(1:length(runProps), function(i) {
 
 #Save all growth data in accessable files
 saveRDS(runs, file = paste0(outfile, "RD.rds"))
+
 # runs <- readRDS("~/Seattle/tn93StRD.rds")
 
 ## Generate Pictures and output

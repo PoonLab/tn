@@ -10,6 +10,7 @@ source("~/git/tn/CluLib.R")
 # -m: Takes the name and path of a meta-data csv. Containing Age, sex, risk and Diagnostic Year (overwrites collection year)
 
 #EX: runArgs <- list(f="~/Seattle/tn93St.txt", o=NA, y=0, t=1, m=NA)
+#EX2: runArgs <- list(f="~/Tennessee/tn93Tn.txt", o=NA, y=0, m="~/Tennessee/TnMetD/tnMD.csv", t=1)
 
 #Plot the GAIC between an informed and uninformed function over a set of thresholds
 gaicPlot <- function(growthD,  thresh = cutoffs) {

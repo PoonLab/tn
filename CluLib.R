@@ -162,7 +162,6 @@ createGraph <- function(infile, inputFilter, metData){
   #Adds the ID's and Sample collection years as different vertex attributes for each vertex
   temp <- sapply(V(g)$name, function(x) strsplit(x, '_')[[1]])
   V(g)$name <- temp[1,]
-  V(g)$year <- as.numeric(temp[2,])
   
   #Obtain metaData if provided, fills in missing data as NA
   if (!is.na(metData)) {
@@ -182,14 +181,15 @@ createGraph <- function(infile, inputFilter, metData){
     V(g)$Risk <- sapply(V(g)$name, function(x){
       metD[metD$ID==x, 4]
     })
-    V(g)$year <- sapply(V(g)$name, function(x){
-      if(identical(as.numeric(metD[metD$ID==x, 5]), numeric(0))){NA}
-      else {as.numeric(metD[metD$ID==x, 5])}
-    })
+    V(g)$year <- as.numeric(metD[,5])
+  }
+  else {
+    V(g)$year <- as.numeric(temp[2,])
   }
   
+  
   #Filter out empty year data
-  g <- induced.subgraph(g, V(g)[!is.na(year)])
+  g <- induced.subgraph(g, V(g)[!is.na(year) & year>1950])
   
   #Obtain the range of years and the maximum input year
   years <- as.integer(levels(factor(V(g)$year)))
