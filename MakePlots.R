@@ -64,10 +64,10 @@ ADfit2 <- function(ageD) {
   return(cuts)
 }
 
-ADfit1 <- function(ageD) {
-  lapply(ageD, function(ageDi) {
-    mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
-    summary(mod)
+ADfitbn <- function(ageD) {
+  sapply(ageD, function(ageDi) {
+    mod <- 
+    mod$coefficients[[2]]
   })
 }
 
@@ -80,12 +80,14 @@ edgeFreq <- function(ageD){
   return(cuts)
 }
 
-res <- GDna
-sapply(1:(ncol(res)), function(x) {
-  fit <- res[[1,x]]
-  sum(fit$growth)
+sapply(GDna, function(x) {
+  mod <- x$ageD
+  1-mod$deviance/mod$null.deviance
 })
 
+sapply(GDna, function(x) {
+  x$gaic
+})
 
 ####Actual Figs
 
@@ -257,7 +259,7 @@ graphPlot(g1, 2011, 0.013, "dodgerblue")
 title("Seattle", line=-3)
 #title("A", line=1, adj=0,cex.main=3)
 graphPlot(g2, 2012, 0.011, "orange2") 
-title("Northern Alberta",line=-3)
-#title("B", line=1, adj=0, cex.main=3)
 
+title("North Alberta data at d=0.011",line=-3)
+#title("B", line=1, adj=0, cex.main=3)
 

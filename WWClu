@@ -1,0 +1,13 @@
+#!/bin/bash
+
+INPUT=$1
+KEY=$2
+DIRNAME=$3
+#IDLOC=$4
+#CYLOC=$5
+
+mkdir $DIRNAME
+cd $DIRNAME
+
+python3 ~/git/tn/prePro.py3 $INPUT $KEY
+tn93 -t 0.05 $KEY"PP.fas" | Rscript ~/git/tn/OpClusters.R o="~/WWData/"$DIRNAME"/"$KEY
