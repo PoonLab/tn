@@ -21,7 +21,7 @@ plot(jitter(ageDi$tDiff),
 
 # draw background
 bg <- par('usr')
-rect(xl=bg[1], yb=10^(bg[3]), xr=bg[2], yt=10^(bg[4]), col='linen', border=NA)
+rect(xl=bg[1], yb=10^(bg[3]), xr=bg[2], yt=10^(bg[4]), col='ivory2', border=NA)
 abline(h=axTicks(side=2), col='white', lwd=3, lend=2)
 #abline(h=axTicks(side=2)+diff(axTicks(side=2))[1]/2, col='white', lend=2)
 abline(v=axTicks(side=1), col='white', lwd=3, lend=2)

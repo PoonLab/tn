@@ -37,7 +37,7 @@ barplot(t(as.matrix(temp[,2:3])), beside=T, col='white', border=NA,
 
 # create a background
 x <- par('usr')
-rect(xl=x[1], yb=x[3], xr=x[2], yt=x[4], col='linen', border=NA)
+rect(xl=x[1], yb=x[3], xr=x[2], yt=x[4], col='ivory2', border=NA)
 abline(h=c(50, 100, 150), col='white', lwd=3, lend=2)
 abline(h=seq(25, 200, 50), col='white', lend=3)
 
@@ -80,13 +80,13 @@ dev.off()
 
 
 
-barplot(h1$counts / choose(n.st,2), col=rgb(0.12,.56,1,.7), 
-        border=rgb(0,0,0,0), space=0, xaxt='n', xlim=c(1,30),
-        ylab='Frequency', xlab='TN93 distance', cex.lab=1.2)
-axis(side=1, at=seq(0, length(h1$counts), 5),
-     labels=seq(0, 0.05, length.out=11))
-barplot(h2$counts / choose(n.na,2), add=T, col=rgb(.93,.604,.0,.7), space=0, 
-        border=rgb(0,0,0,0))
+#barplot(h1$counts / choose(n.st,2), col=rgb(0.12,.56,1,.7), 
+#        border=rgb(0,0,0,0), space=0, xaxt='n', xlim=c(1,30),
+#        ylab='Frequency', xlab='TN93 distance', cex.lab=1.2)
+#axis(side=1, at=seq(0, length(h1$counts), 5),
+#     labels=seq(0, 0.05, length.out=11))
+#barplot(h2$counts / choose(n.na,2), add=T, col=rgb(.93,.604,.0,.7), space=0, 
+#        border=rgb(0,0,0,0))
 
 
 
