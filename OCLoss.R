@@ -10,7 +10,8 @@ source("~/git/tn/CluLib.R")
 # -m: Takes the name and path of a meta-data csv. Containing Age, sex, risk and Diagnostic Year (overwrites collection year)
 # -r: How many yeasrs beyond the most recent year will be examined
 
-#EX: runArgs <- list(f="~/Seattle/tn93St.txt", o=NA, y=0, t=8, m=NA, r=2)
+#EX: runArgs <- list(f="~/Seattle/tn93St.txt", o=NA, t=8, m=NA, r=4)
+#EX2: runArgs <-list(f="~/Tennessee/tn93Tn.txt", o="~/Tennessee/tn93TnMet", t=8, m="~/Tennessee/TnMetD/tnMD.csv", r=4)
 
 ## Generating Analysis
 #____________________________________________________________________________________________________________________________#
@@ -18,18 +19,17 @@ source("~/git/tn/CluLib.R")
 #Expecting the output from a tn93 run formatted to a csv file.
 #Expecting patient information in the format ID_Date
 #The name/path of the output file, will both a pdf summary, a set of all clustering data, and a complete version of the graph in question 
-runArgs <- commandArgs(trailingOnly=T, asValues=T, defaults = list(f="stdin",o=NA,y=0,t=8,m=NA,r=4))
+runArgs <- commandArgs(trailingOnly=T, asValues=T, defaults = list(f="stdin",o=NA,t=8,m=NA,r=4))
 infile <- runArgs$f
 outfile <- ifelse(is.na(runArgs$o), gsub(".txt$", "", infile), runArgs$o)
-inputFilter <- as.numeric(runArgs$y)
-threads <- as.logical(runArgs$t)
+threads <- as.numeric(runArgs$t)
 metData <- runArgs$m
 filterRange <- 0:runArgs$r
 
 #Create Multiple Runs at various longitudinal cuts (with different amounts of new years truncated)
 runs <- lapply(1:length(filterRange), function(i) {
   
-  #Progress Tracking
+  #To cut n years off of the graph
   x <- filterRange[[i]]
 
   #Save all growth data in accessable files
@@ -58,15 +58,20 @@ runs <- lapply(1:length(filterRange), function(i) {
   #Label data
   names(res) <- cutoffs
   
+  #Progress Tracking
   cat(paste0("\r", "                 ", "     - Total Progress ", round(i/length(filterRange)*100,1), "%")) 
   
   return(res)
 })
 
+#To elimnate potential zombie processes
+wait()
+
 #Save all growth data in accessable files
 saveRDS(runs, file = paste0(outfile, "LD.rds"))
 
 # runs <- readRDS("~/Seattle/tn93StLD.rds")
+# runs <- readRDS("~/Tennessee/tn93TnMetLD.rds")
 
 ## Generate Pictures and output summary
 #__________________________________________________________________________________________________________________________#
@@ -87,32 +92,41 @@ minmin <- min(mins)
 maxmax <- max(maxs)
 
 #Create output pdf
-pdf(file = paste0(outfile,"LVS.pdf"))
+pdf(file = paste0(outfile,"LVS.pdf"), width=6, height=12)
 
 #Plot Generation
-par(mfrow=c(length(filterRange), 1), mar = c(1,4,1,2), xlab="Cutoffs")
+par(mfrow=c(length(filterRange), 1), mar = c(1,4,1,2), oma=c(5,4,1,2), cex.lab=1.2)
 
 #Make multiple plots for each run of GAICs with minimum labelled
 for (i in 1:length(gaics)) {
   
-  #To insure that the bottom Cutoff label is shown
-  if (i==length(filterRange)){par(mar=c(5,4,1,2))}
-  
+  #Initialize plot and background
   GAIC <- gaics[[i]]
   plot(cutoffs, GAIC, ylim = c(minmin+(0.2*minmin),maxmax), xlab="", ylab = "GAIC")
-  lines(cutoffs, GAIC)
-  legend("bottomright", legend = paste0("Years ", minY, "-", (maxY-length(runs))+i), cex = 2)
+  bg <- par('usr')
+  rect(xl=bg[1], yb=bg[3], xr=bg[2], yt=bg[4], col='linen', border=NA)
+  abline(h=axTicks(side=2), col='white', lwd=3, lend=2)
+  abline(h=axTicks(side=2)+diff(axTicks(side=2))[1]/2, col='white', lend=2)
+  abline(v=axTicks(side=1), col='white', lwd=3, lend=2)
+  abline(v=axTicks(side=1)+diff(axTicks(side=1))[1]/2, col='white', lend=2)
   
-  points(x=c(minsLoc[i], minsLoc[i-1]), y=c(mins[i], GAIC[as.character(minsLoc[i-1])]), cex=2.5, col="red" )
+  #Plot GAIC
+  lines(cutoffs, GAIC, lwd=1.6, col="blue")
+  legend("bottomright", legend = paste0("Years ", minY, "-", (maxY-length(runs))+i), cex = 1,bg ="white")
+  points(x=c(minsLoc[i]), y=c(mins[i]), cex=1)
   
   #Represents the location of the past run's MGAICE, Loss Ratio = minGAIC / Past minGAIC
-  if (i>1){abline(v=minsLoc[i-1], lty=2, col="orangered")}
+  if (i>1){abline(v=minsLoc[i-1], lty=2)}
   
   #Draws an arrow to represent the follow through of the previous minimum
-  if (i<length(filterRange)){arrows(minsLoc[i], mins[i], minsLoc[i], minmin+(0.2*minmin))}
+  if (i<length(filterRange)){arrows(minsLoc[i], mins[i], minsLoc[i], minmin+(0.2*minmin), length=0.05)}
   
-  #To creat the Cutoff label
-  if (i==length(filterRange)){title(xlab="Cutoffs", cex.lab=2)}
+  #To create the Cutoff label
+  if (i==length(filterRange)){
+    par(xpd=NA)
+    title(xlab="Cutoffs")
+  }
 }
+par(xpd=F)
 
 dev.off()

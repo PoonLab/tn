@@ -23,7 +23,7 @@ runArgs <- commandArgs(trailingOnly=T, asValues=T, defaults = list(f="stdin",o=N
 infile <- runArgs$f
 outfile <- ifelse(is.na(runArgs$o), gsub(".txt$", "", infile), runArgs$o)
 inputFilter <- as.numeric(runArgs$y)
-threads <- as.logical(runArgs$t)
+threads <- as.numeric(runArgs$t)
 metData <- runArgs$m
 repeats <- runArgs$r
 
@@ -90,21 +90,38 @@ minmin <- min(mins)
 maxmax <- max(maxs)
 
 #Create output pdf
-pdf(file = paste0(outfile,"RVS.pdf"),width=20, height=10)
+pdf(file = paste0(outfile,"RVS.pdf"), width = 15, height = 10)
 
 #Plot Generation
-par(mfrow=c(1,2))
+par(mfrow=c(1,2), cex.lab=1.2, main.font=1, cex.lab=1.2, font.main=1)
 
 #Plot of GAICs over a wide range of robustness
 plot.new()
-title(xlab= "Cutoff values used to construct models and measure growth", 
-      ylab = "GAIC: A null model's AIC subtracted from a proposed model AIC")
+title(xlab= "Cutoffs", 
+      ylab = "GAIC")
 plot.window(xlim = c(min(cutoffs), max(cutoffs)), ylim = c(minmin, maxmax))
-axis(2, at=round(seq(minmin,maxmax,((maxmax-minmin)/10))), labels = round(seq(minmin,maxmax,((maxmax-minmin)/10))), las=2, pos = 0)
-axis(1, at=cutoffs, labels=cutoffs)
+axis(2, at=round(seq(minmin,maxmax,((maxmax-minmin)/10))), labels = round(seq(minmin,maxmax,((maxmax-minmin)/10))), las=2)
+axis(1, at=seq(0,0.04,0.005), labels=seq(0,0.040,0.005))
 
-#Add lines and a smooth average
-for (i in gaics){lines(as.numeric(names(i)), unname(i), col="grey")}
+# create a background
+bg <- par('usr')
+rect(xl=bg[1], yb=bg[3], xr=bg[2], yt=bg[4], col='linen', border=NA)
+abline(h=axTicks(side=2), col='white', lwd=3, lend=2)
+abline(h=axTicks(side=2)+diff(axTicks(side=2))[1]/2, col='white', lend=2)
+abline(v=axTicks(side=1), col='white', lwd=3, lend=2)
+abline(v=axTicks(side=1)+diff(axTicks(side=1))[1]/2, col='white', lend=2)
+abline(0,0, lty=2, lwd=3, col='grey50')
+box()
+
+#Add lines and a smooth trend
+for (i in gaics[seq(1,(repeats*3-2),3)]){lines(as.numeric(names(i)), unname(i), col=alpha("darkblue",0.4))}
+for (i in gaics[seq(2,(repeats*3-1),3)]){lines(as.numeric(names(i)), unname(i), col=alpha("darkcyan",0.4))}
+for (i in gaics[seq(3,(repeats*3),3)]){lines(as.numeric(names(i)), unname(i), col=alpha("cadetblue1",0.4))}
+legend("topright", bg="white",
+       legend=c("Resample 80% of cases", "Resample 60% of cases", "Resample 40% of cases"), 
+       fill=c("darkblue", "darkcyan", "cadetblue1"), 
+       title = paste0("Resamples Groups (N=",repeats,")"))
+
 smooth <- smooth.spline(df)
 
 #Add and make clear the absolute minimum of the trendline
@@ -113,20 +130,32 @@ lines(smooth, lwd=2)
 abline(v=smthmin, lty=2)
 axis(3, smthmin)
 range <- c((smthmin+sd(minsLoc)),(smthmin-sd(minsLoc)))
-axis(3, at=range, pos=maxmax, labels=F)
+axis(3, at=range, pos=maxmax, labels=F, tcl=0.5)
+axis(3, at=range, pos=maxmax, labels=F, tcl=-0.5)
 
 #Density data generation
 d <- density(minsLoc)
-d1 <- density(minsLoc[seq(1,(repeats*3-2),3)])
+d1 <- density(minsLoc[seq(1,(repeats*3-2),3)], cut=4)
 d2 <- density(minsLoc[seq(2,(repeats*3-1),3)])
 d3 <- density(minsLoc[seq(3,(repeats*3),3)])
 
 #Density plot generation
-plot(d, ylim=c(0,max(d1$y)), col="white", main = "Kernal Density of MGAICE (Bandwidth = 0.0007)", xlab = "Cutoffs")
-polygon(d2, col=alpha("orange",0.6))
-polygon(d3, col=alpha("yellow",0.4))
-polygon(d1,col=alpha("red",0.5))
+plot(d, ylim=c(0,max(d1$y)), col="white", xlab = "Cutoffs", main="Kernal Density of Optimal Cutoff (Bandwidth = 0.0007)")
+
+# create a background
+bg <- par('usr')
+rect(xl=bg[1], yb=bg[3], xr=bg[2], yt=bg[4], col='linen', border=NA)
+abline(h=axTicks(side=2), col='white', lwd=3, lend=2)
+abline(h=axTicks(side=2)+diff(axTicks(side=2))[1]/2, col='white', lend=2)
+abline(v=axTicks(side=1), col='white', lwd=3, lend=2)
+abline(v=axTicks(side=1)+diff(axTicks(side=1))[1]/2, col='white', lend=2)
+abline(h=0, lty=2, lwd=3, col='grey50')
+box()
+
+#Add data to plot
+polygon(d2, col=alpha("darkcyan",0.6))
+polygon(d3, col=alpha("cadetblue1",0.6))
+polygon(d1,col=alpha("darkblue",0.6))
 abline(v=smthmin, lty=2)
-legend("topleft", legend=c("Resample 40% of cases", "Resample 60% of cases", "Resample 80% of cases"), fill=c("red", "orange", "yellow"), title = paste0("Resamples Groups (N=",length(runs)/3))
 
 dev.off()

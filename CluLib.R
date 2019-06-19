@@ -7,6 +7,12 @@ library(dplyr,verbose = FALSE)
 library(parallel,verbose = FALSE)
 library(ggplot2,verbose = FALSE)
 library(R.utils,verbose = FALSE)
+library(inline, verbose = FALSE)
+
+#Handle mclapply problems
+includes <- '#include <sys/wait.h>'
+code <- 'int wstat; while (waitpid(-1, &wstat, WNOHANG) > 0) {};'
+wait <- cfunction(body=code, includes=includes, convention='.C')
 
 #Obtain some frequency data regarding number of linkages from a given year to the newest year in the input graph.
 bpeFreq <- function(iG) {
