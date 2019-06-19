@@ -247,14 +247,19 @@ linGrowth(list(GDst,GDna))
 gaicPlot(list(GDst,GDna))
 
 # where do g1 and g2 come from?
+
+
 ggarrange(distPlot(g1, g2),
           yearPlot(g1, g2),
-          nrow = 2, padding=10, labels = c("A", "B"), label.args = list(gp = grid::gpar(font = 1, cex =1.5)))
+          nrow = 2, padding=10, labels = c("A", "B"), 
+          label.args = list(gp = grid::gpar(font = 1, cex =1.5)))
 
 par(mfrow=c(1,2))
 graphPlot(g1, 2011, 0.013, "dodgerblue")
-title("Seatte at d=0.013", line=-3)
-title("A", line=1, adj=0,cex.main=3)
+title("Seattle", line=-3)
+#title("A", line=1, adj=0,cex.main=3)
 graphPlot(g2, 2012, 0.011, "orange2") 
+
 title("North Alberta data at d=0.011",line=-3)
-title("B", line=1, adj=0, cex.main=3)
+#title("B", line=1, adj=0, cex.main=3)
+
