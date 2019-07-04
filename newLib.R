@@ -7,14 +7,14 @@ createGraph <- function(infile, inputFilter, metData){
   
   #From the input file, a tn93 output file. This will be an edgeList
   input <- read.csv(infile, stringsAsFactors = F)
-  temp1 <- sapply(eL$ID1, function(x) (strsplit(x,'_')[[1]])[[1]])
-  temp2 <- sapply(eL$ID1, function(x) (strsplit(x,'_')[[1]])[[2]])
-  temp3 <- sapply(eL$ID2, function(x) (strsplit(x,'_')[[1]])[[1]])
-  temp4 <- sapply(eL$ID2, function(x) (strsplit(x,'_')[[1]])[[2]])
+  temp1 <- sapply(input$ID1, function(x) (strsplit(x,'_')[[1]])[[1]])
+  temp2 <- sapply(input$ID1, function(x) (strsplit(x,'_')[[1]])[[2]])
+  temp3 <- sapply(input$ID2, function(x) (strsplit(x,'_')[[1]])[[1]])
+  temp4 <- sapply(input$ID2, function(x) (strsplit(x,'_')[[1]])[[2]])
   
   #Represents edge data and vertex data as two seperate dataframes
   el <- data.frame(ID1=as.character(temp1), t1=as.numeric(temp2), ID2=as.character(temp3), t2=as.numeric(temp4), 
-                   Distance = as.numeric(eL$Distance), stringsAsFactors= F)
+                   Distance = as.numeric(input$Distance), stringsAsFactors= F)
   el$tDiff <- abs(el$t1 - el$t2)
   vl <- unique(data.frame(ID = c(el$ID1, el$ID2), Time = c(el$t1, el$t2), stringsAsFactors=F))
   
@@ -28,16 +28,56 @@ createGraph <- function(infile, inputFilter, metData){
 
 clusters <- function(inG) {
   
+  #Simplify the list of vertices (just id's) and edges (just head and tail id's)
   temp <- inG$v[,"ID"]
-  search <- temp[1]
   adj <- inG$e[,c("ID1","ID2")]
-  i <- new <- 1
-  clu <- list()
   
-  while ( (nrow(temp)>0) && (nrow(adj)>0) ) {
+  #Initialize the first cluster name and the list of clusters, with c0 reserved for all singletons
+  i <- 1
+  clu <- list("c0"=vector())
+  
+  #Initialize the search term, our first vertex to base the clustering off of. 
+  #This also becomes the first member of this cluster
+  search <- temp[1]
+  member <- search
+  
+  #Because the first search vertex has been sorted into a cluster, we remove it from temp 
+  temp <- temp[-which(temp%in%search)]
+  while ( (length(temp)>0) && (nrow(adj)>0) ) {
+    
+    #Search for all neighbouring vertices to the search vertex (or search vertices)
+    #These are added to the current cluster and removed from temp
     neighbours <- unique(c(adj$ID1[which(adj$ID2%in%search)], adj$ID2[which(adj$ID1%in%search)]))
-    new <- neigbours - search
+    member <- c(member, neighbours) 
+    temp <- temp[-which(temp%in%neighbours)]
+    
+    #If there are no more neigbours to the search vertex, the cluster is completed and we reset the search parameters
+    if (length(neighbours)==0) {
+      
+      #To catch a singleton
+      if (length(member)==1) {
+        clu["c0"] <- c(clu["c0"], member)
+      }
+      else {
+        clu[paste0("c",i)] <- member
+      }
+      
+      #Reset search parameters
+      i <- i+1
+      
+      search <- temp[1]
+      member <- search
+      temp <- temp[-which(temp%in%search)]
+
+      next
+    }
+    
+    
+    adj <- adj[-which(adj$ID1%in%search),]
+    adj <- adj[-which(adj$ID2%in%search),]
     search <- neighbours
   }
   
+  
+  return(clu)
 }
