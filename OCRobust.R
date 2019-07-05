@@ -104,32 +104,32 @@ axis(2, at=round(seq(minmin,maxmax,((maxmax-minmin)/10))), labels = round(seq(mi
 axis(1, at=seq(0,0.04,0.005), labels=seq(0,0.040,0.005))
 
 # create a background
-bg <- par('usr')
-rect(xl=bg[1], yb=bg[3], xr=bg[2], yt=bg[4], col='linen', border=NA)
-abline(h=axTicks(side=2), col='white', lwd=3, lend=2)
-abline(h=axTicks(side=2)+diff(axTicks(side=2))[1]/2, col='white', lend=2)
-abline(v=axTicks(side=1), col='white', lwd=3, lend=2)
-abline(v=axTicks(side=1)+diff(axTicks(side=1))[1]/2, col='white', lend=2)
-abline(0,0, lty=2, lwd=3, col='grey50')
-box()
+#bg <- par('usr')
+#rect(xl=bg[1], yb=bg[3], xr=bg[2], yt=bg[4], col='linen', border=NA)
+#abline(h=axTicks(side=2), col='white', lwd=3, lend=2)
+#abline(h=axTicks(side=2)+diff(axTicks(side=2))[1]/2, col='white', lend=2)
+#abline(v=axTicks(side=1), col='white', lwd=3, lend=2)
+#abline(v=axTicks(side=1)+diff(axTicks(side=1))[1]/2, col='white', lend=2)
+#abline(0,0, lty=2, lwd=3, col='grey50')
+#box()
 
 #Add lines and a smooth trend
 for (i in gaics[seq(1,(repeats*3-2),3)]){lines(as.numeric(names(i)), unname(i), col=alpha("darkblue",0.4))}
-for (i in gaics[seq(2,(repeats*3-1),3)]){lines(as.numeric(names(i)), unname(i), col=alpha("darkcyan",0.4))}
-for (i in gaics[seq(3,(repeats*3),3)]){lines(as.numeric(names(i)), unname(i), col=alpha("cadetblue1",0.4))}
+for (i in gaics[seq(2,(repeats*3-1),3)]){lines(as.numeric(names(i)), unname(i), col=alpha("darkorchid",0.6))}
+for (i in gaics[seq(3,(repeats*3),3)]){lines(as.numeric(names(i)), unname(i), col=alpha("darkturquoise",0.6))}
 legend("topright", bg="white",
        legend=c("Resample 80% of cases", "Resample 60% of cases", "Resample 40% of cases"), 
-       fill=c("darkblue", "darkcyan", "cadetblue1"), 
+       fill=c("darkblue", "darkorchid", "darkturquoise"), 
        title = paste0("Resamples Groups (N=",repeats,")"))
 
 smooth <- smooth.spline(df)
 
-#Add and make clear the absolute minimum of the trendline
+#Add and make clear the minimum
 smthmin <- predict(smooth)$x[predict(smooth)$y == min(predict(smooth)$y)]
 lines(smooth, lwd=2)
 abline(v=smthmin, lty=2)
 axis(3, smthmin)
-range <- c((smthmin+sd(minsLoc)),(smthmin-sd(minsLoc)))
+range <- c(quantile(minsLoc, 0.25),quantile(minsLoc, 0.75))
 axis(3, at=range, pos=maxmax, labels=F, tcl=0.5)
 axis(3, at=range, pos=maxmax, labels=F, tcl=-0.5)
 
@@ -143,19 +143,20 @@ d3 <- density(minsLoc[seq(3,(repeats*3),3)])
 plot(d, ylim=c(0,max(d1$y)), col="white", xlab = "Cutoffs", main="Kernal Density of Optimal Cutoff (Bandwidth = 0.0007)")
 
 # create a background
-bg <- par('usr')
-rect(xl=bg[1], yb=bg[3], xr=bg[2], yt=bg[4], col='linen', border=NA)
-abline(h=axTicks(side=2), col='white', lwd=3, lend=2)
-abline(h=axTicks(side=2)+diff(axTicks(side=2))[1]/2, col='white', lend=2)
-abline(v=axTicks(side=1), col='white', lwd=3, lend=2)
-abline(v=axTicks(side=1)+diff(axTicks(side=1))[1]/2, col='white', lend=2)
-abline(h=0, lty=2, lwd=3, col='grey50')
-box()
+#bg <- par('usr')
+#rect(xl=bg[1], yb=bg[3], xr=bg[2], yt=bg[4], col='linen', border=NA)
+#abline(h=axTicks(side=2), col='white', lwd=3, lend=2)
+#abline(h=axTicks(side=2)+diff(axTicks(side=2))[1]/2, col='white', lend=2)
+#abline(v=axTicks(side=1), col='white', lwd=3, lend=2)
+#abline(v=axTicks(side=1)+diff(axTicks(side=1))[1]/2, col='white', lend=2)
+#abline(h=0, lty=2, lwd=3, col='grey50')
+#box()
 
 #Add data to plot
-polygon(d2, col=alpha("darkcyan",0.6))
-polygon(d3, col=alpha("cadetblue1",0.6))
+polygon(d2, col=alpha("darkorchid",1))
+polygon(d3, col=alpha("darkturquoise",0.8))
 polygon(d1,col=alpha("darkblue",0.6))
+
 abline(v=smthmin, lty=2)
 
 dev.off()
