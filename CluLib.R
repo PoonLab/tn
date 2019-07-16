@@ -14,6 +14,26 @@ includes <- '#include <sys/wait.h>'
 code <- 'int wstat; while (waitpid(-1, &wstat, WNOHANG) > 0) {};'
 wait <- cfunction(body=code, includes=includes, convention='.C')
 
+#Obtains a filtered subgraph of the full graph. Vertices are removed beyond a given year and edges are removed below a cutoff
+graphPlot <- function(iG, y, d, col) {
+  
+  #Removes vertices beyond a current year
+  outV <- V(iG)[V(iG)$year>y]
+  outG <- iG - outV
+  
+  #Removes edges with distances above a certain cutoff
+  outE <- E(outG)[E(outG)$Distance>=d]
+  outG <- outG - outE
+  
+  #Plot option ignores clusters of size 1 and provides a graph (for ease of overview, not for calculations)
+  outG <- subgraph.edges(outG, E(outG), delete.vertices = T)
+  plot(outG, vertex.size = 2, vertex.label = NA, vertex.color= col,
+       edge.width = 0.65, edge.color = 'black', 
+       margin = c(0,0,0,0))
+  #sub=paste0(title, " Network, at d=", d),
+}
+
+
 #Obtain some frequency data regarding number of linkages from a given year to the newest year in the input graph.
 bpeFreq <- function(iG) {
   #@param iG: A subGraph cut based on a threshold distance, with the latest cases representing New cases (ie. Upcoming cases)
@@ -32,7 +52,7 @@ bpeFreq <- function(iG) {
     pV <- V(iG)[year==x]
     bE <- E(iG)[pV%--%nV]  
     pos <- length(bE)
-    tot <- length(pV)*length(nV)
+    tot <- length(nV)
     return(c(pos,tot))
   })
   
@@ -124,7 +144,7 @@ clusterAnalyze <- function(subG) {
   #Obtain the frequency of edges, for a series of subgraphs cut to each possible year (excluding the newest year)
   ageDi <- bind_rows(lapply(rev(tail(years,-2)), function(y){
     ssubG <- minFilt(induced_subgraph(subG, V(subG)[year<y]))
-    bpeFreq(subG)
+    bpeFreq(ssubG)
   }))
  
   #Obtain a model of case connection frequency to new cases as predicted by individual case age

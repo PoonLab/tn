@@ -29,7 +29,7 @@ createGraph <- function(infile, inputFilter, metData){
 clusters <- function(inG) {
   
   #Simplify the list of vertices (just id's) and edges (just head and tail id's)
-  temp <- inG$v[,"ID"]
+  vid <- inG$v[,"ID"]
   adj <- inG$e[,c("ID1","ID2")]
   
   #Initialize the first cluster name and the list of clusters, with c0 reserved for all singletons
@@ -38,18 +38,18 @@ clusters <- function(inG) {
   
   #Initialize the search term, our first vertex to base the clustering off of. 
   #This also becomes the first member of this cluster
-  search <- temp[1]
+  search <- vid[1]
   member <- search
   
   #Because the first search vertex has been sorted into a cluster, we remove it from temp 
-  temp <- temp[-which(temp%in%search)]
-  while ( (length(temp)>0) && (nrow(adj)>0) ) {
+  vid <- vid[-which(vid%in%search)]
+  while ( (length(vid)>0) && (nrow(adj)>0) ) {
     
     #Search for all neighbouring vertices to the search vertex (or search vertices)
     #These are added to the current cluster and removed from temp
     neighbours <- unique(c(adj$ID1[which(adj$ID2%in%search)], adj$ID2[which(adj$ID1%in%search)]))
     member <- c(member, neighbours) 
-    temp <- temp[-which(temp%in%neighbours)]
+    vid <- vid[-which(vid%in%neighbours)]
     
     #If there are no more neigbours to the search vertex, the cluster is completed and we reset the search parameters
     if (length(neighbours)==0) {
@@ -65,9 +65,9 @@ clusters <- function(inG) {
       #Reset search parameters
       i <- i+1
       
-      search <- temp[1]
+      search <- vid[1]
       member <- search
-      temp <- temp[-which(temp%in%search)]
+      vid <- vid[-which(vid%in%search)]
 
       next
     }
