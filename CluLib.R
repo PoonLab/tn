@@ -4,15 +4,15 @@
 #Import Libraries
 library(igraph,verbose = FALSE)
 library(dplyr,verbose = FALSE)
-library(parallel,verbose = FALSE)
-library(ggplot2,verbose = FALSE)
-library(R.utils,verbose = FALSE)
-library(inline, verbose = FALSE)
+#library(parallel,verbose = FALSE)
+#library(ggplot2,verbose = FALSE)
+#library(R.utils,verbose = FALSE)
+#library(inline, verbose = FALSE)
 
 #Handle mclapply problems
-includes <- '#include <sys/wait.h>'
-code <- 'int wstat; while (waitpid(-1, &wstat, WNOHANG) > 0) {};'
-wait <- cfunction(body=code, includes=includes, convention='.C')
+#includes <- '#include <sys/wait.h>'
+#code <- 'int wstat; while (waitpid(-1, &wstat, WNOHANG) > 0) {};'
+#wait <- cfunction(body=code, includes=includes, convention='.C')
 
 #Obtain some frequency data regarding number of linkages from a given year to the newest year in the input graph.
 bpeFreq <- function(iG) {
@@ -32,7 +32,7 @@ bpeFreq <- function(iG) {
     pV <- V(iG)[year==x]
     bE <- E(iG)[pV%--%nV]  
     pos <- length(bE)
-    tot <- length(pV)*length(nV)
+    tot <- length(nV) #Fix without total
     return(c(pos,tot))
   })
   
@@ -124,7 +124,7 @@ clusterAnalyze <- function(subG) {
   #Obtain the frequency of edges, for a series of subgraphs cut to each possible year (excluding the newest year)
   ageDi <- bind_rows(lapply(rev(tail(years,-2)), function(y){
     ssubG <- minFilt(induced_subgraph(subG, V(subG)[year<y]))
-    bpeFreq(subG)
+    bpeFreq(ssubG)
   }))
  
   #Obtain a model of case connection frequency to new cases as predicted by individual case age
