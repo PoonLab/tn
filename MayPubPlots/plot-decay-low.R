@@ -1,11 +1,10 @@
-
-
+stD <- readRDS("tn93StGD.rds")
+naD <- readRDS("tn93NAGD.rds")
 
 par(mar=c(5,5,1,1))
 limits <- par('usr')
 
-
-ageD <- readRDS("stDAD.rds")
+ageD <- lapply(stD, function(x) x$ageD)
 cutoffs <- names(ageD)
 r2 <- {}
 for (cutoff in cutoffs) {
@@ -21,7 +20,7 @@ plot(cutoffs, r2, type='l', col='dodgerblue', ylim=c(0.2, 0.65),
 points(cutoffs, r2, pch=21, col='white', bg='dodgerblue', cex=1.2)
 
 
-ageD <- readRDS("naDAD.rds")
+ageD <- lapply(stD, function(x) x$ageD)
 cutoffs <- names(ageD)
 r2 <- {}
 for (cutoff in cutoffs) {
@@ -36,11 +35,11 @@ points(cutoffs, r2, pch=21, col='white', bg='orange2', cex=1.2)
 #========================================================#
 
 # log transformed plot  
-pdf(file='~/papers/maup/images/decaylow.pdf', width=4.5, height=4.5)
+pdf(file='decaylow.pdf', width=4.5, height=4.5)
 
 par(mar=c(5,5,1,1))
-ageD <- readRDS("stDAD.rds")
-ageDi <- ageD[["0.005"]]
+ageD <- lapply(stD, function(x) x$ageD)
+ageDi <- ageD[["0.004"]]
 mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
 
 set.seed(1)  # for reproducible jitter
@@ -49,7 +48,7 @@ plot(jitter(ageDi$tDiff),
 #     log='y',
      type='n',
      xlab='Time lag (years)', 
-     ylab=expression('Bipartite edge density ' %*%10^-4), 
+     ylab=expression('Bipartite edge density '), 
      cex.lab=1.2, yaxt='n')
  
 # draw background
@@ -66,10 +65,10 @@ points(jitter(ageDi$tDiff), ageDi$Positive/ageDi$Total,
        pch=21, bg='dodgerblue', col='white', cex=1.5)
 
 axis(2, at=axTicks(side=2), 
-     labels=axTicks(side=2) * 10^4,
+     labels=axTicks(side=2),
      las=2)
 
-legend(x=7, y=6e-4, legend=c('Seattle', 'N.Alberta'), pch=c(21,22), pt.cex=1.5,
+legend(x=7, y=0.08, legend=c('Seattle', 'N.Alberta'), pch=c(21,22), pt.cex=1.5,
        col='white', pt.bg=c('dodgerblue', 'orange2'), bty='n')
 
 # indicate location of zeroes
@@ -88,8 +87,8 @@ lines(smooth.spline(x=ageDi$tDiff, y=mod$fitted.values),
 
 # North Alberta
 
-ageD <- readRDS("naDAD.rds")
-ageDi <- ageD[["0.005"]]
+ageD <- lapply(naD, function(x) x$ageD)
+ageDi <- ageD[["0.004"]]
 
 mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
 

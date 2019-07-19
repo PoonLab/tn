@@ -4,15 +4,35 @@
 #Import Libraries
 library(igraph,verbose = FALSE)
 library(dplyr,verbose = FALSE)
-#library(parallel,verbose = FALSE)
-#library(ggplot2,verbose = FALSE)
-#library(R.utils,verbose = FALSE)
-#library(inline, verbose = FALSE)
+library(parallel,verbose = FALSE)
+library(ggplot2,verbose = FALSE)
+library(R.utils,verbose = FALSE)
+library(inline, verbose = FALSE)
 
 #Handle mclapply problems
-#includes <- '#include <sys/wait.h>'
-#code <- 'int wstat; while (waitpid(-1, &wstat, WNOHANG) > 0) {};'
-#wait <- cfunction(body=code, includes=includes, convention='.C')
+includes <- '#include <sys/wait.h>'
+code <- 'int wstat; while (waitpid(-1, &wstat, WNOHANG) > 0) {};'
+wait <- cfunction(body=code, includes=includes, convention='.C')
+
+#Obtains a filtered subgraph of the full graph. Vertices are removed beyond a given year and edges are removed below a cutoff
+graphPlot <- function(iG, y, d, col) {
+  
+  #Removes vertices beyond a current year
+  outV <- V(iG)[V(iG)$year>y]
+  outG <- iG - outV
+  
+  #Removes edges with distances above a certain cutoff
+  outE <- E(outG)[E(outG)$Distance>=d]
+  outG <- outG - outE
+  
+  #Plot option ignores clusters of size 1 and provides a graph (for ease of overview, not for calculations)
+  outG <- subgraph.edges(outG, E(outG), delete.vertices = T)
+  plot(outG, vertex.size = 2, vertex.label = NA, vertex.color= col,
+       edge.width = 0.65, edge.color = 'black', 
+       margin = c(0,0,0,0))
+  #sub=paste0(title, " Network, at d=", d),
+}
+
 
 #Obtain some frequency data regarding number of linkages from a given year to the newest year in the input graph.
 bpeFreq <- function(iG) {

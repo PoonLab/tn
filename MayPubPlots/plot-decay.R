@@ -1,13 +1,16 @@
 
+stD <- readRDS("tn93StGD.rds")
+naD <- readRDS("tn93NAGD.rds")
+
 # log transformed plot  
-pdf(file='~/papers/maup/images/decay.pdf', width=5, height=5)
+pdf(file='decay.pdf', width=5, height=5)
 
 par(mar=c(5,5,1,1))
 limits <- par('usr')
 
 
-ageD <- readRDS("stDAD.rds")
-ageDi <- ageD[["0.05"]]
+ageD <- lapply(stD, function(x) x$ageD)
+ageDi <- ageD[["0.04"]]
 mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
 
 set.seed(1)  # for reproducible jitter
@@ -16,7 +19,7 @@ plot(jitter(ageDi$tDiff),
      log='y',
      type='n',
      xlab='Time lag (years)', 
-     ylab=expression('Bipartite edge density ' %*%10^-4), 
+     ylab=expression('Bipartite edge density'), # %*%10^-4), 
      cex.lab=1.2, yaxt='n')
 
 # draw background
@@ -33,7 +36,7 @@ points(jitter(ageDi$tDiff), ageDi$Positive/ageDi$Total,
        pch=21, bg='dodgerblue', col='white', cex=1.5)
 
 axis(2, at=axTicks(side=2), 
-     labels=axTicks(side=2) * 10^4,
+     labels=axTicks(side=2), # * 10^4,
      las=2)
 
 legend(x=8, y=0.01, legend=c('Seattle', 'N.Alberta'), pch=c(21,22), pt.cex=1.5,
@@ -55,8 +58,8 @@ lines(smooth.spline(x=ageDi$tDiff, y=mod$fitted.values),
 
 # North Alberta
 
-ageD <- readRDS("naDAD.rds")
-ageDi <- ageD[["0.05"]]
+ageD <- lapply(naD, function(x) x$ageD)
+ageDi <- ageD[["0.04"]]
 
 mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
 
