@@ -1,4 +1,5 @@
 infile <- "stD.txt"
+#infile <- "Data/Seattle/tn93StsubB.txt"
 inputFilter <- 0
 metData <- NA
 
@@ -101,26 +102,30 @@ clusters <- function(inG) {
   inG$cSum <- sapply(tail(clu,-1), function(x){length(x)})
   inG$cNo <- length(clu)-1
 
-  return(clu)
+  outG <- inG
+  
+  return(list(clu, outG))
 }
 
-simGrow <- function(inG, maxD) {
+simGrow <- function(inG, maxD, maxT) {
   
-  #TO-DO: Finish this...
+  inG <- tFilt(inG, maxT)
+  inG <- dFilt(inG, maxD)
+  inG <- clsFilt(inG)
   
-  maxY <- max(c(inG$e[["t1"]],inG$e[["t2"]]))
-  fromNew <- which(inG$e[["t1"]]==maxY)
-  toNew <- which(inG$e[["t2"]]==maxY)
+  oldG <- tFilt(inG, (maxT-1))
   
-  growth <- inG$e[c(toNew,fromNew),]
-  el <- inG$e[-c(toNew,fromNew),]
-  vl <- inG$v[which(inG$v["Time"]<maxY),]
-  cluG <- list(v=vl, e=el)
-
+  oClu <- clusters(oldG)[[2]]
+  nClu <- clusters(inG)[[2]]
+  
+  oldG <- oClu[[2]]
+  inG <- nClu[[2]]
+  
+  
 }
 
 #Remove edges from some graph that sit above a maximum reporting distance.
-eFilt <- function(inG, maxD) {
+dFilt <- function(inG, maxD) {
   #@param inG: The input Graph with all edges present
   #@param maxD: The maximum distance, edges with distance above this are filtered out
   #@return: The input Graph with edges above a maximum reporting distance filtered
@@ -135,7 +140,7 @@ tFilt <- function(inG, maxT) {
   #@param inG: The input Graph with all vertices present
   #@param maxT: The maximum distance, edges with Time above this are filtered out
   #@return: The input Graph with vertices above a maximum time filtered out
-  inG$v <- inG$v[which(inG$v$Time<maxT),]
+  inG$v <- inG$v[which(inG$v$Time<=maxT),]
   
   #To remove associated edges
   inG$e <- inG$e[-which(inG$e$t1>maxT),]

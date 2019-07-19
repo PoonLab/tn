@@ -12,33 +12,6 @@ source("~/git/tn/CluLib.R")
 #EX: runArgs <- list(f="~/Seattle/tn93St.txt", o=NA, y=0, t=1, m=NA)
 #EX2: runArgs <- list(f="~/Tennessee/tn93Tn.txt", o=NA, y=0, m="~/Tennessee/TnMetD/tnMD.csv", t=1)
 
-#Plot the GAIC between an informed and uninformed function over a set of thresholds
-gaicPlot <- function(growthD,  thresh = cutoffs) {
-  #@param growthD: A list of clustering information at various cutoffs, annotated with growth (simGrow, output)
-  #@param thresh: A list of cutoff thresholds to representing the independant variable
-  #@return: A visual graph of plotted GAIC between two models over the course of @thresh (a list of cutoffs)
-  
-  #Extract GAIC measurements
-  gaicD <- sapply(growthD, function(x) {x$gaic})
-  
-  #PLace Data into frame
-  df <- data.frame(Threshold = thresh, GAIC1 = gaicD)
-  min <- df$Threshold[which(df$GAIC1==min(df$GAIC1))[[1]]]
-  
-  #Generate plot
-  ggplot(df, aes(x=Threshold)) +
-    theme(axis.title.x = element_text(size=12, margin=margin(t=10)),
-          axis.title.y = element_text(size=12), 
-          axis.text.x = element_text(size=10), 
-          axis.text.y = element_text(size=10),
-          plot.title = element_text(size=20, hjust=-0.05, vjust=-0.05),
-          legend.text = element_text(size=15)) +
-    geom_line(aes(y=GAIC1), size=1.2)+
-    geom_vline(xintercept = min, linetype=4, colour="black", alpha=0.5)+
-    geom_text(aes(min, 5, label = min, vjust =1.5))+
-    labs(title="", x= "TN93 Distance Cutoff Threshold", y="GAIC") 
-}
-
 ## Generating Analysis
 #____________________________________________________________________________________________________________________________#
 
@@ -83,6 +56,34 @@ opt <- gs[[do]]
 
 #Plot option ignores clusters of size 1 and provides a graph (for ease of overview, not for calculations)
 optPG <- subgraph.edges(opt, E(opt), delete.vertices = T)
+
+#Plot the GAIC between an informed and uninformed function over a set of thresholds
+gaicPlot <- function(growthD,  thresh = cutoffs) {
+  #@param growthD: A list of clustering information at various cutoffs, annotated with growth (simGrow, output)
+  #@param thresh: A list of cutoff thresholds to representing the independant variable
+  #@return: A visual graph of plotted GAIC between two models over the course of @thresh (a list of cutoffs)
+  
+  #Extract GAIC measurements
+  gaicD <- sapply(growthD, function(x) {x$gaic})
+  
+  #PLace Data into frame
+  df <- data.frame(Threshold = thresh, GAIC1 = gaicD)
+  min <- df$Threshold[which(df$GAIC1==min(df$GAIC1))[[1]]]
+  
+  #Generate plot
+  ggplot(df, aes(x=Threshold)) +
+    theme(axis.title.x = element_text(size=20, margin=margin(t=10)),
+          axis.title.y = element_text(size=20), 
+          axis.text.x = element_text(size=15), 
+          axis.text.y = element_text(size=15),
+          plot.title = element_text(size=20, hjust=-0.05, vjust=-0.05),
+          legend.text = element_text(size=15)) +
+    geom_line(aes(y=GAIC1), size=1.2)+
+    geom_vline(xintercept = min, linetype=4, colour="black", alpha=0.5)+
+    geom_text(aes(min, 10, label = min, vjust =1.5))+
+    labs(title="", x= "TN93 Distance Cutoff Threshold", y="GAIC") 
+}
+
 
 #Create visual output pdf
 pdf(file = paste0(outfile, "VS.pdf"))
