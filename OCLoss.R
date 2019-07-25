@@ -11,7 +11,7 @@ source("~/git/tn/CluLib.R")
 # -r: How many yeasrs beyond the most recent year will be examined
 
 #EX: runArgs <- list(f="~/Seattle/tn93St.txt", o=NA, t=8, m=NA, r=4)
-#EX2: runArgs <-list(f="~/Tennessee/tn93Tn.txt", o="~/Tennessee/tn93TnMet", t=8, m="~/Tennessee/TnMetD/tnMD.csv", r=4)
+#EX2: runArgs <-list(f="~/Data/Tennessee/tn93TnsubB.txt", o=NA, m=NA, t=4, r=6)
 
 ## Generating Analysis
 #____________________________________________________________________________________________________________________________#
@@ -65,7 +65,7 @@ runs <- lapply(1:length(filterRange), function(i) {
 })
 
 #To elimnate potential zombie processes
-wait()
+#wait()
 
 #Save all growth data in accessable files
 saveRDS(runs, file = paste0(outfile, "LD.rds"))

@@ -33,7 +33,7 @@ createGraph <- function(infile, inputFilter, metData){
 
 clusters <- function(inG) {
   
-  #inG <- eFilt(g, 0.015)
+  #inG <- dFilt(g, 0.015)
   
   #To set up a column in vector info of cluster membership
   inG$v$Cluster <- vector(mode="numeric", length=nrow(inG$v))
@@ -101,7 +101,7 @@ clusters <- function(inG) {
   #Add some summary information regarding clusters
   inG$cSum <- sapply(tail(clu,-1), function(x){length(x)})
   inG$cNo <- length(clu)-1
-
+  
   outG <- inG
   
   return(list(clu, outG))
@@ -153,6 +153,10 @@ tFilt <- function(inG, maxT) {
 #Filter the edges coming from new cases such that the new cases have no edges to eachother and only one edge leading from them to old cases
 #This is a simplification to help resolve the merging involved in cluster growth and to prevent growth by whole clusters.
 clsFilt <- function(inG){
+  
+  #inG <- dFilt(g, 0.015)
+  #inG <- dFilt(tFilt(g, 2012), 0.015)
+  
   nV <- inG$v$ID[which(inG$v$Time == max(inG$v$Time))]
   fromNew <- which(inG$e$ID1%in%nV)
   toNew <- which(inG$e$ID2%in%nV)
@@ -182,8 +186,18 @@ clsFilt <- function(inG){
   minE <- unname(minE[minE>0])
   remE <- setdiff(as.numeric(c(fromNew, toNew)), minE)
   
-  outG <- inG$e[-remE,]
+  outG <- inG
+  outG$e <- outG$e[-remE,]
 
   return(outG)
 } 
+
+#nrow(inG$v[inG$v$Time==2012,])
+#nrow(inG$e[inG$e$t1==2012,]) + nrow(inG$e[inG$e$t2==2012,])
+
+#nrow(outG$v[outG$v$Time==2012,])
+#nrow(outG$e[outG$e$t1==2012,]) + nrow(outG$e[outG$e$t2==2012,])
+
+#nrow(inG$e[(inG$e$t1==2012)&(inG$e$t2==2012),])
+
 
