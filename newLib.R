@@ -21,12 +21,14 @@ createGraph <- function(infile, inputFilter, metData){
   el <- data.frame(ID1=as.character(temp1), t1=as.numeric(temp2), ID2=as.character(temp3), t2=as.numeric(temp4), 
                    Distance = as.numeric(input$Distance), stringsAsFactors= F)
   el$tDiff <- abs(el$t1 - el$t2)
+  el$tMax <- sapply(1:nrow(el), function(i){max(el[i,]$t1, el[i,]$t2)})
+  
   vl <- unique(data.frame(ID = c(el$ID1, el$ID2), Time = c(el$t1, el$t2), stringsAsFactors=F))
   
-  ##TO-DO: Meta-Data (potentially broken in previous code before)
+  ##TO-DO: Meta-Data (potentially broken in cluLib)
   
   #Arrange into a named list representing the graph
-  g <- list(v=vl, e=el)
+  g <- list(v=vl[order(vl$Time),], e=el[order(el$tMax),])
   
   return(g)
 }
@@ -107,22 +109,32 @@ clusters <- function(inG) {
   return(list(clu, outG))
 }
 
-simGrow <- function(inG, maxD, maxT) {
+simGrow <- function(inG, maxD) {
   
-  inG <- tFilt(inG, maxT)
-  inG <- dFilt(inG, maxD)
-  inG <- clsFilt(inG)
+  #inG <- tFilt(g, 2012)
+  
+  maxT <- max(inG$v$Time)
+  inG <- clsFilt(dFilt(tFilt(g, maxT), maxD))
   
   oldG <- tFilt(inG, (maxT-1))
+  newG <- inG
   
-  oClu <- clusters(oldG)[[2]]
-  nClu <- clusters(inG)[[2]]
+  oldClu <- clusters(oldG) 
+  oldC <- oldClu[[1]]
+  oldG <- oldClu[[2]]
   
-  oldG <- oClu[[2]]
-  inG <- nClu[[2]]
+  sing <- oldC$c0
+  newG$e <- newG$e[-which(newG$e$ID1%in%sing),]
+  newG$e <- newG$e[-which(newG$e$ID2%in%sing),]
+  
+  newG <- clusters(newG)[[2]]
+  
+  growth <- newG$cSum - oldG$cSum
   
   
 }
+
+
 
 #Remove edges from some graph that sit above a maximum reporting distance.
 dFilt <- function(inG, maxD) {
@@ -151,7 +163,7 @@ tFilt <- function(inG, maxT) {
 }
 
 #Filter the edges coming from new cases such that the new cases have no edges to eachother and only one edge leading from them to old cases
-#This is a simplification to help resolve the merging involved in cluster growth and to prevent growth by whole clusters.
+#This is a simplification to hep resolve the merging involved in cluster growth and to prevent growth by whole clusters.
 clsFilt <- function(inG){
   
   #inG <- dFilt(g, 0.015)
@@ -192,12 +204,6 @@ clsFilt <- function(inG){
   return(outG)
 } 
 
-#nrow(inG$v[inG$v$Time==2012,])
-#nrow(inG$e[inG$e$t1==2012,]) + nrow(inG$e[inG$e$t2==2012,])
 
-#nrow(outG$v[outG$v$Time==2012,])
-#nrow(outG$e[outG$e$t1==2012,]) + nrow(outG$e[outG$e$t2==2012,])
-
-#nrow(inG$e[(inG$e$t1==2012)&(inG$e$t2==2012),])
 
 
