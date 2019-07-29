@@ -33,6 +33,41 @@ createGraph <- function(infile, inputFilter, metData){
   return(g)
 }
 
+#Obtain some frequency data regarding number of linkages from a given year to the newest year in the input graph.
+bpeFreq <- function(inG) {
+  #@param iG: A subGraph cut based on a threshold distance, with the latest cases representing New cases (ie. Upcoming cases)
+  #@return: A data frame of Number of positives (edges from one year to the newest year) 
+  #         with total possible edges and time difference (in years) between the two years
+  
+  #Obtain the range of years to plug into an edge-counting function
+  maxT <- max(inG$v$Time)
+  minT <- min(inG$v$Time)
+  ys <- seq(minT, (maxT-1), 1)
+  nV <- inG$v$ID[inG$v$Time == maxT] # nodes in more recent year of subgraph
+  fromNew <- which(inG$e$ID1%in%nV)
+  toNew <- which(inG$e$ID2%in%nV)
+  nE <- inG$e[union(toNew, fromNew),]
+  
+  #Runs through each year, counting the number of edges from that year to the newest year. 
+  #Also counts the number of possible edges between those two years
+  frequency <- sapply(ys, function(x) {
+    pV <- inG$v$ID[inG$v$Time == x]
+    fromP <- which(nE$ID1%in%pV)
+    toP <- which(nE$ID2%in%pV)
+    pos <- length(c(fromP,toP))
+    tot <- length(nV) 
+    return(c(pos,tot))
+  })
+  
+  #Assign a time difference to each year (the number of years between this year and the newest year)
+  tDiff <- sapply(ys, function(x) maxT-x)
+  
+  #Create a data frame of case attachment frequency and case age
+  df <- data.frame(tDiff = tDiff, Positive = frequency[1,], Total = frequency[2,])
+  
+  return(df)
+}
+
 clusters <- function(inG) {
   
   #inG <- dFilt(g, 0.015)
@@ -109,12 +144,12 @@ clusters <- function(inG) {
   return(list(clu, outG))
 }
 
-simGrow <- function(inG, maxD) {
+simGrow <- function(inG) {
   
   #inG <- tFilt(g, 2012)
   
   maxT <- max(inG$v$Time)
-  inG <- clsFilt(dFilt(tFilt(g, maxT), maxD))
+  inG <- clsFilt(inG)
   
   oldG <- tFilt(inG, (maxT-1))
   newG <- inG
@@ -129,12 +164,69 @@ simGrow <- function(inG, maxD) {
   
   newG <- clusters(newG)[[2]]
   
-  growth <- newG$cSum - oldG$cSum
+  if (nrow(inG$e[inG$e$tMax,])==0)   {
+    growth <- newG$cSum
+  } else {
+    growth <- newG$cSum - oldG$cSum
+  }
   
+  oldClu[[2]]$gSum <- growth  
+  
+  return(oldClu)
   
 }
 
+#Analyze a given Graph to establish the difference between the performance of two different models
+#Performance is defined as the ability for cluster growth to fit a predictive model.
+clusterAnalyze <- function(subG) {
+  #@param subG: A subGraph cut based on a threshold distance, expecting a member of the multiGraph set
+  #@return: Cluster info from simGrow, but annotated with GAIC (difference in performance between 2 models)
+  #         also adds the predictive model formula, and the data that the model was based off of.
+  
+  #subG <- dFilt(tFilt(g, 2012), 0.015)
+  
+  
+  #Established here for the generation of date-based data
+  times <- as.integer(levels(factor(subG$v$Time)))
+  
+  #Obtain the frequency of edges, for a series of subgraphs cut to each possible year (excluding the newest year)
+  ageDi <- data.frame()
+  for (t in rev(tail(times,-2))) {
+    ssubG <- clsFilt(tFilt(subG, t))
+    ageDi <- rbind(ageDi, bpeFreq(ssubG))
+  }
+  
+  #Obtain a model of case connection frequency to new cases as predicted by individual case age
+  mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
+  
+  #Assign a predicted growth value to each member of the graph based on the model
+  subG$v$Freq <- predict(mod, data.frame(tDiff=max(subG$v$Time)-subG$v$Time), type='response')
+  
+  #Create clusters for this subgraph, make predictions and measure growth
+  clu <- simGrow(subG)
+  cSize <- clu[[2]]$cSum
+  cPred <- sapply(tail(clu[[1]],-1), function(c) {sum(subG$v$Freq[which(subG$v$ID%in%c)])})
+  cGrowth <- clu[[2]]$gSum
+  
+  if (length(cGrowth)>0){
+    #Create two data frames from two predictive models, one based on absolute size (NULL) and our date-informed model
+    df1 <- data.frame(Growth = cGrowth, Pred = cPred)
+    df2 <- data.frame(Growth = cGrowth, Pred = cSize * (sum(cGrowth)/sum(cSize)))
+    
+    #Determine fit when
+    fit1 <- glm(Growth ~ Pred, data = df1, family = "poisson")
+    fit2 <- glm(Growth ~ Pred, data = df2, family = "poisson")
+    
+    #Save, gaic, model and age data as part of the output
+    clu$gaic <- fit1$aic-fit2$aic
+  }
+  else {clu$gaic <- 0}
 
+  clu$mod <- mod
+  clu$ageD <- ageDi
+  
+  return(clu)
+}
 
 #Remove edges from some graph that sit above a maximum reporting distance.
 dFilt <- function(inG, maxD) {
@@ -152,11 +244,10 @@ tFilt <- function(inG, maxT) {
   #@param inG: The input Graph with all vertices present
   #@param maxT: The maximum distance, edges with Time above this are filtered out
   #@return: The input Graph with vertices above a maximum time filtered out
-  inG$v <- inG$v[which(inG$v$Time<=maxT),]
   
-  #To remove associated edges
-  inG$e <- inG$e[-which(inG$e$t1>maxT),]
-  inG$e <- inG$e[-which(inG$e$t2>maxT),]
+  inG$v <- inG$v[inG$v$Time<=maxT,]
+  inG$e <- inG$e[inG$e$tMax<=maxT,]
+  
   outG <- inG
   
   return(outG)
@@ -203,6 +294,31 @@ clsFilt <- function(inG){
 
   return(outG)
 } 
+
+#######WIP
+#Run across a set of several graphs from multiGraph, analyzing GAIC at each with clusterAnalyze
+gaicRun <- function(inG, cutoffs) {
+  #@param gs: A set of graphs, each created with slightly different parameters
+  #@param cutoffs: A list of cutoffs which we will build graphs based off of
+  #@param threads: To define how many threads to use for parallel functionality
+  #@return: A data frame of each runs cluster information (clusterAnalyze output)
+  
+  #cutoffs <- seq(0, 0.03, 0.002)
+  
+  #This script will give warnings because of poor null model fit and lack of convergence
+  options(warn=-1)
+  
+  gs <- lapply(cutoffs, function(d) {dFilt(inG, d)})
+  
+  #Generate cluster data for each graph in gs
+  res <- lapply(gs, function(subG) {clusterAnalyze(subG)})
+  
+  return(res)
+}
+
+
+for (i in gs) {print(nrow(i$e))}
+gaics <- sapply(res, function(i){i$gaic})
 
 
 
