@@ -9,7 +9,7 @@ source("~/git/tn/CluLib.R")
 # -t: Threads - how many parallel processes will be run at once (defaults to 1).
 # -m: Takes the name and path of a meta-data csv. Containing Age, sex, risk and Diagnostic Year (overwrites collection year)
 
-#EX: runArgs <- list(f="~/Seattle/tn93St.txt", o=NA, y=0, t=1, m=NA)
+#EX: runArgs <- list(f="~/Data/Seattle/tn93StsubB.txt", o=NA, y=0, t=1, m=NA)
 #EX2: runArgs <- list(f="~/Tennessee/tn93Tn.txt", o=NA, y=0, m="~/Tennessee/TnMetD/tnMD.csv", t=1)
 
 ## Generating Analysis
@@ -29,6 +29,8 @@ metData <- runArgs$m
 g <- createGraph(infile, inputFilter, metData)
 saveRDS(g, file = paste0(outfile, "G.rds"))
 
+start_time <- Sys.time()
+
 #Initialize a set of cutoffs to observe
 steps <- head(hist(E(g)$Distance, plot=FALSE)$breaks,-5)
 cutoffs <- seq(0 , max(steps), max(steps)/50)
@@ -39,6 +41,8 @@ names(gs) <- cutoffs
 
 #Obtain cluster info for all subgraphs
 res <- gaicRun(gs, cutoffs, threads)
+
+end_time <- Sys.time()
 
 #Label data
 names(res) <- cutoffs

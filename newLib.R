@@ -30,6 +30,8 @@ createGraph <- function(infile, inputFilter, metData){
   #Arrange into a named list representing the graph
   g <- list(v=vl[order(vl$Time),], e=el[order(el$tMax),])
   
+  #g <- tFilt(g, 2012)
+  
   return(g)
 }
 
@@ -68,10 +70,14 @@ bpeFreq <- function(inG) {
   return(df)
 }
 
-clusters <- function(inG) {
+#Create clusters based on component clustering by some measure of genetic distance
+clusters <- function(inG, sing=T) {
+  #@param inG: A subgraph cut based on threshold distance.
+  #@param sing: An option determining whether or not singletons are to be ignored If True, singl
+  #@return: Two objects, the first is a list of all clusters and their member
   
-  #inG <- dFilt(g, 0.015)
-  
+  #inG <- dFilt(tFilt(inG, 2012), 0)
+
   #To set up a column in vector info of cluster membership
   inG$v$Cluster <- vector(mode="numeric", length=nrow(inG$v))
   
@@ -81,7 +87,7 @@ clusters <- function(inG) {
   
   #Initialize the first cluster name and the list of clusters, with c0 reserved for all singletons
   i <- 1
-  clu <- list("c0"=vector())
+  clu <- list()
   
   #Initialize the search term, our first vertex to base the clustering off of. 
   #This also becomes the first member of this cluster
@@ -110,7 +116,7 @@ clusters <- function(inG) {
     if (length(neighbours)==0) {
       
       #To catch a singleton
-      if (length(member)==1) {
+      if ((length(member)==1)&&sing) {
         clu[["c0"]] <- c(clu[["c0"]], member)
       }
       else {
@@ -144,9 +150,9 @@ clusters <- function(inG) {
   return(list(clu, outG))
 }
 
-simGrow <- function(inG) {
+simGrow <- function(inG, sing=T) {
   
-  #inG <- tFilt(g, 2012)
+  #inG <- dFilt(tFilt(g, 2012),0.02)
   
   maxT <- max(inG$v$Time)
   inG <- clsFilt(inG)
@@ -154,15 +160,16 @@ simGrow <- function(inG) {
   oldG <- tFilt(inG, (maxT-1))
   newG <- inG
   
-  oldClu <- clusters(oldG) 
+  oldClu <- clusters(oldG, sing) 
   oldC <- oldClu[[1]]
   oldG <- oldClu[[2]]
   
-  sing <- oldC$c0
-  newG$e <- newG$e[-which(newG$e$ID1%in%sing),]
-  newG$e <- newG$e[-which(newG$e$ID2%in%sing),]
-  
-  newG <- clusters(newG)[[2]]
+  if (sing){
+    singL <- oldC$c0
+    newG$e <- newG$e[!newG$e$ID1%in%singL,]
+    newG$e <- newG$e[!newG$e$ID2%in%singL,]
+  }
+  newG <- clusters(newG, sing)[[2]]
   
   if (nrow(inG$e[inG$e$tMax,])==0)   {
     growth <- newG$cSum
@@ -178,13 +185,12 @@ simGrow <- function(inG) {
 
 #Analyze a given Graph to establish the difference between the performance of two different models
 #Performance is defined as the ability for cluster growth to fit a predictive model.
-clusterAnalyze <- function(subG) {
+clusterAnalyze <- function(subG, sing=T) {
   #@param subG: A subGraph cut based on a threshold distance, expecting a member of the multiGraph set
   #@return: Cluster info from simGrow, but annotated with GAIC (difference in performance between 2 models)
   #         also adds the predictive model formula, and the data that the model was based off of.
   
   #subG <- dFilt(tFilt(g, 2012), 0.015)
-  
   
   #Established here for the generation of date-based data
   times <- as.integer(levels(factor(subG$v$Time)))
@@ -203,7 +209,7 @@ clusterAnalyze <- function(subG) {
   subG$v$Freq <- predict(mod, data.frame(tDiff=max(subG$v$Time)-subG$v$Time), type='response')
   
   #Create clusters for this subgraph, make predictions and measure growth
-  clu <- simGrow(subG)
+  clu <- simGrow(subG, sing)
   cSize <- clu[[2]]$cSum
   cPred <- sapply(tail(clu[[1]],-1), function(c) {sum(subG$v$Freq[which(subG$v$ID%in%c)])})
   cGrowth <- clu[[2]]$gSum
@@ -219,8 +225,10 @@ clusterAnalyze <- function(subG) {
     
     #Save, gaic, model and age data as part of the output
     clu$gaic <- fit1$aic-fit2$aic
+    
+  } else {
+    clu$gaic <- 0
   }
-  else {clu$gaic <- 0}
 
   clu$mod <- mod
   clu$ageD <- ageDi
@@ -286,16 +294,17 @@ clsFilt <- function(inG){
     return(index)
   })
     
+  remV <- names(minE[minE==0])
   minE <- unname(minE[minE>0])
   remE <- setdiff(as.numeric(c(fromNew, toNew)), minE)
-  
+
   outG <- inG
   outG$e <- outG$e[-remE,]
+  outG$v <- outG$v[-which(outG$v$ID%in%remV),]
 
   return(outG)
 } 
 
-#######WIP
 #Run across a set of several graphs from multiGraph, analyzing GAIC at each with clusterAnalyze
 gaicRun <- function(inG, cutoffs) {
   #@param gs: A set of graphs, each created with slightly different parameters
@@ -303,7 +312,7 @@ gaicRun <- function(inG, cutoffs) {
   #@param threads: To define how many threads to use for parallel functionality
   #@return: A data frame of each runs cluster information (clusterAnalyze output)
   
-  #cutoffs <- seq(0, 0.03, 0.002)
+  #cutoffs <- seq(0, 0.04, 0.0008)
   
   #This script will give warnings because of poor null model fit and lack of convergence
   options(warn=-1)
@@ -311,14 +320,24 @@ gaicRun <- function(inG, cutoffs) {
   gs <- lapply(cutoffs, function(d) {dFilt(inG, d)})
   
   #Generate cluster data for each graph in gs
-  res <- lapply(gs, function(subG) {clusterAnalyze(subG)})
+  res <- lapply(gs, function(subG) {
+    clusterAnalyze(subG, sing=T)
+  })
+  gaics <- sapply(res, function(i){i$gaic})
+  plot(gaics)
+  
+  end_time <- Sys.time()
+  
+  end_time - start_time
   
   return(res)
 }
 
 
 for (i in gs) {print(nrow(i$e))}
-gaics <- sapply(res, function(i){i$gaic})
+
+
+
 
 
 
