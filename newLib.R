@@ -1,38 +1,116 @@
-infile <- "stD.txt"
-#infile <- "Data/Seattle/tn93StsubB.txt"
-inputFilter <- 0
-metData <- NA
+iFile <- "stD.txt"
+#iFile <- "Data/Seattle/tn93StsubB.txt"
+iMaxT <- 0
+mtD <- NA
 
-#Creates a graph based on some inputted run arguments and potentially patient meta-data
-createGraph <- function(infile, inputFilter, metData){
-  #@param infile: The name/path of the input file (expecting tn93 output)
-  #@param inputFilter: Will drop x of the most recent years from the total data set based on this input
-  #@param metData: the filename for a dataframe of associated metadata (optional).
-  #@return: A graph with each vertex having a name and an id as well as every edge representing some measure of distance.
+#Creates a pair of of data frames based on TN93 output files.
+#One data frame represents an edgelist or case interactions, while the other represents the cases themselves
+impTN93 <- function(iFile, iMaxT, mtD){
+  #@param iFile: The name/path of the input file (expecting tn93 output csv)
+  #@param iFilt: Will manually drop x of the most recent time points from the total data set based on this input
+  #@param mtD: the filename for a dataframe of associated metadata (optional).
+  #@return: A pair of data frames representing edge and vertex information for a distance-based graph
   
-  #From the input file, a tn93 output file. This will be an edgeList
-  input <- read.csv(infile, stringsAsFactors = F)
-  temp1 <- sapply(input$ID1, function(x) (strsplit(x,'_')[[1]])[[1]])
-  temp2 <- sapply(input$ID1, function(x) (strsplit(x,'_')[[1]])[[2]])
-  temp3 <- sapply(input$ID2, function(x) (strsplit(x,'_')[[1]])[[1]])
-  temp4 <- sapply(input$ID2, function(x) (strsplit(x,'_')[[1]])[[2]])
+  #From the input file, a tn93 output file. This
+  idf <- read.csv(iFile, stringsAsFactors = F)
+  temp1 <- sapply(idf$ID1, function(x) (strsplit(x,'_')[[1]])[[1]])
+  temp2 <- sapply(idf$ID1, function(x) (strsplit(x,'_')[[1]])[[2]])
+  temp3 <- sapply(idf$ID2, function(x) (strsplit(x,'_')[[1]])[[1]])
+  temp4 <- sapply(idf$ID2, function(x) (strsplit(x,'_')[[1]])[[2]])
   
-  #Represents edge data and vertex data as two seperate dataframes
+  #Create data frame of edges (ie. Vertex interactions)
   el <- data.frame(ID1=as.character(temp1), t1=as.numeric(temp2), ID2=as.character(temp3), t2=as.numeric(temp4), 
-                   Distance = as.numeric(input$Distance), stringsAsFactors= F)
-  el$tDiff <- abs(el$t1 - el$t2)
-  el$tMax <- sapply(1:nrow(el), function(i){max(el[i,]$t1, el[i,]$t2)})
+                   Distance = as.numeric(idf$Distance), stringsAsFactors= F)
+  el$tMax <- pmax(el$t1,el$t2)
   
+  
+  ##TO-DO: Add mtD meta data info here
+  #Create data frame of Vertex (ie. Case by case data)
   vl <- unique(data.frame(ID = c(el$ID1, el$ID2), Time = c(el$t1, el$t2), stringsAsFactors=F))
+
+  #Filter out newest years for the sake of sample size
+  sMaxT <- as.numeric(max(names(which(table(g$v$Time)>63))))
+  g <- tFilt(g, sMaxT)
   
-  ##TO-DO: Meta-Data (potentially broken in cluLib)
+  while(iMaxT>0) {
+    g <- tFilt(g, max(g$v$Time)-1)
+    sMaxT <- as.numeric(max(names(which(table(g$v$Time)>63))))
+    g <- tFilt(g, sMaxT)
+  }
   
-  #Arrange into a named list representing the graph
+  #Order both list elements by time point
   g <- list(v=vl[order(vl$Time),], e=el[order(el$tMax),])
   
-  #g <- tFilt(g, 2012)
-  
   return(g)
+}
+
+#Create clusters based on component clustering by some measure of genetic distance
+compClu <- function(iG, sing=T) {
+  #@param iG: A subgraph cut based on threshold distance.
+  #@param sing: An option determining whether or not singletons are to be ignored.
+  #             If True, singletons are not considered clusters of size one and their growth is not counted
+  #@return: The inputted graph, annotated with a cluster size summary and case membership in the vertices section
+
+  #iG <- dFilt(g, 0.03)
+  
+  #Simplify the list of unsorted vertices (just id's) and edges (just head and tail id's)
+  vid <- iG$v[,"ID"]
+  adj <- iG$e[,c("ID1","ID2")]
+  
+  #Initialize the first cluster name and a column for cluster membership. c0 will be reserved for all singletons if sing=T
+  iG$v$Cluster <- vector(mode="numeric", length=nrow(iG$v))
+  
+  #The search vertex becomes the first member of the first cluster and is removed from the searchable set of cluster names
+  i <- 1
+  srchV <- vid[1]
+  memV <- srchV
+  vid <- setdiff(vid, memV)
+
+  #Labelling Clusters through membership
+  repeat {
+
+    #Remove edges internal to search query and list outgoing edges
+    inE <- adj[(adj$ID1%in%srchV)&&(adj$ID2%in%srchV),]
+    adj <- setdiff(adj, inE)
+    exE <- rbind(adj[adj$ID1%in%srchV,],adj[adj$ID2%in%srchV,])
+
+    #Find all neighbouring vertices to the search vertex (or search vertices) through external edges
+    #These are then added to the list of member vertices and removed from the list of searchable vertices
+    nbV <- setdiff(c(exE$ID1, exE$ID2), srchV)
+    memV <- c(memV, nbV) 
+    vid <- setdiff(vid, nbV)
+
+    #If there are no more neigbours to the search vertices, the cluster is completed and we reset the search parameters
+    if (length(neighbours)==0) {
+      
+      iG$v$Cluster[iG$v$ID%in%memV,] <- i
+      
+      #The end condition, catching the event that there are no vertices to assign to clusters
+      if (length(vid)==0) {break}
+      
+      #Reset search parameters
+      i <- i+1
+      srchV <- vid[1]
+      memV <- srchV
+      vid <- setdiff(vid, memV)
+
+      next
+    }
+    
+    ###############################################Point of review
+    
+    #Remove all edges within the current cluster from the adjacency list
+    adj <- adj[-c(withinSearch,fromSearch,toSearch),]
+    search <- neighbours
+  }
+
+  #Add some summary information regarding clusters
+  inG$cSum <- sapply(tail(clu,-1), function(x){length(x)})
+  inG$cNo <- length(clu)-1
+  
+  outG <- inG
+  
+  return(list(clu, outG))
 }
 
 #Obtain some frequency data regarding number of linkages from a given year to the newest year in the input graph.
@@ -70,85 +148,6 @@ bpeFreq <- function(inG) {
   return(df)
 }
 
-#Create clusters based on component clustering by some measure of genetic distance
-clusters <- function(inG, sing=T) {
-  #@param inG: A subgraph cut based on threshold distance.
-  #@param sing: An option determining whether or not singletons are to be ignored If True, singl
-  #@return: Two objects, the first is a list of all clusters and their member
-  
-  #inG <- dFilt(tFilt(inG, 2012), 0)
-
-  #To set up a column in vector info of cluster membership
-  inG$v$Cluster <- vector(mode="numeric", length=nrow(inG$v))
-  
-  #Simplify the list of vertices (just id's) and edges (just head and tail id's)
-  vid <- inG$v[,"ID"]
-  adj <- inG$e[,c("ID1","ID2")]
-  
-  #Initialize the first cluster name and the list of clusters, with c0 reserved for all singletons
-  i <- 1
-  clu <- list()
-  
-  #Initialize the search term, our first vertex to base the clustering off of. 
-  #This also becomes the first member of this cluster
-  search <- vid[1]
-  member <- search
-  
-  #Because the first search vertex has been sorted into a cluster, we remove it from temp 
-  vid <- setdiff(vid, member)
-  repeat {
-
-    #Find vertices from the search set and to the search set but not within the search set
-    fromSearch <- which(adj$ID1%in%search)
-    toSearch <- which(adj$ID2%in%search)
-    withinSearch <- intersect(fromSearch, toSearch)
-    fromSearch <- setdiff(fromSearch,withinSearch)
-    toSearch <- setdiff(toSearch,withinSearch)
-
-    #Find all neighbouring vertices to the search vertex (or search vertices)
-    #These are added to the current cluster and removed from temp
-    neighbours <- unique(c(adj$ID2[fromSearch],adj$ID1[toSearch]))
-    member <- c(member, neighbours) 
-
-    vid <- setdiff(vid, member)
-
-    #If there are no more neigbours to the search vertex, the cluster is completed and we reset the search parameters
-    if (length(neighbours)==0) {
-      
-      #To catch a singleton
-      if ((length(member)==1)&&sing) {
-        clu[["c0"]] <- c(clu[["c0"]], member)
-      }
-      else {
-        clu[[paste0("c",i)]] <- member
-        inG$v$Cluster[which(inG$v$ID%in%member)] <- i
-        i <- i+1
-      }
-      
-      #The end condition, catching the event that there are no vertices to assign to clusters
-      if (length(vid)==0) {break}
-      
-      #Reset search parameters
-      search <- vid[1]
-      member <- search
-      vid <- vid[-which(vid%in%search)]
-
-      next
-    }
-    
-    #Remove all edges within the current cluster from the adjacency list
-    adj <- adj[-c(withinSearch,fromSearch,toSearch),]
-    search <- neighbours
-  }
-
-  #Add some summary information regarding clusters
-  inG$cSum <- sapply(tail(clu,-1), function(x){length(x)})
-  inG$cNo <- length(clu)-1
-  
-  outG <- inG
-  
-  return(list(clu, outG))
-}
 
 simGrow <- function(inG, sing=T) {
   
@@ -160,7 +159,7 @@ simGrow <- function(inG, sing=T) {
   oldG <- tFilt(inG, (maxT-1))
   newG <- inG
   
-  oldClu <- clusters(oldG, sing) 
+  oldClu <- compClu(oldG, sing) 
   oldC <- oldClu[[1]]
   oldG <- oldClu[[2]]
   
@@ -169,7 +168,7 @@ simGrow <- function(inG, sing=T) {
     newG$e <- newG$e[!newG$e$ID1%in%singL,]
     newG$e <- newG$e[!newG$e$ID2%in%singL,]
   }
-  newG <- clusters(newG, sing)[[2]]
+  newG <- compClu(newG, sing)[[2]]
   
   if (nrow(inG$e[inG$e$tMax,])==0)   {
     growth <- newG$cSum
