@@ -29,8 +29,6 @@ metData <- runArgs$m
 g <- createGraph(infile, inputFilter, metData)
 saveRDS(g, file = paste0(outfile, "G.rds"))
 
-start_time <- Sys.time()
-
 #Initialize a set of cutoffs to observe
 steps <- head(hist(E(g)$Distance, plot=FALSE)$breaks,-5)
 cutoffs <- seq(0 , max(steps), max(steps)/50)
@@ -41,8 +39,6 @@ names(gs) <- cutoffs
 
 #Obtain cluster info for all subgraphs
 res <- gaicRun(gs, cutoffs, threads)
-
-end_time <- Sys.time()
 
 #Label data
 names(res) <- cutoffs

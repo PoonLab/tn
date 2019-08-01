@@ -27,7 +27,10 @@ impTN93 <- function(iFile, iMaxT, mtD){
   ##TO-DO: Add mtD meta data info here
   #Create data frame of Vertex (ie. Case by case data)
   vl <- unique(data.frame(ID = c(el$ID1, el$ID2), Time = c(el$t1, el$t2), stringsAsFactors=F))
-
+  
+  #Order both list elements by time point
+  g <- list(v=vl[order(vl$Time),], e=el[order(el$tMax),])
+  
   #Filter out newest years for the sake of sample size
   sMaxT <- as.numeric(max(names(which(table(g$v$Time)>63))))
   g <- tFilt(g, sMaxT)
@@ -38,20 +41,17 @@ impTN93 <- function(iFile, iMaxT, mtD){
     g <- tFilt(g, sMaxT)
   }
   
-  #Order both list elements by time point
-  g <- list(v=vl[order(vl$Time),], e=el[order(el$tMax),])
-  
   return(g)
 }
 
 #Create clusters based on component clustering by some measure of genetic distance
-compClu <- function(iG, sing=T) {
+compClu <- function(iG) {
   #@param iG: A subgraph cut based on threshold distance.
   #@param sing: An option determining whether or not singletons are to be ignored.
   #             If True, singletons are not considered clusters of size one and their growth is not counted
   #@return: The inputted graph, annotated with a cluster size summary and case membership in the vertices section
 
-  #iG <- dFilt(g, 0.03)
+  #iG <- dFilt(g, 0.02)
   
   #Simplify the list of unsorted vertices (just id's) and edges (just head and tail id's)
   vid <- iG$v[,"ID"]
@@ -65,25 +65,25 @@ compClu <- function(iG, sing=T) {
   srchV <- vid[1]
   memV <- srchV
   vid <- setdiff(vid, memV)
-
+  
   #Labelling Clusters through membership
   repeat {
-
+    
     #Remove edges internal to search query and list outgoing edges
-    inE <- adj[(adj$ID1%in%srchV)&&(adj$ID2%in%srchV),]
-    adj <- setdiff(adj, inE)
-    exE <- rbind(adj[adj$ID1%in%srchV,],adj[adj$ID2%in%srchV,])
+    inE <- adj[intersect(which(adj$ID1%in%srchV),which(adj$ID2%in%srchV)),]
+    adj <- setdiff(adj,inE)
+    exE <- adj[union(which(adj$ID1%in%srchV),which(adj$ID2%in%srchV)),]
 
     #Find all neighbouring vertices to the search vertex (or search vertices) through external edges
     #These are then added to the list of member vertices and removed from the list of searchable vertices
-    nbV <- setdiff(c(exE$ID1, exE$ID2), srchV)
+    nbV <- setdiff(c(exE$ID1,exE$ID2), srchV)
     memV <- c(memV, nbV) 
     vid <- setdiff(vid, nbV)
 
     #If there are no more neigbours to the search vertices, the cluster is completed and we reset the search parameters
-    if (length(neighbours)==0) {
+    if (length(nbV)==0) {
       
-      iG$v$Cluster[iG$v$ID%in%memV,] <- i
+      iG$v$Cluster[iG$v$ID%in%memV] <- i
       
       #The end condition, catching the event that there are no vertices to assign to clusters
       if (length(vid)==0) {break}
@@ -97,20 +97,17 @@ compClu <- function(iG, sing=T) {
       next
     }
     
-    ###############################################Point of review
-    
     #Remove all edges within the current cluster from the adjacency list
-    adj <- adj[-c(withinSearch,fromSearch,toSearch),]
-    search <- neighbours
+    adj <- setdiff(adj,exE)
+    srchV <- nbV
   }
 
   #Add some summary information regarding clusters
-  inG$cSum <- sapply(tail(clu,-1), function(x){length(x)})
-  inG$cNo <- length(clu)-1
+  iG$c <- table(iG$v$Cluster)
   
   outG <- inG
   
-  return(list(clu, outG))
+  return(outG)
 }
 
 #Obtain some frequency data regarding number of linkages from a given year to the newest year in the input graph.
@@ -149,7 +146,7 @@ bpeFreq <- function(inG) {
 }
 
 
-simGrow <- function(inG, sing=T) {
+simGrow <- function(inG) {
   
   #inG <- dFilt(tFilt(g, 2012),0.02)
   
@@ -184,7 +181,7 @@ simGrow <- function(inG, sing=T) {
 
 #Analyze a given Graph to establish the difference between the performance of two different models
 #Performance is defined as the ability for cluster growth to fit a predictive model.
-clusterAnalyze <- function(subG, sing=T) {
+clusterAnalyze <- function(subG) {
   #@param subG: A subGraph cut based on a threshold distance, expecting a member of the multiGraph set
   #@return: Cluster info from simGrow, but annotated with GAIC (difference in performance between 2 models)
   #         also adds the predictive model formula, and the data that the model was based off of.
@@ -247,17 +244,15 @@ dFilt <- function(inG, maxD) {
 }
 
 #Remove vertices from some graph that sit above a maximum time
-tFilt <- function(inG, maxT) {
-  #@param inG: The input Graph with all vertices present
+tFilt <- function(iG, maxT) {
+  #@param iG: The input Graph with all vertices present
   #@param maxT: The maximum distance, edges with Time above this are filtered out
   #@return: The input Graph with vertices above a maximum time filtered out
   
-  inG$v <- inG$v[inG$v$Time<=maxT,]
-  inG$e <- inG$e[inG$e$tMax<=maxT,]
+  iG$v <- iG$v[iG$v$Time<=maxT,]
+  iG$e <- iG$e[iG$e$tMax<=maxT,]
   
-  outG <- inG
-  
-  return(outG)
+  return(iG)
 }
 
 #Filter the edges coming from new cases such that the new cases have no edges to eachother and only one edge leading from them to old cases
@@ -333,7 +328,17 @@ gaicRun <- function(inG, cutoffs) {
 }
 
 
-for (i in gs) {print(nrow(i$e))}
+h <- function(){
+  print(memV)
+  print(nrow(adj))
+  print(length(vid))
+}
+
+
+oC$no
+head(sort(oC$csize, T), 200)
+length(iG$c)
+head(sort(unname(iG$c), T), 200)
 
 
 
