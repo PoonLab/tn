@@ -2,6 +2,7 @@ iFile <- "stD.txt"
 #iFile <- "Data/Seattle/tn93StsubB.txt"
 iMaxT <- 0
 mtD <- NA
+g <- impTN93(iFile,iMaxT, mtD)
 
 #Creates a pair of of data frames based on TN93 output files.
 #One data frame represents an edgelist or case interactions, while the other represents the cases themselves
@@ -46,12 +47,10 @@ impTN93 <- function(iFile, iMaxT, mtD){
 
 #Create clusters based on component clustering by some measure of genetic distance
 compClu <- function(iG) {
-  #@param iG: A subgraph cut based on threshold distance.
+  #@param iG: A subgraph cut based on threshold distance and .
   #@param sing: An option determining whether or not singletons are to be ignored.
   #             If True, singletons are not considered clusters of size one and their growth is not counted
   #@return: The inputted graph, annotated with a cluster size summary and case membership in the vertices section
-
-  #iG <- dFilt(g, 0.02)
   
   #Simplify the list of unsorted vertices (just id's) and edges (just head and tail id's)
   vid <- iG$v[,"ID"]
@@ -66,7 +65,7 @@ compClu <- function(iG) {
   memV <- srchV
   vid <- setdiff(vid, memV)
   
-  #Labelling Clusters through membership
+  #Assigning Cluster Membership
   repeat {
     
     #Remove edges internal to search query and list outgoing edges
@@ -105,9 +104,73 @@ compClu <- function(iG) {
   #Add some summary information regarding clusters
   iG$c <- table(iG$v$Cluster)
   
-  outG <- inG
+  return(iG)
+}
+
+#A simple function, removing edges that sit above a maximum reporting distance (@param:maxD).
+dFilt <- function(iG, maxD) {
+  iG$e <- iG$e[iG$e$Distance<=maxD,]
+  return(iG)
+}
+
+#Remove vertices from some graph that sit above a maximum time point (@param: maxT)
+tFilt <- function(iG, maxT) {
+  iG$v <- iG$v[iG$v$Time<=maxT,]
+  iG$e <- iG$e[iG$e$tMax<=maxT,]
+  return(iG)
+}
+
+#Filter the edges coming from new cases such that the new cases have no edges to eachother and only one edge leading from them to old cases
+#This is a simplification to hep resolve the merging involved in cluster growth and to prevent growth by whole clusters.
+clsFilt <- function(iG){
+  #@param iG: A subgraph cut based on threshold distance at a specific year.
+  #@return: The inputted graph with the new year connected by only its shortest edges per vertex
   
-  return(outG)
+  #Obtain new vertices and remove any internal edges within the new vertices 
+  #We are not interested in completely new clustering
+  nV <- iG$v$ID[iG$v$Time==max(iG$v$Time)]
+  iG$e <- iG$e[-intersect(which(iG$e$ID1%in%nV),which(iG$e$ID2%in%nV)),]
+
+  #Obtain edges leading to newer vertices
+  nE <- iG$e[iG$e$tMax==max(iG$e$tMax),]
+ 
+  #Obtain the minimum of these edges for each new vertex
+  minEi <- sapply(nV, function(v) {
+    
+    #Obtain indices representing edges incident on the vertex
+    incEi <- c(which(iG$e$ID2%in%v),which(iG$e$ID1%in%v))
+    
+    #Obtain the minimum of the edges found by incVi or assign 0 for new singletons
+    if (length(incEi)>0){(incEi[which(iG$e$Distance[incEi]==min(iG$e$Distance[incEi]))])[[1]]
+    } else {0}
+    
+  })
+  
+  #Identify singletons and minimum edges, remove singletons and new-year bound edges other than minimum edges
+  nsingV <- names(minEi[minEi==0])
+  minE <- iG$e[unname(minEi[minEi>0]),]
+  
+  iG$v <- iG$v[!iG$v$ID%in%nsingV,]
+  iG$e <- iG$e[!iG$e$tMax==max(iG$e$tMax),]
+  iG$e <- rbind(iG$e, minE)
+  
+  return(iG)
+} 
+
+#Simulate the growth of clusters, showing the difference in cluster size between two years (with the same set of clusters)
+simGrow <- function(iG) {
+  #@param iG: The complete subgraph cut based on threshold distance
+  #@return: The same cluster annotated with the actual growth
+
+  #Obtain clusters at the penultimate and new time points
+  #Run close filter to insure at most one edge per new case (simplifies cluster merging and makes different clusters comperable) 
+  nG <- compClu(clsFilt(iG))
+  oG <- compClu(tFilt(iG, max(iG$v$Time)-1))
+  
+  #Define growth as the difference in cluster size between new and old graphs (after min filtering)
+  iG$g <- nG$c-oG$c
+  
+  return(iG$g)
 }
 
 #Obtain some frequency data regarding number of linkages from a given year to the newest year in the input graph.
@@ -145,46 +208,13 @@ bpeFreq <- function(inG) {
   return(df)
 }
 
-
-simGrow <- function(inG) {
-  
-  #inG <- dFilt(tFilt(g, 2012),0.02)
-  
-  maxT <- max(inG$v$Time)
-  inG <- clsFilt(inG)
-  
-  oldG <- tFilt(inG, (maxT-1))
-  newG <- inG
-  
-  oldClu <- compClu(oldG, sing) 
-  oldC <- oldClu[[1]]
-  oldG <- oldClu[[2]]
-  
-  if (sing){
-    singL <- oldC$c0
-    newG$e <- newG$e[!newG$e$ID1%in%singL,]
-    newG$e <- newG$e[!newG$e$ID2%in%singL,]
-  }
-  newG <- compClu(newG, sing)[[2]]
-  
-  if (nrow(inG$e[inG$e$tMax,])==0)   {
-    growth <- newG$cSum
-  } else {
-    growth <- newG$cSum - oldG$cSum
-  }
-  
-  oldClu[[2]]$gSum <- growth  
-  
-  return(oldClu)
-  
-}
+########Point of review
 
 #Analyze a given Graph to establish the difference between the performance of two different models
 #Performance is defined as the ability for cluster growth to fit a predictive model.
 clusterAnalyze <- function(subG) {
   #@param subG: A subGraph cut based on a threshold distance, expecting a member of the multiGraph set
-  #@return: Cluster info from simGrow, but annotated with GAIC (difference in performance between 2 models)
-  #         also adds the predictive model formula, and the data that the model was based off of.
+  #@return: A graph annotated with growth, cluster info and level of predictive performance (measured through GAIC)
   
   #subG <- dFilt(tFilt(g, 2012), 0.015)
   
@@ -232,73 +262,6 @@ clusterAnalyze <- function(subG) {
   return(clu)
 }
 
-#Remove edges from some graph that sit above a maximum reporting distance.
-dFilt <- function(inG, maxD) {
-  #@param inG: The input Graph with all edges present
-  #@param maxD: The maximum distance, edges with distance above this are filtered out
-  #@return: The input Graph with edges above a maximum reporting distance filtered
-  
-  inG$e <- inG$e[which(inG$e$Distance<maxD),]
-  outG <- inG
-  return(outG)
-}
-
-#Remove vertices from some graph that sit above a maximum time
-tFilt <- function(iG, maxT) {
-  #@param iG: The input Graph with all vertices present
-  #@param maxT: The maximum distance, edges with Time above this are filtered out
-  #@return: The input Graph with vertices above a maximum time filtered out
-  
-  iG$v <- iG$v[iG$v$Time<=maxT,]
-  iG$e <- iG$e[iG$e$tMax<=maxT,]
-  
-  return(iG)
-}
-
-#Filter the edges coming from new cases such that the new cases have no edges to eachother and only one edge leading from them to old cases
-#This is a simplification to hep resolve the merging involved in cluster growth and to prevent growth by whole clusters.
-clsFilt <- function(inG){
-  
-  #inG <- dFilt(g, 0.015)
-  #inG <- dFilt(tFilt(g, 2012), 0.015)
-  
-  nV <- inG$v$ID[which(inG$v$Time == max(inG$v$Time))]
-  fromNew <- which(inG$e$ID1%in%nV)
-  toNew <- which(inG$e$ID2%in%nV)
-  withinNew <- intersect(fromNew,toNew)
-  
-  inG$e <- inG$e[-withinNew,]
-  fromNew <- which(inG$e$ID1%in%nV)
-  toNew <- which(inG$e$ID2%in%nV)
-  
-  minE <- sapply(nV, function(v) {
-    fromV <- which(inG$e$ID1%in%v)
-    toV <- which(inG$e$ID2%in%v)
-    incV <- c(fromV,toV)
-    
-    if (length(incV) > 0){
-      vE <- inG$e[incV,]
-      minE <- which(vE$Distance == min(vE$Distance))[[1]]
-      
-      index <- c(fromV,toV)[[minE]]
-    } else{
-      index <- 0
-    }
-    
-    return(index)
-  })
-    
-  remV <- names(minE[minE==0])
-  minE <- unname(minE[minE>0])
-  remE <- setdiff(as.numeric(c(fromNew, toNew)), minE)
-
-  outG <- inG
-  outG$e <- outG$e[-remE,]
-  outG$v <- outG$v[-which(outG$v$ID%in%remV),]
-
-  return(outG)
-} 
-
 #Run across a set of several graphs from multiGraph, analyzing GAIC at each with clusterAnalyze
 gaicRun <- function(inG, cutoffs) {
   #@param gs: A set of graphs, each created with slightly different parameters
@@ -326,20 +289,6 @@ gaicRun <- function(inG, cutoffs) {
   
   return(res)
 }
-
-
-h <- function(){
-  print(memV)
-  print(nrow(adj))
-  print(length(vid))
-}
-
-
-oC$no
-head(sort(oC$csize, T), 200)
-length(iG$c)
-head(sort(unname(iG$c), T), 200)
-
 
 
 
