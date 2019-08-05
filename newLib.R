@@ -110,48 +110,11 @@ compClu <- function(iG) {
   return(outG)
 }
 
-#Obtain some frequency data regarding number of linkages from a given year to the newest year in the input graph.
-bpeFreq <- function(inG) {
-  #@param iG: A subGraph cut based on a threshold distance, with the latest cases representing New cases (ie. Upcoming cases)
-  #@return: A data frame of Number of positives (edges from one year to the newest year) 
-  #         with total possible edges and time difference (in years) between the two years
-  
-  #Obtain the range of years to plug into an edge-counting function
-  maxT <- max(inG$v$Time)
-  minT <- min(inG$v$Time)
-  ys <- seq(minT, (maxT-1), 1)
-  nV <- inG$v$ID[inG$v$Time == maxT] # nodes in more recent year of subgraph
-  fromNew <- which(inG$e$ID1%in%nV)
-  toNew <- which(inG$e$ID2%in%nV)
-  nE <- inG$e[union(toNew, fromNew),]
-  
-  #Runs through each year, counting the number of edges from that year to the newest year. 
-  #Also counts the number of possible edges between those two years
-  frequency <- sapply(ys, function(x) {
-    pV <- inG$v$ID[inG$v$Time == x]
-    fromP <- which(nE$ID1%in%pV)
-    toP <- which(nE$ID2%in%pV)
-    pos <- length(c(fromP,toP))
-    tot <- length(nV) 
-    return(c(pos,tot))
-  })
-  
-  #Assign a time difference to each year (the number of years between this year and the newest year)
-  tDiff <- sapply(ys, function(x) maxT-x)
-  
-  #Create a data frame of case attachment frequency and case age
-  df <- data.frame(tDiff = tDiff, Positive = frequency[1,], Total = frequency[2,])
-  
-  return(df)
-}
-
-
+#
 simGrow <- function(inG) {
   
-  #inG <- dFilt(tFilt(g, 2012),0.02)
-  
   maxT <- max(inG$v$Time)
-  inG <- clsFilt(inG)
+  iG <- clsFilt(inG)
   
   oldG <- tFilt(inG, (maxT-1))
   newG <- inG
@@ -177,6 +140,42 @@ simGrow <- function(inG) {
   
   return(oldClu)
   
+}
+
+
+#Obtain some frequency data regarding number of linkages from a given year to the newest year in the input graph.
+bpeFreq <- function(iG) {
+  #@param iG: A subGraph cut based on a threshold distance, with the latest cases representing New cases (ie. Upcoming cases)
+  #@return: A data frame of Number of positives (edges from one year to the newest year) 
+  #         with total possible edges and time difference (in years) between the two years
+  
+  #Obtain the range of years to plug into an edge-counting function
+  maxT <- max(iG$v$Time)
+  minT <- min(iG$v$Time)
+  ys <- seq(minT, (maxT-1), 1)
+  nV <- inG$v$ID[inG$v$Time == maxT] # nodes in more recent year of subgraph
+  fromNew <- which(inG$e$ID1%in%nV)
+  toNew <- which(inG$e$ID2%in%nV)
+  nE <- inG$e[union(toNew, fromNew),]
+  
+  #Runs through each year, counting the number of edges from that year to the newest year. 
+  #Also counts the number of possible edges between those two years
+  frequency <- sapply(ys, function(x) {
+    pV <- inG$v$ID[inG$v$Time == x]
+    fromP <- which(nE$ID1%in%pV)
+    toP <- which(nE$ID2%in%pV)
+    pos <- length(c(fromP,toP))
+    tot <- length(nV) 
+    return(c(pos,tot))
+  })
+  
+  #Assign a time difference to each year (the number of years between this year and the newest year)
+  tDiff <- sapply(ys, function(x) maxT-x)
+  
+  #Create a data frame of case attachment frequency and case age
+  df <- data.frame(tDiff = tDiff, Positive = frequency[1,], Total = frequency[2,])
+  
+  return(df)
 }
 
 #Analyze a given Graph to establish the difference between the performance of two different models
