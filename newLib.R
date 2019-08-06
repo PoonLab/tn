@@ -23,14 +23,14 @@ impTN93 <- function(iFile, iMaxT, mtD){
   el <- data.frame(ID1=as.character(temp1), t1=as.numeric(temp2), ID2=as.character(temp3), t2=as.numeric(temp4), 
                    Distance = as.numeric(idf$Distance), stringsAsFactors= F)
   el$tMax <- pmax(el$t1,el$t2)
-  
+  el$tDiff <- abs(el$t1-el$t2)
   
   ##TO-DO: Add mtD meta data info here
   #Create data frame of Vertex (ie. Case by case data)
   vl <- unique(data.frame(ID = c(el$ID1, el$ID2), Time = c(el$t1, el$t2), stringsAsFactors=F))
   
   #Order both list elements by time point
-  g <- list(v=vl[order(vl$Time),], e=el[order(el$tMax),])
+  g <- list(v=vl[order(vl$Time),], e=el[order(el$tMax),], f=el[order(el$tMax),])
   
   #Filter out newest years for the sake of sample size
   sMaxT <- as.numeric(max(names(which(table(g$v$Time)>63))))
@@ -41,6 +41,12 @@ impTN93 <- function(iFile, iMaxT, mtD){
     sMaxT <- as.numeric(max(names(which(table(g$v$Time)>63))))
     g <- tFilt(g, sMaxT)
   }
+  
+  #Close Filter the overall graph at this point to save future time complexity
+  #g <- clsFilt(g)
+  
+  #Save a copy of the complete list of minimum edges
+  g$f <- bpeFreq(g)
   
   return(g)
 }
@@ -69,9 +75,8 @@ compClu <- function(iG) {
   repeat {
     
     #Remove edges internal to search query and list outgoing edges
-    inE <- adj[intersect(which(adj$ID1%in%srchV),which(adj$ID2%in%srchV)),]
-    adj <- setdiff(adj,inE)
-    exE <- adj[union(which(adj$ID1%in%srchV),which(adj$ID2%in%srchV)),]
+    adj <- subset(adj, !(ID1%in%srchV & ID2%in%srchV))
+    exE <- subset(adj, ID1%in%srchV | ID2%in%srchV)
 
     #Find all neighbouring vertices to the search vertex (or search vertices) through external edges
     #These are then added to the list of member vertices and removed from the list of searchable vertices
@@ -97,7 +102,7 @@ compClu <- function(iG) {
     }
     
     #Remove all edges within the current cluster from the adjacency list
-    adj <- setdiff(adj,exE)
+    adj <- subset(adj, !(ID1%in%srchV | ID2%in%srchV))
     srchV <- nbV
   }
 
@@ -109,14 +114,16 @@ compClu <- function(iG) {
 
 #A simple function, removing edges that sit above a maximum reporting distance (@param:maxD).
 dFilt <- function(iG, maxD) {
-  iG$e <- iG$e[iG$e$Distance<=maxD,]
+  iG$e <- subset(iG$e, Distance<=maxD)
+  iG$f <- subset(iG$f, Distance<=maxD)
   return(iG)
 }
 
 #A simple function, removing vertices that sit above a maximum time point (@param: maxT)
 tFilt <- function(iG, maxT) {
-  iG$v <- iG$v[iG$v$Time<=maxT,]
-  iG$e <- iG$e[iG$e$tMax<=maxT,]
+  iG$v <- subset(iG$v, Time<=maxT)
+  iG$e <- subset(iG$e, tMax<=maxT)
+  iG$f <- subset(iG$f, tMax<=maxT)
   return(iG)
 }
 
@@ -128,27 +135,25 @@ clsFilt <- function(iG){
   
   #Obtain new vertices and remove any internal edges within the new vertices 
   #We are not interested in completely new clustering
-  nV <- iG$v$ID[iG$v$Time==max(iG$v$Time)]
-  iG$e <- iG$e[-intersect(which(iG$e$ID1%in%nV),which(iG$e$ID2%in%nV)),]
-
+  nV <- subset(iG$v, Time==max(Time))$ID
+  iG$e <- subset(iG$e, !(t1==max(tMax) & t2==max(tMax))) 
+  
   #Obtain edges leading to newer vertices
-  nE <- iG$e[iG$e$tMax==max(iG$e$tMax),]
- 
+  nE <- subset(iG$e, tMax==max(tMax))
+  
   #Obtain the minimum of these edges for each new vertex
   minEi <- sapply(nV, function(v) {
+    incEi <- c(which(nE$ID1%in%v), which(nE$ID2%in%v))
     
-    #Obtain indices representing edges incident on the vertex
-    incEi <- c(which(iG$e$ID2%in%v),which(iG$e$ID1%in%v))
-    
-    #Obtain the minimum of the edges found by incVi or assign 0 for new singletons
-    if (length(incEi)>0){(incEi[which(iG$e$Distance[incEi]==min(iG$e$Distance[incEi]))])[[1]]
-    } else {0}
-    
+    if (length(incEi)>0) {
+      incE <- nE[incEi,]
+      return(incEi[which(incE$Distance==min(incE$Distance))[[1]]])
+    }else{0}
   })
   
-  #Identify singletons and minimum edges, remove singletons and new-year bound edges other than minimum edges
-  minE <- iG$e[unname(minEi[minEi>0]),]
-  iG$e <- iG$e[!iG$e$tMax==max(iG$e$tMax),]
+  #Obtain minimum distance edges and replace the set of new edges
+  minE <- nE[minEi[minEi>0],]
+  iG$e <- subset(iG$e, tMax!=max(tMax))
   iG$e <- rbind(iG$e, minE)
   
   return(iG)
@@ -158,12 +163,13 @@ clsFilt <- function(iG){
 simGrow <- function(iG) {
   #@param iG: The complete subgraph cut based on threshold distance
   #@return: The same cluster annotated with the actual growth
-
-  #Obtain clusters at the penultimate and new time points
-  #Run close filter to insure at most one edge per new case (simplifies cluster merging and makes different clusters comperable) 
-  nG <- compClu(clsFilt(iG))
   
-  iG$v <- iG$v[!iG$v$ID%in%nsingV,]
+  #Obtain clusters at the new time point, after removing singletons
+  nG <- iG
+  nG$v <- subset(nG$v, !(!ID%in%c(nG$e$ID1,nG$e$ID2) & Time==max(Time)))
+  nG <- compClu(nG)
+  
+  #obtain clusters at an old time point
   oG <- compClu(tFilt(iG, max(iG$v$Time)-1))
   
   #Define growth as the difference in cluster size between new and old graphs (after min filtering)
@@ -174,26 +180,32 @@ simGrow <- function(iG) {
 
 #Obtain some frequency data regarding number of linkages from a given year to the newest year in the input graph.
 bpeFreq <- function(iG) {
-  #@param iG: A subGraph cut based on a threshold distance and closest edges from new year, with the latest cases representing New cases (ie. Upcoming cases)
+  #@param iG: The total graph
   #@return: A data frame counting number of new year connections, number of possible new year connections and time difference (from cases to new year)
   
-  #Obtain the range of years to plug into an edge-counting as well as all edges leading to new cases
-  ys <- head(as.numeric(levels(as.factor(iG$v$Time))),-1)
-  nE <- iG$e[iG$e$tMax==max(iG$e$tMax),]
+  #Take in total graph without the newest year
+  iG <- tFilt(iG, max(iG$v$Time)-1)
+  iG$e <- subset(iG$e, tDiff>0)
   
-  #Create a data frame counting the frequency of each year attatching to the new year (time difference, total and positives)
-  df <- data.frame(tDiff = max(iG$v$Time)-ys,
-                   Total = rep(length(iG$v$Time[iG$v$Time==max(iG$v$Time)])),
-                   Positive = sapply(ys, function(x) {
-                     pV <- iG$v$ID[iG$v$Time == x]
-                     fromP <- which(nE$ID1%in%pV)
-                     toP <- which(nE$ID2%in%pV)
-                     length(c(fromP,toP))
-                   }) 
-  )
+  #Close filter all vertices in the total graph
+  minEi <- sapply(iG$v$ID, function(v) {
+    
+    #Obtain indices representing edges incident on the vertex
+    incEi <- c(which(iG$e$ID1%in%v), which(iG$e$ID2%in%v))
+    incE <- iG$e[incEi,]
+    
+    #Obtain the minimum of the edges found by incVi or assign 0 for new singletons
+    if (nrow(incE)>0){incEi[which(incE$Distance==min(incE$Distance))[[1]]]
+    } else {0}
+  })
   
-  return(df)
+  #Obtain the minimum edges external edges of the total edgelist
+  f <- iG$e[unname(minEi[minEi>0]),]
+  
+  return(f)
 }
+
+############Point of Review
 
 #Analyze a given Graph to establish the difference between the performance of two different models
 #Performance is defined as the ability for cluster growth to fit a predictive model.
@@ -201,17 +213,10 @@ clusterAnalyze <- function(subG) {
   #@param subG: A subGraph cut based on a threshold distance, expecting a member of the multiGraph set
   #@return: A graph annotated with growth, cluster info and level of predictive performance (measured through GAIC)
   
-  #subG <- dFilt(tFilt(g, 2012), 0.015)
-  
-  #Established here for the generation of date-based data
-  times <- as.numeric(levels(factor(subG$v$Time)))
+  #subG <- dFilt(g, 0.015)
   
   #Obtain the frequency of edges, for a series of subgraphs cut to each possible year (excluding the newest year)
-  ageDi <- data.frame()
-  for (t in rev(tail(times,-2))) {
-    ssubG <- clsFilt(tFilt(subG, t))
-    ageDi <- rbind(ageDi, bpeFreq(ssubG))
-  }
+  ageDi <- table(subG$f$tDiff)
   
   #Obtain a model of case connection frequency to new cases as predicted by individual case age
   mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
@@ -254,7 +259,7 @@ gaicRun <- function(inG, cutoffs) {
   #@param threads: To define how many threads to use for parallel functionality
   #@return: A data frame of each runs cluster information (clusterAnalyze output)
   
-  #cutoffs <- seq(0, 0.04, 0.0008)
+  cutoffs <- seq(0, 0.04, 0.0008)
   
   #This script will give warnings because of poor null model fit and lack of convergence
   options(warn=-1)
@@ -267,10 +272,6 @@ gaicRun <- function(inG, cutoffs) {
   })
   gaics <- sapply(res, function(i){i$gaic})
   plot(gaics)
-  
-  end_time <- Sys.time()
-  
-  end_time - start_time
   
   return(res)
 }
