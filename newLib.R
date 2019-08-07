@@ -1,3 +1,5 @@
+library(dplyr,verbose = FALSE)
+
 iFile <- "stD.txt"
 #iFile <- "Data/Seattle/tn93StsubB.txt"
 iMaxT <- 0
@@ -43,7 +45,7 @@ impTN93 <- function(iFile, iMaxT, mtD){
   }
   
   #Close Filter the overall graph at this point to save future time complexity
-  #g <- clsFilt(g)
+  g <- clsFilt(g)
   
   #Save a copy of the complete list of minimum edges
   g$f <- bpeFreq(g)
@@ -115,7 +117,6 @@ compClu <- function(iG) {
 #A simple function, removing edges that sit above a maximum reporting distance (@param:maxD).
 dFilt <- function(iG, maxD) {
   iG$e <- subset(iG$e, Distance<=maxD)
-  iG$f <- subset(iG$f, Distance<=maxD)
   return(iG)
 }
 
@@ -123,14 +124,13 @@ dFilt <- function(iG, maxD) {
 tFilt <- function(iG, maxT) {
   iG$v <- subset(iG$v, Time<=maxT)
   iG$e <- subset(iG$e, tMax<=maxT)
-  iG$f <- subset(iG$f, tMax<=maxT)
   return(iG)
 }
 
 #Filter the edges coming from new cases such that the new cases have no edges to eachother and only one edge leading from them to old cases
 #This is a simplification to hep resolve the merging involved in cluster growth and to prevent growth by whole clusters.
 clsFilt <- function(iG){
-  #@param iG: A subgraph cut based on threshold distance at a specific year.
+  #@param iG: Expecting the entire Graph.
   #@return: The inputted graph with the new year connected by only its shortest edges per vertex
   
   #Obtain new vertices and remove any internal edges within the new vertices 
@@ -162,10 +162,11 @@ clsFilt <- function(iG){
 #Simulate the growth of clusters, showing the difference in cluster size between two years (with the same set of clusters)
 simGrow <- function(iG) {
   #@param iG: The complete subgraph cut based on threshold distance
-  #@return: The same cluster annotated with the actual growth
+  #@return: The same cluster annotated with the actual growth and cluster information
   
   #Obtain clusters at the new time point, after removing singletons
   nG <- iG
+  nSing <- subset(nG$v, (!ID%in%c(nG$e$ID1,nG$e$ID2) & Time==max(Time)))
   nG$v <- subset(nG$v, !(!ID%in%c(nG$e$ID1,nG$e$ID2) & Time==max(Time)))
   nG <- compClu(nG)
   
@@ -174,8 +175,13 @@ simGrow <- function(iG) {
   
   #Define growth as the difference in cluster size between new and old graphs (after min filtering)
   iG$g <- nG$c-oG$c
+  iG$c <- oG$c
   
-  return(iG$g)
+  #Re-Add the singletons, citing new singletons as members of the cluster 0
+  nSing$Cluster <- 0
+  iG$v <- rbind(nG$v, nSing)
+  
+  return(iG)
 }
 
 #Obtain some frequency data regarding number of linkages from a given year to the newest year in the input graph.
@@ -200,81 +206,87 @@ bpeFreq <- function(iG) {
   })
   
   #Obtain the minimum edges external edges of the total edgelist
-  f <- iG$e[unname(minEi[minEi>0]),]
+  iG$f <- iG$e[unname(minEi[minEi>0]),]
   
-  return(f)
+  return(iG$f)
 }
-
-############Point of Review
 
 #Analyze a given Graph to establish the difference between the performance of two different models
 #Performance is defined as the ability for cluster growth to fit a predictive model.
-clusterAnalyze <- function(subG) {
+cluAnalyze <- function(subG) {
   #@param subG: A subGraph cut based on a threshold distance, expecting a member of the multiGraph set
   #@return: A graph annotated with growth, cluster info and level of predictive performance (measured through GAIC)
   
-  #subG <- dFilt(g, 0.015)
+  #Obtain the frequency of edges between two years based on the time difference between those years
+  #Annotate edge information with total possible edges to a given newer year
+  dMax <- max(subG$e$Distance)
+  tMaxs <- as.numeric(names(table(subG$v$Time)))
+  tMaxs <- head(tail(tMaxs,-1),-1)
   
-  #Obtain the frequency of edges, for a series of subgraphs cut to each possible year (excluding the newest year)
-  ageDi <- table(subG$f$tDiff)
+  ageD <- bind_rows(lapply(tMaxs, function(t){
+    ageDi <- subset(subG$f, tMax<=t)
+    tDiffs <- as.numeric(names(table(ageDi$tDiff)))
+    df <- data.frame(numeric(), numeric(), numeric())
+    
+    if (length(tDiffs)==0) {tDiffs <- 1}
+    
+    for (i in tDiffs){
+      tDiff <- i
+      Pos <- nrow(subset(ageDi, tDiff==i & Distance <= dMax))
+      Tot <- nrow(subset(subG$v, Time==t))
+      df <- rbind(df, data.frame(tDiff=tDiff,Positive=Pos,Total=Tot))
+    }
+    
+    return(df)
+  }))
   
   #Obtain a model of case connection frequency to new cases as predicted by individual case age
-  mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
+  #Use this to weight cases by age
+  mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageD, family='binomial')
+  subG$v$Weight <- predict(mod, data.frame(tDiff=max(subG$v$Time)-subG$v$Time), type='response')
   
-  #Assign a predicted growth value to each member of the graph based on the model
-  subG$v$Freq <- predict(mod, data.frame(tDiff=max(subG$v$Time)-subG$v$Time), type='response')
-  
-  #Create clusters for this subgraph, make predictions and measure growth
-  clu <- simGrow(subG, sing)
-  cSize <- clu[[2]]$cSum
-  cPred <- sapply(tail(clu[[1]],-1), function(c) {sum(subG$v$Freq[which(subG$v$ID%in%c)])})
-  cGrowth <- clu[[2]]$gSum
-  
-  if (length(cGrowth)>0){
-    #Create two data frames from two predictive models, one based on absolute size (NULL) and our date-informed model
-    df1 <- data.frame(Growth = cGrowth, Pred = cPred)
-    df2 <- data.frame(Growth = cGrowth, Pred = cSize * (sum(cGrowth)/sum(cSize)))
-    
-    #Determine fit when
-    fit1 <- glm(Growth ~ Pred, data = df1, family = "poisson")
-    fit2 <- glm(Growth ~ Pred, data = df2, family = "poisson")
-    
-    #Save, gaic, model and age data as part of the output
-    clu$gaic <- fit1$aic-fit2$aic
-    
-  } else {
-    clu$gaic <- 0
-  }
+  #Create clusters for this subgraph and measure growth
+  subG <- simGrow(subG)
+  cPred <- subset(subG$v, Time<max(Time))[,c("Weight", "Cluster")]
 
-  clu$mod <- mod
-  clu$ageD <- ageDi
+  #Create two data frames from two predictive models, one based on absolute size (NULL) and our date-informed model
+  df1 <- data.frame(Growth = as.numeric(subG$g), Pred = sapply(names(subG$c), function(x) { sum(subset(cPred, Cluster==as.numeric(x))$Weight) }))
+  df2 <- data.frame(Growth = as.numeric(subG$g), Pred = as.numeric(subG$c) * (sum(as.numeric(subG$g))/sum(as.numeric(subG$c))))
+  fit1 <- glm(Growth ~ Pred, data = df1, family = "poisson")
+  fit2 <- glm(Growth ~ Pred, data = df2, family = "poisson")
   
-  return(clu)
+  #Save, gaic, model and age data as part of the output
+  subG$gaic <- fit1$aic-fit2$aic
+  subG$mod <- mod
+  subG$f <- ageD
+  
+  return(subG)
 }
 
-#Run across a set of several graphs from multiGraph, analyzing GAIC at each with clusterAnalyze
-gaicRun <- function(inG, cutoffs) {
-  #@param gs: A set of graphs, each created with slightly different parameters
-  #@param cutoffs: A list of cutoffs which we will build graphs based off of
-  #@param threads: To define how many threads to use for parallel functionality
+#Run across a set of several subGraphs created at various filters, analyzing GAIC at each with clusterAnalyze
+gaicRun <- function(iG) {
+  #@param iG: Expecting the entire Graph, but in some cases may take a subset  
   #@return: A data frame of each runs cluster information (clusterAnalyze output)
   
-  cutoffs <- seq(0, 0.04, 0.0008)
+  #Initialize a set of cutoffs to observe (based on the genetic distance distribution)
+  steps <- head(hist(iG$e$Distance, plot=FALSE)$breaks,-5)
+  cutoffs <- seq(0 , max(steps), max(steps)/50)
   
   #This script will give warnings because of poor null model fit and lack of convergence
   options(warn=-1)
   
-  gs <- lapply(cutoffs, function(d) {dFilt(inG, d)})
+  #A set of several graphs created at different cutoffs
+  gs <- lapply(cutoffs, function(d) {dFilt(iG, d)})
   
   #Generate cluster data for each graph in gs
-  res <- lapply(gs, function(subG) {
-    clusterAnalyze(subG, sing=T)
-  })
+  res <- lapply(gs, function(subG) {cluAnalyze(subG)})
   gaics <- sapply(res, function(i){i$gaic})
+  growth <- sapply(res, function(i){i$g})
   plot(gaics)
   
   return(res)
 }
+
 
 
 
