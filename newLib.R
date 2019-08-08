@@ -1,12 +1,8 @@
-iFile <- "stD.txt"
-#iFile <- "Data/Seattle/tn93StsubB.txt"
 library(dplyr,verbose = FALSE)
-iMaxT <- 0
-mtD <- NA
 
 #Creates a pair of of data frames based on TN93 output files.
 #One data frame represents an edgelist or case interactions, while the other represents the cases themselves
-impTN93 <- function(iFile, iMaxT, mtD){
+impTN93 <- function(iFile, mtD){
   #@param iFile: The name/path of the input file (expecting tn93 output csv)
   #@param iFilt: Will manually drop x of the most recent time points from the total data set based on this input
   #@param mtD: the filename for a dataframe of associated metadata (optional).
@@ -33,15 +29,10 @@ impTN93 <- function(iFile, iMaxT, mtD){
   g <- list(v=vl[order(vl$Time),], e=el[order(el$tMax),], f=el[order(el$tMax),])
   
   #Filter out newest years for the sake of sample size
-  sMaxT <- as.numeric(max(names(which(table(g$v$Time)>63))))
-  g <- tFilt(g, sMaxT)
-  
-  while(iMaxT>0) {
+  while(nrow(subset(g$v,Time==max(Time)))<=63) {
     g <- tFilt(g, max(g$v$Time)-1)
-    sMaxT <- as.numeric(max(names(which(table(g$v$Time)>63))))
-    g <- tFilt(g, sMaxT)
   }
-  
+
   #Close Filter the overall graph at this point to save future time complexity
   g <- clsFilt(g)
   
@@ -271,14 +262,10 @@ gaicRun <- function(iG) {
   
   #Generate cluster data for each graph in gs
   res <- lapply(gs, function(subG) {cluAnalyze(subG)})
-  gaics <- sapply(res, function(i){i$gaic})
-  growth <- sapply(res, function(i){i$g})
-  plot(gaics)
+
+  names(res) <- cutoffs
   
   return(res)
 }
-
-g <- impTN93(iFile,iMaxT, mtD)
-res <- gaicRun(g)
 
 

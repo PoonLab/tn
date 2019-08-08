@@ -1,16 +1,14 @@
 ##TO-DO: Specify source-file Location
-source("~/git/tn/CluLib.R")
+source("~/git/tn/newLib.R")
 
 ## USAGE: Rscript ~/git/tn/OpClusters.R.R __tn93output.txt__##
 #Options...
 # -f: The full file name (with path) to a tn93 output file, by default, this takes the standard input.
 # -o: The output file without an extension (with path). Several files outputs will be made distinguished by letters.
-# -y: A number for the purposes of filtering by year. Removes n years from the end of a data set (defaults to 0)
-# -t: Threads - how many parallel processes will be run at once (defaults to 1).
-# -m: Takes the name and path of a meta-data csv. Containing Age, sex, risk and Diagnostic Year (overwrites collection year)
+# -m: Takes the name and path of a meta-data csv. Containing Age, sex, risk and Diagnostic date (overwrites collection date)
+# -g: The file path to saved graphical info. If one has already saved a graph, this will save time making one
 
-#EX: runArgs <- list(f="~/Data/Seattle/tn93StsubB.txt", o=NA, y=0, t=1, m=NA)
-#EX2: runArgs <- list(f="~/Tennessee/tn93Tn.txt", o=NA, y=0, m="~/Tennessee/TnMetD/tnMD.csv", t=1)
+#EX: runArgs <- list(f="~/Data/Seattle/tn93StsubB.txt", o=NA, y=0, m=NA, g="~/Data/Seattle/analysis/tn93StsubB_G.rds")
 
 ## Generating Analysis
 #____________________________________________________________________________________________________________________________#
@@ -18,91 +16,43 @@ source("~/git/tn/CluLib.R")
 #Expecting the output from a tn93 run formatted to a csv file.
 #Expecting patient information in the format ID_Date
 #The name/path of the output file, will both a pdf summary, a set of all clustering data, and a complete version of the graph in question 
-runArgs <- commandArgs(trailingOnly=T, asValues=T, defaults = list(f="stdin",o=NA,y=0,t=1,m=NA))
-infile <- runArgs$f
-outfile <- ifelse(is.na(runArgs$o), gsub(".txt$", "", infile), runArgs$o)
-inputFilter <- as.numeric(runArgs$y)
-threads <- as.numeric(runArgs$t)
-metData <- runArgs$m
+runArgs <- commandArgs(trailingOnly=T, asValues=T, defaults = list(f="stdin",o=NA,t=1,m=NA,g=NA))
+iFile <- runArgs$f
+oFile <- ifelse(is.na(runArgs$o), gsub(".txt$", "", iFile), runArgs$o)
+mtD <- runArgs$m
+gFile <- runArgs$g
 
-#Save all growth data in accessable files
-g <- createGraph(infile, inputFilter, metData)
-saveRDS(g, file = paste0(outfile, "G.rds"))
-
-#Initialize a set of cutoffs to observe
-steps <- head(hist(E(g)$Distance, plot=FALSE)$breaks,-5)
-cutoffs <- seq(0 , max(steps), max(steps)/50)
-
-#Create a set of subgraphs based off of differing cluster parameter
-gs <- multiGraph(g, cutoffs, threads)
-names(gs) <- cutoffs
+#Load or create a graph, saving a newly created graph in an accessible file for later use
+if (!is.nan(gFile)) {
+  g <- readRDS(gFile)
+} else {
+  g <- impTN93(iFile, mtD)
+  saveRDS(g, file = paste0(oFile, "_G.rds"))
+}
 
 #Obtain cluster info for all subgraphs
-res <- gaicRun(gs, cutoffs, threads)
-
-#Label data
-names(res) <- cutoffs
+res <- gaicRun(g)
 
 #Save all growth data in accessable files
-saveRDS(res, file = paste0(outfile, "GD.rds"))
+saveRDS(res, file = paste0(oFile, "_GD.rds"))
 
 ## Generate Pictures and output summary
 #__________________________________________________________________________________________________________________________#
 
-#Obtain Minimum GAIC estemating cutoff threshold and the network associated with it
+#Extract GAICs and cutoffs for graphing purposes
 gaics <- sapply(res, function(x) {x$gaic})
-do <- names(which(gaics==min(gaics))[1])
-opt <- gs[[do]]
-
-#Plot option ignores clusters of size 1 and provides a graph (for ease of overview, not for calculations)
-optPG <- subgraph.edges(opt, E(opt), delete.vertices = T)
-
-#Plot the GAIC between an informed and uninformed function over a set of thresholds
-gaicPlot <- function(growthD,  thresh = cutoffs) {
-  #@param growthD: A list of clustering information at various cutoffs, annotated with growth (simGrow, output)
-  #@param thresh: A list of cutoff thresholds to representing the independant variable
-  #@return: A visual graph of plotted GAIC between two models over the course of @thresh (a list of cutoffs)
-  
-  #Extract GAIC measurements
-  gaicD <- sapply(growthD, function(x) {x$gaic})
-  
-  #PLace Data into frame
-  df <- data.frame(Threshold = thresh, GAIC1 = gaicD)
-  min <- df$Threshold[which(df$GAIC1==min(df$GAIC1))[[1]]]
-  
-  #Generate plot
-  ggplot(df, aes(x=Threshold)) +
-    theme(axis.title.x = element_text(size=20, margin=margin(t=10)),
-          axis.title.y = element_text(size=20), 
-          axis.text.x = element_text(size=15), 
-          axis.text.y = element_text(size=15),
-          plot.title = element_text(size=20, hjust=-0.05, vjust=-0.05),
-          legend.text = element_text(size=15)) +
-    geom_line(aes(y=GAIC1), size=1.2)+
-    geom_vline(xintercept = min, linetype=4, colour="black", alpha=0.5)+
-    geom_text(aes(min, 10, label = min, vjust =1.5))+
-    labs(title="", x= "TN93 Distance Cutoff Threshold", y="GAIC") 
-}
-
+cutoffs <- names(res)  
 
 #Create visual output pdf
-pdf(file = paste0(outfile, "VS.pdf"))
+pdf(file = paste0(oFile, "_VS.pdf"))
 
 #Plot GAIC
-gaicPlot(res)
-
-#Plot Network
-plot(optPG, vertex.size = 2, vertex.label = NA, vertex.color= "orange",
-     edge.width = 0.65, edge.color = 'black', 
-     margin = c(0,0,0,0))
+plot(cutoffs, gaics, type = "n", ylim=c(min(gaics),max(gaics)), xlab="Cutoffs", ylab = "GAIC")
+lines(cutoffs, gaics, lwd=1.6, col="orangered")
+points(cutoffs, gaics)
+abline(h=0)
+abline(v=cutoffs[which(gaics==min(gaics))[[1]]], lty=3)
+text(cutoffs[which(gaics==min(gaics))[[1]]+1.5], min(gaics), labels= round(min(gaics)))
+text(cutoffs[which(gaics==min(gaics))[[1]]], max(c(gaics,gaics))-1.5, labels=cutoffs[which(gaics==min(gaics))[[1]]])
 
 dev.off()
-
-#Obtain the information from opt cluster and print it to stOut
-optClu <- components(opt)
-optClu$years <- table(V(g)$year)
-optClu$no <- NULL
-optClu$csize <- sort(table(optClu$membership)[table(optClu$membership)>1], decreasing =T)
-print(optClu)
-
-cat(paste0("\n","Done" ))
