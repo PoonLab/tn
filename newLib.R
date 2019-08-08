@@ -1,10 +1,8 @@
-library(dplyr,verbose = FALSE)
-
 iFile <- "stD.txt"
 #iFile <- "Data/Seattle/tn93StsubB.txt"
+library(dplyr,verbose = FALSE)
 iMaxT <- 0
 mtD <- NA
-g <- impTN93(iFile,iMaxT, mtD)
 
 #Creates a pair of of data frames based on TN93 output files.
 #One data frame represents an edgelist or case interactions, while the other represents the cases themselves
@@ -189,26 +187,26 @@ bpeFreq <- function(iG) {
   #@param iG: The total graph
   #@return: A data frame counting number of new year connections, number of possible new year connections and time difference (from cases to new year)
   
-  #Take in total graph without the newest year
+  #Take in total graph without the newest time point
   iG <- tFilt(iG, max(iG$v$Time)-1)
-  iG$e <- subset(iG$e, tDiff>0)
+  tTab <- tail(table(iG$v$Time),-1) 
   
-  #Close filter all vertices in the total graph
-  minEi <- sapply(iG$v$ID, function(v) {
+  #Obtain a summary of edges frequency to base future models off of
+  #Obtains edge frequencies at each year
+  ageD <- lapply(as.numeric(names(tTab)), function(t){ 
+    tG <- tFilt(iG, t)
+    tdTab <- tail(table(tG$e$tDiff),-1) 
+    tG <- clsFilt(tG)
+    tG$e$Total <- tTab[as.character(t)]
     
-    #Obtain indices representing edges incident on the vertex
-    incEi <- c(which(iG$e$ID1%in%v), which(iG$e$ID2%in%v))
-    incE <- iG$e[incEi,]
-    
-    #Obtain the minimum of the edges found by incVi or assign 0 for new singletons
-    if (nrow(incE)>0){incEi[which(incE$Distance==min(incE$Distance))[[1]]]
-    } else {0}
-  })
+    #Obtains edge frequencies based on time difference
+    tdG <- bind_rows(lapply(as.numeric(names(tdTab)), function(td) {
+      es <- subset(tG$e, tDiff==td & tMax==t)
+      es[,c("Distance", "tMax", "tDiff", "Total")]
+    })) 
+  }) 
   
-  #Obtain the minimum edges external edges of the total edgelist
-  iG$f <- iG$e[unname(minEi[minEi>0]),]
-  
-  return(iG$f)
+  return(ageD)
 }
 
 #Analyze a given Graph to establish the difference between the performance of two different models
@@ -217,27 +215,20 @@ cluAnalyze <- function(subG) {
   #@param subG: A subGraph cut based on a threshold distance, expecting a member of the multiGraph set
   #@return: A graph annotated with growth, cluster info and level of predictive performance (measured through GAIC)
   
+  #subG <- dFilt(g, 0.015)
+  
   #Obtain the frequency of edges between two years based on the time difference between those years
   #Annotate edge information with total possible edges to a given newer year
   dMax <- max(subG$e$Distance)
-  tMaxs <- as.numeric(names(table(subG$v$Time)))
-  tMaxs <- head(tail(tMaxs,-1),-1)
   
-  ageD <- bind_rows(lapply(tMaxs, function(t){
-    ageDi <- subset(subG$f, tMax<=t)
-    tDiffs <- as.numeric(names(table(ageDi$tDiff)))
-    df <- data.frame(numeric(), numeric(), numeric())
-    
-    if (length(tDiffs)==0) {tDiffs <- 1}
-    
-    for (i in tDiffs){
-      tDiff <- i
-      Pos <- nrow(subset(ageDi, tDiff==i & Distance <= dMax))
-      Tot <- nrow(subset(subG$v, Time==t))
-      df <- rbind(df, data.frame(tDiff=tDiff,Positive=Pos,Total=Tot))
-    }
-    
-    return(df)
+  #Take the total edge frequency data from the graph and format this information into successes and attempts
+  #An edge to the newest year falling below the max distance is considered a success
+  ageD <- bind_rows(lapply(subG$f, function(t) {
+    tDiffs <- as.numeric(levels(as.factor(t$tDiff)))
+    pos <- sapply(tDiffs, function(td) {
+      nrow(subset(t, tDiff==td & Distance<=dMax))
+    })
+    data.frame(Positive=pos, Total=t$Total[[1]], tDiff=tDiffs)
   }))
   
   #Obtain a model of case connection frequency to new cases as predicted by individual case age
@@ -287,9 +278,7 @@ gaicRun <- function(iG) {
   return(res)
 }
 
-
-
-
-
+g <- impTN93(iFile,iMaxT, mtD)
+res <- gaicRun(g)
 
 
