@@ -9,7 +9,10 @@ source("~/git/tn/newLib.R")
 # -g: The file path to saved graphical info. If one has already saved a graph, this will save time making one
 # -r: How many yeasrs beyond the most recent year will be examined
 
-#EX: runArgs <- list(f="~/Data/Seattle/tn93StsubB.txt", o=NA, y=0, m=NA, g="~/Data/Seattle/analysis/tn93StsubB_G.rds", r=4)
+#EX: runArgs <- list(f="~/Data/Seattle/tn93StsubB.txt", o=NA, y=0, m=NA, g="~/Data/Seattle/analysis/tn93StsubB_G.rds", r=5)
+
+#Test-EX: runArgs <- list(f=NA, o="~/Data/Tennessee/analysis/tn93TnsubB_nomet", y=0, m=NA, g="~/Data/Tennessee/analysis/tn93TnsubB_nomet_G.rds", r=5)
+#Test-Ex: runArgs <- list(f=NA, o="~/Data/Tennessee/analysis/tn93TnsubB_met", y=0, m=NA, g="~/Data/Tennessee/analysis/tn93TnsubB_met_G.rds", r=5)
 
 ## Generating Analysis
 #____________________________________________________________________________________________________________________________#
@@ -22,7 +25,7 @@ iFile <- runArgs$f
 oFile <- ifelse(is.na(runArgs$o), gsub(".txt$", "", iFile), runArgs$o)
 mtD <- runArgs$m
 gFile <- runArgs$g
-range <- 0:runArgs$r
+range <- 1:runArgs$r
 
 #Load or create a graph, saving a newly created graph in an accessible file for later use
 if (!is.nan(gFile)) {
@@ -35,26 +38,26 @@ if (!is.nan(gFile)) {
 #create a set of longitudinally filtered subgraphs
 gs  <- lapply(range, function(x){
   
-  iG <- g
+  iG <- tFilt(g, as.numeric(tail(names(table(g$v$Time)),x))[[1]])
 
   #Filter out newest years for the sake of sample size
-  while(nrow(subset(iG$v,Time==max(Time)))<=63 | x>0) {
-    if (nrow(subset(iG$v,Time==max(Time)))>63) { x <- x-1}
-    iG <- tFilt(iG, max(iG$v$Time)-1)
+  while(nrow(subset(iG$v,Time==max(Time)))<=63) {
+    iG <- tFilt(iG, as.numeric(tail(names(table(iG$v$Time)),2))[[1]])
   }
+  
+  #Close Filter the overall graph at this point to save future time complexity
+  iG <- clsFilt(iG)
+  
+  #Save a copy of the complete list of minimum edges
+  iG$f <- bpeFreq(iG)
   
   return(iG)
 }) 
 
-#######Point of re-write
-
 #Create Multiple Runs at the various longitudinal cuts (with different amounts of new years truncated)
-runs <- lapply(gs, function(iG) {
-  print(iG)
-  gaicRun(iG)
-})
+runs <- lapply(gs, function(iG) {gaicRun(iG)})
 
-cutoffs <- names(runs[[1]]) 
+cutoffs <- as.numeric(names(runs[[1]])) 
 
 #Save all growth data in accessable files
 saveRDS(runs, file = paste0(oFile, "_LD.rds"))
@@ -79,12 +82,14 @@ maxs <- sapply(gaics, function(x){max(x)})
 #For defining range on a plot
 minmin <- min(mins)
 maxmax <- max(maxs)
+maxT <- max(gs[[1]]$v$Time)
+minT <- max(rev(gs)[[1]]$v$Time)
 
 #Create output pdf
-pdf(file = paste0(outfile,"LVS.pdf"), width=6, height=12)
+pdf(file = paste0(oFile,"_LVS.pdf"), width=6, height=12)
 
 #Plot Generation
-par(mfrow=c(length(filterRange), 1), mar = c(1,4,1,2), oma=c(5,4,1,2), cex.lab=1.2)
+par(mfrow=c(length(range), 1), mar = c(1,4,1,2), oma=c(5,4,1,2), cex.lab=1.2)
 
 #Make multiple plots for each run of GAICs with minimum labelled
 for (i in 1:length(gaics)) {
@@ -101,17 +106,17 @@ for (i in 1:length(gaics)) {
   
   #Plot GAIC
   lines(cutoffs, GAIC, lwd=1.6, col="blue")
-  legend("bottomright", legend = paste0("Years ", minY, "-", (maxY-length(runs))+i), cex = 1,bg ="white")
+  legend("bottomright", legend = paste0("Years ", minT, "-", (maxT-length(runs))+i), cex = 1,bg ="white")
   points(x=c(minsLoc[i]), y=c(mins[i]), cex=1)
   
   #Represents the location of the past run's MGAICE, Loss Ratio = minGAIC / Past minGAIC
   if (i>1){abline(v=minsLoc[i-1], lty=2)}
   
   #Draws an arrow to represent the follow through of the previous minimum
-  if (i<length(filterRange)){arrows(minsLoc[i], mins[i], minsLoc[i], minmin+(0.2*minmin), length=0.05)}
+  if (i<length(range)){arrows(minsLoc[i], mins[i], minsLoc[i], minmin+(0.2*minmin), length=0.05)}
   
   #To create the Cutoff label
-  if (i==length(filterRange)){
+  if (i==length(range)){
     par(xpd=NA)
     title(xlab="Cutoffs")
   }

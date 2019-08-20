@@ -8,7 +8,12 @@ source("~/git/tn/newLib.R")
 # -m: Takes the name and path of a meta-data csv. Containing Age, sex, risk and Diagnostic date (overwrites collection date)
 # -g: The file path to saved graphical info. If one has already saved a graph, this will save time making one
 
-#EX: runArgs <- list(f="~/Data/Seattle/tn93StsubB.txt", o=NA, y=0, m=NA, g="~/Data/Seattle/analysis/tn93StsubB_G.rds")
+#EX: runArgs <- list(f="~/Data/Seattle/tn93StsubB.txt", o="~/Data/Seattle/analysis/tn93StsubB", y=0, m=NA, g="~/Data/Seattle/analysis/tn93StsubB_G.rds")
+#EX: runArgs <- list(f="~/Data/Tennessee/tn93TnsubB.txt", o="~/Data/Tennessee/analysis/tn93TnsubB", y=0, m="~/Data/Tennessee/sourceData/TnMetD/tnMD.csv", g="~/Data/Tennessee/analysis/tn93TnsubB_G.rds")
+
+#Test-EX: runArgs <- list(f=NA, o="~/Data/Tennessee/analysis/tn93TnsubB_nomet", y=0, m=NA, g="~/Data/Tennessee/analysis/tn93TnsubB_nomet_G.rds")
+#Test-Ex: runArgs <- list(f=NA, o="~/Data/Tennessee/analysis/tn93TnsubB_met", y=0, m=NA, g="~/Data/Tennessee/analysis/tn93TnsubB_met_G.rds")
+
 
 ## Generating Analysis
 #____________________________________________________________________________________________________________________________#
@@ -23,7 +28,7 @@ mtD <- runArgs$m
 gFile <- runArgs$g
 
 #Load or create a graph, saving a newly created graph in an accessible file for later use
-if (!is.nan(gFile)) {
+if ((!is.nan(gFile))&file.exists(gFile)) {
   g <- readRDS(gFile)
 } else {
   g <- impTN93(iFile, mtD)

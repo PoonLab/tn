@@ -160,7 +160,7 @@ simGrow <- function(iG) {
   nG <- compClu(nG)
   
   #obtain clusters at an old time point
-  oG <- compClu(tFilt(iG, max(iG$v$Time)-1))
+  oG <- compClu(tFilt(iG, as.numeric(tail(names(table(iG$v$Time)),2))[[1]]))
   
   #Define growth as the difference in cluster size between new and old graphs (after min filtering)
   iG$g <- nG$c-oG$c
@@ -179,7 +179,7 @@ bpeFreq <- function(iG) {
   #@return: A data frame counting number of new year connections, number of possible new year connections and time difference (from cases to new year)
   
   #Take in total graph without the newest time point
-  iG <- tFilt(iG, max(iG$v$Time)-1)
+  iG <- tFilt(iG, as.numeric(tail(names(table(iG$v$Time)),2))[[1]])
   tTab <- tail(table(iG$v$Time),-1) 
   
   #Obtain a summary of edges frequency to base future models off of
@@ -188,7 +188,11 @@ bpeFreq <- function(iG) {
     tG <- tFilt(iG, t)
     tdTab <- tail(table(tG$e$tDiff),-1) 
     tG <- clsFilt(tG)
-    tG$e$Total <- tTab[as.character(t)]
+    
+    #To catch the event of a complete edgelist with no edges to year t
+    if(nrow(tG$e)>0){
+      tG$e$Total <- tTab[as.character(t)]
+    } else {tG$e$Total <- integer(0)}
     
     #Obtains edge frequencies based on time difference
     tdG <- bind_rows(lapply(as.numeric(names(tdTab)), function(td) {
@@ -206,7 +210,7 @@ cluAnalyze <- function(subG) {
   #@param subG: A subGraph cut based on a threshold distance, expecting a member of the multiGraph set
   #@return: A graph annotated with growth, cluster info and level of predictive performance (measured through GAIC)
   
-  #subG <- dFilt(g, 0.015)
+  #subG <- dFilt(g, 0.012)
   
   #Obtain the frequency of edges between two years based on the time difference between those years
   #Annotate edge information with total possible edges to a given newer year
@@ -267,5 +271,3 @@ gaicRun <- function(iG) {
   
   return(res)
 }
-
-

@@ -1,5 +1,5 @@
 ##TO-DO: Specify source-file Location
-source("~/git/tn/CluLib.R")
+source("~/git/tn/newLib.R")
 
 ## USAGE: Rscript ~/git/tn/OpClusters.R.R __tn93output.txt__##
 #Options...
@@ -13,6 +13,10 @@ source("~/git/tn/CluLib.R")
 #EX1: runArgs <- list(f="~/Seattle/tn93St.txt", o=NA, y=0, t=8, m=NA, r=1)
 #EX2: runArgs <- list(f="~/Seattle/tn93St.txt", o=NA, y=0, t=8, m=NA, r=30)
 
+#Test-EX: runArgs <- list(f=NA, o="~/Data/Tennessee/analysis/tn93TnsubB_nomet", y=0, m=NA, g="~/Data/Tennessee/analysis/tn93TnsubB_nomet_G.rds", r=30)
+#Test-Ex: runArgs <- list(f=NA, o="~/Data/Tennessee/analysis/tn93TnsubB_met", y=0, m=NA, g="~/Data/Tennessee/analysis/tn93TnsubB_met_G.rds", r=30)
+
+
 ## Generating Analysis
 #____________________________________________________________________________________________________________________________#
 
@@ -20,53 +24,55 @@ source("~/git/tn/CluLib.R")
 #Expecting patient information in the format ID_Date
 #The name/path of the output file, will both a pdf summary, a set of all clustering data, and a complete version of the graph in question 
 runArgs <- commandArgs(trailingOnly=T, asValues=T, defaults = list(f="stdin",o=NA,y=0,t=1,m=NA,r=20))
-infile <- runArgs$f
-outfile <- ifelse(is.na(runArgs$o), gsub(".txt$", "", infile), runArgs$o)
-inputFilter <- as.numeric(runArgs$y)
-threads <- as.numeric(runArgs$t)
-metData <- runArgs$m
+iFile <- runArgs$f
+oFile <- ifelse(is.na(runArgs$o), gsub(".txt$", "", infile), runArgs$o)
+mtD <- runArgs$m
+gFile <- runArgs$g
 repeats <- runArgs$r
 
-#Save all growth data in accessable files
-g <- createGraph(infile, inputFilter, metData)
-saveRDS(g, file = paste0(outfile, "G.rds"))
+#Load or create a graph, saving a newly created graph in an accessible file for later use
+if (!is.nan(gFile)) {
+  g <- readRDS(gFile)
+} else {
+  g <- impTN93(iFile, mtD)
+  saveRDS(g, file = paste0(oFile, "_G.rds"))
+}
 
-#Initialize a set of cutoffs to observe
-steps <- head(hist(E(g)$Distance, plot=FALSE)$breaks,-5)
-cutoffs <- seq(0 , max(steps), max(steps)/50)
-
-#Create a list of runs and an index for naming purposes
-runProps <- rep(c(0.8,0.6,0.4), repeats)
-
-#Create Multiple Runs at various sub-samples
-runs <- lapply(1:length(runProps), function(i) {
+#Create a set of sub-sampled graphs
+gs  <- lapply(rep(c(0.8, 0.6, 0.4), repeats), function(x){
   
-  #Progress Tracking
-  runProp <- runProps[[i]]
+  #Subsample a random set of n cases from the total graph
+  iG <- g
+  sID <- sample(iG$v$ID, size=round(x*nrow(iG$v)), replace=F)
+  iG$v <- subset(iG$v, ID%in%sID)
+  iG$e <- subset(iG$e, ID1%in%iG$v$ID & ID2%in%iG$v$ID)
+  
+  #Filter out newest years for the sake of sample size
+  while(nrow(subset(iG$v,Time==max(Time)))<=63) {
+    iG <- tFilt(iG, as.numeric(tail(names(table(iG$v$Time)),2))[[1]])
+    iG <- clsFilt(iG)
+  }
+  
+  #Save a copy of the complete list of minimum edges
+  iG$f <- bpeFreq(iG)
+  
+  return(iG)
+}) 
 
-  #Create a sample subgraph
-  sampleV <- sample(V(g), round(length(V(g))*runProp))
-  subG <- induced_subgraph(g,sampleV)
-  
-  #Create a set of subgraphs
-  gs <- multiGraph(subG, cutoffs, threads)
-  names(gs) <- cutoffs
-                 
-  #Generate Growth data
-  res <- gaicRun(gs, cutoffs, threads)
+saveRDS(gs, file = paste0(oFile, "_GS.rds"))
+#gs <- readRDS(paste0(oFile, "_GS.rds")))
 
-  #Label data
-  names(res) <- cutoffs
-  
-  cat(paste0("\r", "                 ", "      - Total Progress ", round(i/length(runProps)*100,1), "%")) 
-  
-  return(res)
+#Run analysis on all subsampled graphs
+runs <- lapply(gs, function(iG) {
+  print(rev(iG$v$ID)[[1]])
+  gaicRun(iG)
 })
 
 #Save all growth data in accessable files
-saveRDS(runs, file = paste0(outfile, "RD.rds"))
+saveRDS(runs, file = paste0(outfile, "_RD.rds"))
+#runs <- readRDS(paste0(oFile, "_RD.rds")))
 
-# runs <- readRDS("~/Seattle/tn93StRD.rds")
+cutoffs <- as.numeric(names(runs[[1]])) 
 
 ## Generate Pictures and output
 #__________________________________________________________________________________________________________________________#
