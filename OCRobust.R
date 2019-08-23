@@ -13,8 +13,8 @@ source("~/git/tn/newLib.R")
 #EX1: runArgs <- list(f="~/Seattle/tn93St.txt", o=NA, y=0, t=8, m=NA, r=1)
 #EX2: runArgs <- list(f="~/Seattle/tn93St.txt", o=NA, y=0, t=8, m=NA, r=30)
 
-#Test-EX: runArgs <- list(f=NA, o="~/Data/Tennessee/analysis/tn93TnsubB_nomet", y=0, m=NA, g="~/Data/Tennessee/analysis/tn93TnsubB_nomet_G.rds", r=30)
-#Test-Ex: runArgs <- list(f=NA, o="~/Data/Tennessee/analysis/tn93TnsubB_met", y=0, m=NA, g="~/Data/Tennessee/analysis/tn93TnsubB_met_G.rds", r=30)
+#Test-EX: runArgs <- list(f=NA, o="~/Data/Tennessee/analysis/tn93TnsubB_nomet_RobComp", y=0, m=NA, g="NM_RobComp_G.rds", r=30)
+#Test-Ex: runArgs <- list(f=NA, o="~/Data/Tennessee/analysis/tn93TnsubB_met_RobComp", y=0, m=NA, g="Met_RobComp_G.rds", r=30)
 
 
 ## Generating Analysis
@@ -38,23 +38,24 @@ if (!is.nan(gFile)) {
   saveRDS(g, file = paste0(oFile, "_G.rds"))
 }
 
+repeats <- 1:(repeats*3)
+
 #Create a set of sub-sampled graphs
-gs  <- lapply(rep(c(0.8, 0.6, 0.4), repeats), function(x){
+gs  <- lapply(repeats, function(i){
   
   #Subsample a random set of n cases from the total graph
   iG <- g
-  sID <- sample(iG$v$ID, size=round(x*nrow(iG$v)), replace=F)
+  sID <- sample(iG$v$ID, size=round(0.8*nrow(iG$v)), replace=F)
   iG$v <- subset(iG$v, ID%in%sID)
   iG$e <- subset(iG$e, ID1%in%iG$v$ID & ID2%in%iG$v$ID)
-  
+
   #Filter out newest years for the sake of sample size
-  while(nrow(subset(iG$v,Time==max(Time)))<=63) {
-    iG <- tFilt(iG, as.numeric(tail(names(table(iG$v$Time)),2))[[1]])
-    iG <- clsFilt(iG)
-  }
+  if(max(iG$v$Time)<max(g$v$Time)){iG <- clsFilt(iG)}
   
   #Save a copy of the complete list of minimum edges
   iG$f <- bpeFreq(iG)
+
+  print(paste0(round((i/90)*100),'%'))
   
   return(iG)
 }) 
@@ -69,8 +70,8 @@ runs <- lapply(gs, function(iG) {
 })
 
 #Save all growth data in accessable files
-saveRDS(runs, file = paste0(outfile, "_RD.rds"))
-#runs <- readRDS(paste0(oFile, "_RD.rds")))
+saveRDS(runs, file = paste0(oFile, "_RD.rds"))
+#runs <- readRDS("~/Data/Tennessee/analysis/tn93TnsubB_met_RobComp_RD.rds")
 
 cutoffs <- as.numeric(names(runs[[1]])) 
 
@@ -96,10 +97,10 @@ minmin <- min(mins)
 maxmax <- max(maxs)
 
 #Create output pdf
-pdf(file = paste0(outfile,"RVS.pdf"), width = 15, height = 10)
+pdf(file = paste0(oFile,"_RVS.pdf"), width = 15, height = 10)
 
 #Plot Generation
-par(mfrow=c(1,2), cex.lab=1.2, main.font=1, cex.lab=1.2, font.main=1)
+par(cex.lab=1.2, main.font=1, cex.lab=1.2, font.main=1)
 
 #Plot of GAICs over a wide range of robustness
 plot.new()
@@ -120,14 +121,15 @@ axis(1, at=seq(0,0.04,0.005), labels=seq(0,0.040,0.005))
 #box()
 
 #Add lines and a smooth trend
-for (i in gaics[seq(1,(repeats*3-2),3)]){lines(as.numeric(names(i)), unname(i), col=alpha("darkblue",0.4))}
-for (i in gaics[seq(2,(repeats*3-1),3)]){lines(as.numeric(names(i)), unname(i), col=alpha("darkorchid",0.6))}
-for (i in gaics[seq(3,(repeats*3),3)]){lines(as.numeric(names(i)), unname(i), col=alpha("darkturquoise",0.6))}
-legend("topright", bg="white",
-       legend=c("Resample 80% of cases", "Resample 60% of cases", "Resample 40% of cases"), 
-       fill=c("darkblue", "darkorchid", "darkturquoise"), 
-       title = paste0("Resamples Groups (N=",repeats,")"))
+#for (i in gaics[seq(1,(repeats*3-2),3)]){lines(as.numeric(names(i)), unname(i), col=alpha("darkblue",0.4))}
+#for (i in gaics[seq(2,(repeats*3-1),3)]){lines(as.numeric(names(i)), unname(i), col=alpha("darkorchid",0.6))}
+#for (i in gaics[seq(3,(repeats*3),3)]){lines(as.numeric(names(i)), unname(i), col=alpha("darkturquoise",0.6))}
+#legend("topright", bg="white",
+       #legend=c("Resample 80% of cases", "Resample 60% of cases", "Resample 40% of cases"), 
+       #fill=c("darkblue", "darkorchid", "darkturquoise"), 
+       #title = paste0("Resamples Groups (N=",repeats,")"))
 
+for (i in gaics) {lines(as.numeric(names(i)), unname(i), col="darkturquoise")}
 smooth <- smooth.spline(df)
 
 #Add and make clear the minimum
@@ -140,13 +142,13 @@ axis(3, at=range, pos=maxmax, labels=F, tcl=0.5)
 axis(3, at=range, pos=maxmax, labels=F, tcl=-0.5)
 
 #Density data generation
-d <- density(minsLoc)
-d1 <- density(minsLoc[seq(1,(repeats*3-2),3)], cut=4)
-d2 <- density(minsLoc[seq(2,(repeats*3-1),3)])
-d3 <- density(minsLoc[seq(3,(repeats*3),3)])
+#d <- density(minsLoc)
+#d1 <- density(minsLoc[seq(1,(repeats*3-2),3)], cut=4)
+#d2 <- density(minsLoc[seq(2,(repeats*3-1),3)])
+#d3 <- density(minsLoc[seq(3,(repeats*3),3)])
 
 #Density plot generation
-plot(d, ylim=c(0,max(d1$y)), col="white", xlab = "Cutoffs", main="Kernal Density of Optimal Cutoff (Bandwidth = 0.0007)")
+#plot(d, ylim=c(0,max(d1$y)), col="white", xlab = "Cutoffs", main="Kernal Density of Optimal Cutoff (Bandwidth = 0.0007)")
 
 # create a background
 #bg <- par('usr')
@@ -159,10 +161,10 @@ plot(d, ylim=c(0,max(d1$y)), col="white", xlab = "Cutoffs", main="Kernal Density
 #box()
 
 #Add data to plot
-polygon(d2, col=alpha("darkorchid",1))
-polygon(d3, col=alpha("darkturquoise",0.8))
-polygon(d1,col=alpha("darkblue",0.6))
+#polygon(d2, col=alpha("darkorchid",1))
+#polygon(d3, col=alpha("darkturquoise",0.8))
+#polygon(d1,col=alpha("darkblue",0.6))
 
-abline(v=smthmin, lty=2)
+#abline(v=smthmin, lty=2)
 
 dev.off()

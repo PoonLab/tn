@@ -167,7 +167,10 @@ simGrow <- function(iG) {
   iG$c <- oG$c
   
   #Re-Add the singletons, citing new singletons as members of the cluster 0
-  nSing$Cluster <- 0
+  if (nrow(nSing)>0){
+    nSing$Cluster <- 0
+  }
+
   iG$v <- rbind(nG$v, nSing)
   
   return(iG)
@@ -210,7 +213,7 @@ cluAnalyze <- function(subG) {
   #@param subG: A subGraph cut based on a threshold distance, expecting a member of the multiGraph set
   #@return: A graph annotated with growth, cluster info and level of predictive performance (measured through GAIC)
   
-  #subG <- dFilt(g, 0.012)
+  #subG <- dFilt(g, 0.0032)
   
   #Obtain the frequency of edges between two years based on the time difference between those years
   #Annotate edge information with total possible edges to a given newer year
@@ -246,6 +249,8 @@ cluAnalyze <- function(subG) {
   subG$mod <- mod
   subG$f <- ageD
   
+  #cat(paste0(subG$gaic, ", "))
+  
   return(subG)
 }
 
@@ -271,3 +276,4 @@ gaicRun <- function(iG) {
   
   return(res)
 }
+
