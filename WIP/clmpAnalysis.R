@@ -56,7 +56,7 @@ cutTime <- function(iT) {
 #Import Tree Data and annotate with ID and Time
 impTree <-function(iFile){
   #args = commandArgs(trailingOnly = T)
-  t <- read.tree(f)
+  t <- read.tree(iFile)
   
   #Establish a set of node ids coupled with collection dates
   temp <- sapply(t$tip.label, function(x) strsplit(x, '_')[[1]])
@@ -71,49 +71,71 @@ impTree <-function(iFile){
   return(t)
 }
 
+simGrow <- function(iT, Dist=Dist) {
+
+  nT <- iT
+  oT <- cutTime(oT)
+  
+  #Establish new and old clusters
+  nRes <- clmp(nT, nrates = 2)
+  oRes <- clmp(oT, nrates = 2)
+  
+  nC <- data.frame(ID=nT$ID, Time=nT$Time, Cluster=head(nRes$clusters, (length(nRes$clusters)+1)/2))
+  oC <- data.frame(ID=oT$ID, Time=oT$Time, Cluster=head(oRes$clusters, (length(oRes$clusters)+1)/2))
+  
+  oC[oC$Cluster==0,]$Cluster <- seq((max(oC$Cluster)+1), nrow(oC[oC$Cluster==0,])+(max(oC$Cluster)))
+  
+  #Calculate growth (through closest membership)
+  iC <- nC
+  niC <- subset(iC, Time==max(iC$Time) & Cluster>0)
+  closeNeighbs <- sapply(1:nrow(niC), function(i){
+    x <- niC[i,]
+    
+    
+    ioNeighb <- subset(iC, Cluster==x$Cluster & Time<max(iC$Time))
+    iDist <- subset(Dist, ID1%in%x$ID | ID2%in%x$ID)
+    iDist <- subset(iDist, ID1%in%ioNeighb$ID | ID2%in%ioNeighb$ID)
+    iDist$ID <- c(iDist$ID1,iDist$ID2)[c(iDist$ID1,iDist$ID2)%in%ioNeighb$ID]
+    iDist <- iDist[,c("Distance", "ID")]
+    
+    if(nrow(iDist)>0) {
+      iMin <- subset(iDist, Distance==min(Distance))[1,]$ID
+    } else {
+      iMin <- ""
+    }
+    
+    return(iMin)
+  })
+  
+  growth <- table(oC$Cluster)
+  growth[names(growth)] <- rep(0,length(noGrowth))
+  posGrowth <- table(subset(oC, ID%in%closeNeighbs)$Cluster)
+  growth[names(posGrowth)] <- unname(posGrowth)
+  
+  return(growth)
+}
+
+bpeFreq <- function(iT, Dist=Dist) {
+  iT <- cutTime(iT)
+  res <- clmp(iT, nrates = 2)
+  
+  c <- data.frame(ID=iT$ID, Time=iT$Time, Cluster=head(res$clusters, (length(res$clusters)+1)/2))
+  
+  for (i in )
+}
+
 #Import Data
-treeFile <- "~/Data/Seattle/analysis/FTStsubB.nwk"
 TN93File <- "~/Data/Seattle/tn93StsubB.txt" 
-
+treeFile <- "~/Data/Seattle/analysis/FTStsubB.nwk"
 Dist <- impTN93Dist(TN93File)
-nT <- impTree(treeFile)
-oT <- cutTime(nT)
-
-#Establish new and old clusters
-nRes <- clmp(nT, nrates = 2)
-oRes <- clmp(oT, nrates = 2)
-
-nC <- data.frame(ID=nT$ID, Time=nT$Time, Cluster=head(nRes$clusters, (length(nRes$clusters)+1)/2))
-oC <- data.frame(ID=oT$ID, Time=oT$Time, Cluster=head(oRes$clusters, (length(oRes$clusters)+1)/2))
-
-#Calculate growth (through closest membership)
-iC <- nC
-niC <- subset(iC, Time==max(iC$Time) & Cluster>0)
-closeNeighbs <- sapply(1:nrow(niC), function(i){
-  x <- niC[i,]
-  ioNeighb <- subset(iC, Cluster==x$Cluster & Time<max(iC$Time))
-  iDist <- subset(Dist, ID1%in%x$ID | ID2%in%x$ID)
-  iDist <- subset(iDist, ID1%in%ioNeighb$ID | ID2%in%ioNeighb$ID)
-  iDist$ID <- c(iDist$ID1,iDist$ID2)[c(iDist$ID1,iDist$ID2)%in%ioNeighb$ID]
-  iDist <- iDist[,c("Distance", "ID")]
-  
-  if(nrow(iDist)>0) {
-    iMin <- subset(iDist, Distance==min(Distance))[1,]$ID
-  } else {
-    iMin <- "Blah"
-  }
-  
-  return(iMin)
-})
-
-table(subset(oC, ID%in%closeNeighbs)$Cluster)
+t <- impTree(treeFile)
 
 
 
 
 
 
-
+saveRDS(res, file="BPE.rds")
 
 
 
