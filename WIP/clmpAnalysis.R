@@ -1,6 +1,6 @@
 #A process which interprets clmp cluster data such that it is comparable to tn93 cluster data for scoring the effectiveness of clustering from tn93 Output.
 #USAGE: Rscript clmpAnalysis FastTreeOutput.nwk
-
+library(dplyr,verbose = FALSE)
 require(clmp)
 
 #Import Distance Data
@@ -34,7 +34,6 @@ sizeCheck <- function(iT) {
   
   return(iT)
 }
-
 
 #Cut the Newest Year
 cutTime <- function(iT) {
@@ -74,7 +73,7 @@ impTree <-function(iFile){
 simGrow <- function(iT, Dist=Dist) {
 
   nT <- iT
-  oT <- cutTime(oT)
+  oT <- cutTime(iT)
   
   #Establish new and old clusters
   nRes <- clmp(nT, nrates = 2)
@@ -86,13 +85,50 @@ simGrow <- function(iT, Dist=Dist) {
   oC[oC$Cluster==0,]$Cluster <- seq((max(oC$Cluster)+1), nrow(oC[oC$Cluster==0,])+(max(oC$Cluster)))
   
   #Calculate growth (through closest membership)
-  iC <- nC
-  niC <- subset(iC, Time==max(iC$Time) & Cluster>0)
-  closeNeighbs <- sapply(1:nrow(niC), function(i){
-    x <- niC[i,]
+  niC <- subset(nC, Time==max(nC$Time) & Cluster>0)
+  oiC <- subset(nC, Time<max(nC$Time) & Cluster>0)
+  closeNeighbs <- clsFilt(niC, oiC, Dist)
+  
+  growth <- table(oC$Cluster)
+  growth[names(growth)] <- rep(0,length(growth))
+  posGrowth <- table(sapply(closeNeighbs, function(id){subset(oC, ID%in%id)$Cluster}))
+  growth[names(posGrowth)] <- unname(posGrowth)
+  
+  return(growth)
+}
+
+bpeFreq <- function(iClu, Dist=Dist) {
+  
+  clu <- data.frame(ID=iClu$ID, Time=iClu$Time, Cluster=head(iClu$clusters, (length(iClu$clusters)+1)/2))
+  times <- as.numeric(levels(as.factor(clu$Time)))
+  
+  eCounts <- bind_rows(lapply(tail(times,-1), function(x) {
+    nC <- subset(clu, Time==x & Cluster>0)
+    oC <- subset(clu, Time<x & Cluster>0)
+    nTot <- nrow(nC) 
+    clsIDs <- clsFilt(nC, oC, Dist)
     
+    tDiffs <- max(nC$Time) - as.numeric(levels(as.factor(oC$Time)))
+    pos <- table(subset(oC, ID %in% clsIDs)$Time)
+    totPos <- rep(0,length(tDiffs))
+    totPos[max(nC$Time)-as.numeric(names(pos))] <- unname(pos)
+    data.frame(Positive=totPos, Total=nTot, tDiff=tDiffs)
+  }))
+  
+  return(eCounts)
+}
+
+#TO-DO: This is a Slow Function (thus slowing down eCounts and simGrow).
+clsFilt <- function(nC, oC, Dist=Dist) {
+  
+  #For every new case, find it's closest neighbour from the old cases
+  closeNeighbs <- sapply(1:nrow(nC), function(i){
+    x <- nC[i,]
     
-    ioNeighb <- subset(iC, Cluster==x$Cluster & Time<max(iC$Time))
+    #The list of old neighbours to new case "x"
+    ioNeighb <- subset(oC, Cluster==x$Cluster & Time<max(iC$Time))
+    
+    #Obtain the distances of all old members of case x's cluster
     iDist <- subset(Dist, ID1%in%x$ID | ID2%in%x$ID)
     iDist <- subset(iDist, ID1%in%ioNeighb$ID | ID2%in%ioNeighb$ID)
     iDist$ID <- c(iDist$ID1,iDist$ID2)[c(iDist$ID1,iDist$ID2)%in%ioNeighb$ID]
@@ -107,21 +143,35 @@ simGrow <- function(iT, Dist=Dist) {
     return(iMin)
   })
   
-  growth <- table(oC$Cluster)
-  growth[names(growth)] <- rep(0,length(noGrowth))
-  posGrowth <- table(subset(oC, ID%in%closeNeighbs)$Cluster)
-  growth[names(posGrowth)] <- unname(posGrowth)
+  #Remove instances where a given new case has no close neighbours
+  closeNeighbs <-  
   
-  return(growth)
+  return(closeNeighbs)
 }
 
-bpeFreq <- function(iT, Dist=Dist) {
-  iT <- cutTime(iT)
-  res <- clmp(iT, nrates = 2)
+clmpAnalysis <- function(iT, Dist=Dist) {
+
+  oT <- cutTime(iT)
+  clu <- clmp(oT, nrates = 2)
+  ageD <- bpeFreq(clu, Dist)
   
-  c <- data.frame(ID=iT$ID, Time=iT$Time, Cluster=head(res$clusters, (length(res$clusters)+1)/2))
+  clu <- data.frame(ID=clu$ID, Time=clu$Time, Cluster=head(clu$clusters, (length(clu$clusters)+1)/2))
   
-  for (i in )
+  #Obtain a model of case connection frequency to new cases as predicted by individual case age
+  #Use this to weight cases by age
+  mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageD, family='binomial')
+  clu$Weight <- predict(mod, data.frame(tDiff=max(iT$Time)-clu$Time), type='response')
+  
+  growth <- simGrow(iT,Dist)
+  clu[clu$Cluster==0,]$Cluster <- seq((max(clu$Cluster)+1), nrow(clu[clu$Cluster==0,])+(max(clu$Cluster)))
+  csize <- table(clu$Cluster)
+  
+  #Create two data frames from two predictive models, one based on absolute size (NULL) and our date-informed model
+  df1 <- data.frame(Growth = growth, Pred = sapply(names(csize), function(x) { sum(subset(clu, Cluster==as.numeric(x))$Weight) }))
+  df2 <- data.frame(Growth = growth, Pred =  csize * (sum(growth)/sum(csize)))
+  fit1 <- glm(Growth ~ Pred, data = df1, family = "poisson")
+  fit2 <- glm(Growth ~ Pred, data = df2, family = "poisson")
+  
 }
 
 #Import Data
@@ -132,6 +182,10 @@ t <- impTree(treeFile)
 
 
 
+
+
+
+cc <- clmp(t,nrates = 2)
 
 
 
