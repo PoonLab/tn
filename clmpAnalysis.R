@@ -70,28 +70,21 @@ impTree <-function(iFile){
   return(t)
 }
 
-simGrow <- function(iT, Dist=Dist, nrates=2) {
-
-  nT <- iT
-  oT <- cutTime(iT)
+simGrow <- function(nClu, oClu, Dist=Dist, nrates=2) {
   
-  #Establish new and old clusters
-  nRes <- clmp(nT, nrates)
-  oRes <- clmp(oT, nrates)
+  nV <- data.frame(ID=nClu$ID, Time=nClu$Time, Cluster=as.numeric(head(nClu$clusters, (length(nClu$clusters)+1)/2)), stringsAsFactors=F)
+  oV <- data.frame(ID=oClu$ID, Time=oClu$Time, Cluster=as.numeric(head(oClu$clusters, (length(oClu$clusters)+1)/2)), stringsAsFactors=F)
   
-  nC <- data.frame(ID=nRes$ID, Time=nRes$Time, Cluster=as.numeric(head(nRes$clusters, (length(nRes$clusters)+1)/2)), stringsAsFactors=F)
-  oC <- data.frame(ID=oRes$ID, Time=oRes$Time, Cluster=as.numeric(head(oRes$clusters, (length(oRes$clusters)+1)/2)), stringsAsFactors=F)
-  
-  oC[oC$Cluster==0,]$Cluster <- seq((max(oC$Cluster)+1), nrow(oC[oC$Cluster==0,])+(max(oC$Cluster)))
+  oV[oV$Cluster==0,]$Cluster <- seq((max(oV$Cluster)+1), nrow(oV[oV$Cluster==0,])+(max(oV$Cluster)))
   
   #Calculate growth (through closest membership)
-  niC <- subset(nC, Time==max(nC$Time))
-  oiC <- subset(nC, Time<max(nC$Time))
-  closeNeighbs <- clsFilt(niC, oiC, Dist)
+  niV <- subset(nV, Time==max(nV$Time))
+  oiV <- subset(nV, Time<max(nV$Time))
+  closeNeighbs <- clsFilt(niV, oiV, Dist)
   
-  growth <- table(oC$Cluster)
+  growth <- table(oV$Cluster)
   growth[names(growth)] <- rep(0,length(growth))
-  posGrowth <- table(sapply(closeNeighbs, function(id){subset(oC, ID%in%id)$Cluster}))
+  posGrowth <- table(sapply(closeNeighbs, function(id){subset(oV, ID%in%id)$Cluster}))
   growth[names(posGrowth)] <- unname(posGrowth)
   
   return(growth)
@@ -99,19 +92,19 @@ simGrow <- function(iT, Dist=Dist, nrates=2) {
 
 bpeFreq <- function(iClu, Dist=Dist) {
   
-  clu <- data.frame(ID=iClu$ID, Time=iClu$Time, Cluster=as.numeric(head(iClu$clusters, (length(iClu$clusters)+1)/2)), stringsAsFactors=F)
-  times <- as.numeric(levels(as.factor(clu$Time)))
+  v <- data.frame(ID=iClu$ID, Time=iClu$Time, Cluster=as.numeric(head(iClu$clusters, (length(iClu$clusters)+1)/2)), stringsAsFactors=F)
+  times <- as.numeric(levels(as.factor(v$Time)))
   
   eCounts <- bind_rows(lapply(tail(times,-1), function(x) {
 
-    nC <- subset(clu, Time==x)
-    oC <- subset(clu, Time<x) 
-    nTot <- nrow(nC)
-    tDiffs <- max(nC$Time) - as.numeric(levels(as.factor(oC$Time)))
-    clsIDs <- clsFilt(nC, oC, Dist)
-    pos <- table(subset(oC, ID %in% clsIDs)$Time)
+    nV <- subset(v, Time==x)
+    oV <- subset(v, Time<x) 
+    nTot <- nrow(nV)
+    tDiffs <- max(nV$Time) - as.numeric(levels(as.factor(oV$Time)))
+    clsIDs <- clsFilt(nV, oV, Dist)
+    pos <- table(subset(oV, ID %in% clsIDs)$Time)
     totPos <- rep(0,length(tDiffs))
-    totPos[max(nC$Time)-as.numeric(names(pos))] <- unname(pos)
+    totPos[max(nV$Time)-as.numeric(names(pos))] <- unname(pos)
     data.frame(Positive=totPos, Total=nTot, tDiff=tDiffs)
     
   }))
@@ -157,32 +150,36 @@ clsFilt <- function(nC, oC, Dist=Dist) {
 clmpAnalysis <- function(iT, Dist=Dist, nrates=2) {
 
   oT <- cutTime(iT)
-  clu <- clmp(oT, nrates)
-  ageD <- bpeFreq(clu, Dist)
+  nClu <- clmp(iT, nrates)
+  oClu <- clmp(oT, nrates)
+  ageD <- bpeFreq(oClu, Dist)
   
-  clu <- data.frame(ID=clu$ID, Time=clu$Time, Cluster=as.numeric(head(clu$clusters, (length(clu$clusters)+1)/2)), stringsAsFactors=F)
+  v <- data.frame(ID=oClu$ID, Time=oClu$Time, Cluster=as.numeric(head(oClu$clusters, (length(oClu$clusters)+1)/2)), stringsAsFactors=F)
   
   #Obtain a model of case connection frequency to new cases as predicted by individual case age
   #Use this to weight cases by age
   mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageD, family='binomial')
-  clu$Weight <- predict(mod, data.frame(tDiff=max(iT$Time)-clu$Time), type='response')
-  
-  growth <- simGrow(iT,Dist, nrates)
-  clu[clu$Cluster==0,]$Cluster <- seq((max(clu$Cluster)+1), nrow(clu[clu$Cluster==0,])+(max(clu$Cluster)))
-  csize <- table(clu$Cluster)
+  v$Weight <- predict(mod, data.frame(tDiff=max(iT$Time)-v$Time), type='response')
+  growth <- simGrow(nClu, oClu, Dist, nrates)
+  v[v$Cluster==0,]$Cluster <- seq((max(v$Cluster)+1), nrow(v[v$Cluster==0,])+(max(v$Cluster)))
+  csize <- table(v$Cluster)
 
   #Create two data frames from two predictive models, one based on absolute size (NULL) and our date-informed model
-  df1 <- data.frame(Growth = as.numeric(growth), Pred = sapply(names(csize), function(x) { sum(subset(clu, Cluster==as.numeric(x))$Weight) }))
+  df1 <- data.frame(Growth = as.numeric(growth), Pred = sapply(names(csize), function(x) { sum(subset(v, Cluster==as.numeric(x))$Weight) }))
   df2 <- data.frame(Growth = as.numeric(growth), Pred =  as.numeric(csize) * (sum(growth)/sum(csize)))
   fit1 <- glm(Growth ~ Pred, data = df1, family = "poisson")
   fit2 <- glm(Growth ~ Pred, data = df2, family = "poisson")
   
+  cSum <- data.frame(csize=as.numeric(csize), NullPred=df2$Pred, PropPred=df1$Pred, Growth=as.numeric(growth))
+  
   gaic <- fit2$aic - fit1$aic 
   
-  return(gaic)
+  g <- list(v=v, cSum=cSum, GAIC=gaic, PropMod=fit1, NullMod=fit2)
+  
+  return(g)
 }
 
-###### MAIN ######
+###### Testing ######
 #Import Data
 TN93File <- "~/Data/Seattle/tn93StsubB.txt" 
 treeFile <- "~/Data/Seattle/analysis/FTStsubB.nwk"
@@ -190,4 +187,15 @@ treeFile <- "~/Data/Seattle/analysis/FTStsubB.nwk"
 Dist <- impTN93Dist(TN93File)
 t <- impTree(treeFile)
 
-clmpAnalysis(t, Dist, nrates = 4)
+#Workaround for a bug ensuring that R nrates can not be set through a variable in a loop
+res2 <- clmpAnalysis(t, Dist, nrates = 2)
+res3 <- clmpAnalysis(t, Dist, nrates = 3)
+res4 <- clmpAnalysis(t, Dist, nrates = 4)
+res5 <- clmpAnalysis(t, Dist, nrates = 5)
+res6 <- clmpAnalysis(t, Dist, nrates = 6)
+res7 <- clmpAnalysis(t, Dist, nrates = 7)
+res8 <- clmpAnalysis(t, Dist, nrates = 8)
+res9 <- clmpAnalysis(t, Dist, nrates = 9)
+res10 <- clmpAnalysis(t, Dist, nrates = 10)
+
+
