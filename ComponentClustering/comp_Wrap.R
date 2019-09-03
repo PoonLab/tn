@@ -1,5 +1,5 @@
 ##TO-DO: Specify source-file Location
-source("~/git/tn/newLib.R")
+source("~/git/tn/comp_An.R")
 
 ## USAGE: Rscript ~/git/tn/OpClusters.R.R __tn93output.txt__##
 #Options...

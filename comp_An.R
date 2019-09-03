@@ -1,52 +1,53 @@
 library(dplyr,verbose = FALSE)
 
-#Creates a pair of of data frames based on TN93 output files.
-#One data frame represents an edgelist or case interactions, while the other represents the cases themselves
-impTN93 <- function(iFile, mtD){
+#Creates a set of data-frames representing a graph of sequences, with the edges between those sequences representing the TN93 Distance.
+#Sequences must be dated with the date separated from the id by '_'. 
+##TO-DO: Currently only accepts year dates. Work to allow more specific dates. 
+impTN93 <- function(iFile, mtD, minNS=63){
   #@param iFile: The name/path of the input file (expecting tn93 output csv)
-  #@param iFilt: Will manually drop x of the most recent time points from the total data set based on this input
   #@param mtD: the filename for a dataframe of associated metadata (optional).
-  #@return: A pair of data frames representing edge and vertex information for a distance-based graph
+  #@param minNS: The minimum number of acceptible new Sequences. By default we keep this high.
+  #@return: A list of 3 Data frames. An edge list (weighted by TN93 genetic distance), a vertex list, 
+  #         and a list of minimum edges, for the future establishment of a timepoint-based model
   
-  #From the input file, a tn93 output file. This
+  #Reading input file as a data frame. This will essentially act as an edgelist
   idf <- read.csv(iFile, stringsAsFactors = F)
   temp1 <- sapply(idf$ID1, function(x) (strsplit(x,'_')[[1]])[[1]])
   temp2 <- sapply(idf$ID1, function(x) (strsplit(x,'_')[[1]])[[2]])
   temp3 <- sapply(idf$ID2, function(x) (strsplit(x,'_')[[1]])[[1]])
   temp4 <- sapply(idf$ID2, function(x) (strsplit(x,'_')[[1]])[[2]])
   
-  #Create data frame of edges (ie. Vertex interactions)
-  el <- data.frame(ID1=as.character(temp1), t1=as.numeric(temp2), ID2=as.character(temp3), t2=as.numeric(temp4), 
+  #Create a data frame from the imported edge list. 
+  el <- data.frame(ID1=as.character(temp1), t1=as.numeric(temp2), 
+                   ID2=as.character(temp3), t2=as.numeric(temp4), 
                    Distance = as.numeric(idf$Distance), stringsAsFactors= F)
+  
+  #Obtain the maximum time and time difference between the head and tail of each edge
   el$tMax <- pmax(el$t1,el$t2)
   el$tDiff <- abs(el$t1-el$t2)
   
   ##TO-DO: Add mtD meta data info here
-  #Create data frame of Vertex (ie. Case by case data)
+  #Create a list of vertices based on the edge list. Original sequences with no edges will not be considered.
   vl <- unique(data.frame(ID = c(el$ID1, el$ID2), Time = c(el$t1, el$t2), stringsAsFactors=F))
   
-  #Order both list elements by time point
+  #Order edges and vertices by time point and sort them into a single, larger list
+  #If the newest timepoint contains a small number of sequences, we remove the newest year from consideration
   g <- list(v=vl[order(vl$Time),], e=el[order(el$tMax),], f=el[order(el$tMax),])
-  
-  #Filter out newest years for the sake of sample size
-  while(nrow(subset(g$v,Time==max(Time)))<=63) {
+  while(nrow(subset(g$v,Time==max(Time)))<=minNS) {
     g <- tFilt(g, max(g$v$Time)-1)
   }
-
-  #Close Filter the overall graph at this point to save future time complexity
-  g <- clsFilt(g)
   
-  #Save a copy of the complete list of minimum edges
-  g$f <- bpeFreq(g)
+  #Permanently remove edges from the new year such that only the closest edge between new vertices and old vertices remains
+  #'g$f' represents the closest edge for all vertices (excluding edges within that vertex's own year)
+  g <- clsFilt(g)
+  g$f <- likData(g)
   
   return(g)
 }
 
 #Create clusters based on component clustering by some measure of genetic distance
 compClu <- function(iG) {
-  #@param iG: A subgraph cut based on threshold distance and .
-  #@param sing: An option determining whether or not singletons are to be ignored.
-  #             If True, singletons are not considered clusters of size one and their growth is not counted
+  #@param iG: The inputted graph. Expecting all vertices, but some edges filtered by distance.
   #@return: The inputted graph, annotated with a cluster size summary and case membership in the vertices section
   
   #Simplify the list of unsorted vertices (just id's) and edges (just head and tail id's)
@@ -117,9 +118,9 @@ tFilt <- function(iG, maxT) {
 }
 
 #Filter the edges coming from new cases such that the new cases have no edges to eachother and only one edge leading from them to old cases
-#This is a simplification to hep resolve the merging involved in cluster growth and to prevent growth by whole clusters.
+#This is a simplification to help resolve the merging involved in cluster growth and to prevent growth by whole clusters.
 clsFilt <- function(iG){
-  #@param iG: Expecting the entire Graph.
+  #@param iG: The inputted graph. Expecting the entire Graph with new year included.
   #@return: The inputted graph with the new year connected by only its shortest edges per vertex
   
   #Obtain new vertices and remove any internal edges within the new vertices 
@@ -148,9 +149,10 @@ clsFilt <- function(iG){
   return(iG)
 } 
 
-#Simulate the growth of clusters, showing the difference in cluster size between two years (with the same set of clusters)
+#Simulate the growth of clusters, showing the difference in cluster size between the newest and the penultimate time point
+#The frame of reference for clusters is the penultimate year, simulating one making forcasting decisions based on one time point and validating them with the next
 simGrow <- function(iG) {
-  #@param iG: The complete subgraph cut based on threshold distance
+  #@param: The inputted graph. Expecting all vertices, but some edges filtered by distance.
   #@return: The same cluster annotated with the actual growth and cluster information
   
   #Obtain clusters at the new time point, after removing singletons
@@ -162,7 +164,8 @@ simGrow <- function(iG) {
   #obtain clusters at an old time point
   oG <- compClu(tFilt(iG, as.numeric(tail(names(table(iG$v$Time)),2))[[1]]))
   
-  #Define growth as the difference in cluster size between new and old graphs (after min filtering)
+  #Define growth as the difference in cluster size between new and old graphs 
+  #After clsFilter(), nG will have the same number of clusters as oG, and similar membership
   iG$g <- nG$c-oG$c
   iG$c <- oG$c
   
@@ -170,24 +173,26 @@ simGrow <- function(iG) {
   if (nrow(nSing)>0){
     nSing$Cluster <- 0
   }
-
   iG$v <- rbind(nG$v, nSing)
   
   return(iG)
 }
 
-#Obtain some frequency data regarding number of linkages from a given year to the newest year in the input graph.
-bpeFreq <- function(iG) {
-  #@param iG: The total graph
-  #@return: A data frame counting number of new year connections, number of possible new year connections and time difference (from cases to new year)
+#Obtains some likelihood data in order to weight cases based on their recency  
+likData <- function(iG) {
+  #@param iG: The inputted graph. Expecting the entire Graph with new year included.
+  #@return: A data frame of "Positives" (related cases) between one time point and another, annotated with the number of possible total positives.
+  #         Each positive also carries it's Genetic Distance measurement and time point difference (between time points)
   
-  #Take in total graph without the newest time point
+  #Take in total graph without the newest time point (otherwise, we include the validation set in or data set)
   iG <- tFilt(iG, as.numeric(tail(names(table(iG$v$Time)),2))[[1]])
   tTab <- tail(table(iG$v$Time),-1) 
   
-  #Obtain a summary of edges frequency to base future models off of
-  #Obtains edge frequencies at each year
+  #Obtain subsets of "Positives" (related cases) between one time point and another, annotated with the number of possible total positives.
+  #Positives are only considered if, from the perspective of the newest time point, there are no old cases with a closer TN93 distance measurement
   ageD <- lapply(as.numeric(names(tTab)), function(t){ 
+    
+    #Close filter cases from the current time point t. Treating it as though it is the new time point
     tG <- tFilt(iG, t)
     tdTab <- tail(table(tG$e$tDiff),-1) 
     tG <- clsFilt(tG)
@@ -197,23 +202,25 @@ bpeFreq <- function(iG) {
       tG$e$Total <- tTab[as.character(t)]
     } else {tG$e$Total <- integer(0)}
     
-    #Obtains edge frequencies based on time difference
-    tdG <- bind_rows(lapply(as.numeric(names(tdTab)), function(td) {
+    #Given the filtered subgraph, record any edges to/from the time point of interest.
+    #Notes only the Distance and time difference (between the older point and  the new) 
+    #All of tdG is annotated The total number of cases in time t (ie. the total possible edges for that tMax value)
+    tdD <- bind_rows(lapply(as.numeric(names(tdTab)), function(td) {
       es <- subset(tG$e, tDiff==td & tMax==t)
       es[,c("Distance", "tMax", "tDiff", "Total")]
     })) 
+    
+    return(tdD)
   }) 
   
   return(ageD)
 }
 
-#Analyze a given Graph to establish the difference between the performance of two different models
+#Analyze a given Clustered Graph to establish the difference between the performance of two different models
 #Performance is defined as the ability for cluster growth to fit a predictive model.
-cluAnalyze <- function(subG) {
+compAnalyze <- function(subG) {
   #@param subG: A subGraph cut based on a threshold distance, expecting a member of the multiGraph set
   #@return: A graph annotated with growth, cluster info and level of predictive performance (measured through GAIC)
-  
-  #subG <- dFilt(g, 0.0032)
   
   #Obtain the frequency of edges between two years based on the time difference between those years
   #Annotate edge information with total possible edges to a given newer year
@@ -249,8 +256,6 @@ cluAnalyze <- function(subG) {
   subG$mod <- mod
   subG$f <- ageD
   
-  #cat(paste0(subG$gaic, ", "))
-  
   return(subG)
 }
 
@@ -263,15 +268,11 @@ gaicRun <- function(iG) {
   steps <- head(hist(iG$e$Distance, plot=FALSE)$breaks,-5)
   cutoffs <- seq(0 , max(steps), max(steps)/50)
   
-  #This script will give warnings because of poor null model fit and lack of convergence
-  options(warn=-1)
-  
   #A set of several graphs created at different cutoffs
   gs <- lapply(cutoffs, function(d) {dFilt(iG, d)})
   
-  #Generate cluster data for each graph in gs
-  res <- lapply(gs, function(subG) {cluAnalyze(subG)})
-
+  #Generate cluster data for each subGraph in gs
+  res <- lapply(gs, function(subG) {compAnalyze(subG)})
   names(res) <- cutoffs
   
   return(res)
