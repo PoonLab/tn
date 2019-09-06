@@ -1,5 +1,5 @@
 ##TO-DO: Specify source-file Location
-source("~/git/tn/newLib.R")
+source("~/git/tn/comp_An.R")
 
 ## USAGE: Rscript ~/git/tn/OpClusters.R.R __tn93output.txt__##
 #Options...
@@ -9,7 +9,7 @@ source("~/git/tn/newLib.R")
 # -g: The file path to saved graphical info. If one has already saved a graph, this will save time making one
 # -r: How many yeasrs beyond the most recent year will be examined
 
-#EX: runArgs <- list(f="~/Data/Seattle/tn93StsubB.txt", o=NA, y=0, m=NA, g="~/Data/Seattle/analysis/tn93StsubB_G.rds", r=5)
+#EX: runArgs <- list(f="~/Data/Seattle/analysis_PRO/tn93StsubB.txt", o=NA, y=0, m=NA, g="~/Data/Seattle/analysis_PRO/tn93StsubB_G.rds", r=5)
 
 #Test-EX: runArgs <- list(f=NA, o="~/Data/Tennessee/analysis/tn93TnsubB_nomet", y=0, m=NA, g="~/Data/Tennessee/analysis/tn93TnsubB_nomet_G.rds", r=5)
 #Test-Ex: runArgs <- list(f=NA, o="~/Data/Tennessee/analysis/tn93TnsubB_met", y=0, m=NA, g="~/Data/Tennessee/analysis/tn93TnsubB_met_G.rds", r=5)
@@ -28,7 +28,7 @@ gFile <- runArgs$g
 tRange <- runArgs$r:1
 
 #Load or create a graph, saving a newly created graph in an accessible file for later use
-if (!is.nan(gFile)) {
+if (!is.na(gFile)) {
   g <- readRDS(gFile)
 } else {
   g <- impTN93(iFile, mtD)
@@ -49,13 +49,14 @@ gs  <- lapply(tRange, function(x){
   iG <- clsFilt(iG)
   
   #Save a copy of the complete list of minimum edges
-  iG$f <- bpeFreq(iG)
+  iG$f <- likData(iG)
   
   return(iG)
 }) 
 
 #Create Multiple Runs at the various longitudinal cuts (with different amounts of new years truncated)
-runs <- lapply(gs, function(iG) {gaicRun(iG)})
+cutoffs <- seq(0,0.04,0.0008)
+runs <- lapply(gs, function(iG) {gaicRun(iG, cutoffs)})
 
 #Save all growth data in accessable files
 saveRDS(runs, file = paste0(oFile, "_LD.rds"))
@@ -68,7 +69,6 @@ saveRDS(runs, file = paste0(oFile, "_LD.rds"))
 
 
 #Obtain a list of vectors of GAICs for each filtered run
-cutoffs <- as.numeric(names(runs[[1]])) 
 gaics <- lapply(runs, function(run){sapply(run, function(x) {x$gaic})})
 
 #The step distance between cutoff points
@@ -82,7 +82,7 @@ maxs <- sapply(gaics, function(x){max(x)})
 #For defining range on a plot
 minmin <- min(mins)
 maxmax <- max(maxs)
-maxT <- max(gs[[1]]$v$Time)
+maxT <- max(gs[[5]]$v$Time)
 minT <- min(gs[[1]]$v$Time)
 
 #oFile <- "met"
@@ -113,7 +113,7 @@ for (i in 1:length(gaics)) {
   
   #Plot GAIC
   lines(cutoffs, GAIC, lwd=1.6, col="blue")
-  legend("bottomright", legend = paste0("Years ", minT, "-", (maxT-length(runs))+i), cex = 1,bg ="white")
+  legend("bottomright", legend = paste0("Years ", minT, "-", maxT-(length(gaics)-i)), cex = 1,bg ="white")
   points(x=c(minsLoc[i]), y=c(mins[i]), cex=1)
   
   #Represents the location of the past run's MGAICE, Loss Ratio = minGAIC / Past minGAIC

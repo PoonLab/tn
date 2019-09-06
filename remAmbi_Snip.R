@@ -1,6 +1,6 @@
 require("ape")
 
-iFile <- "Data/Seattle/SeattleB.fas"
+iFile <- "Data/NAlberta/NorthAlbertaB.fas"
 seqs <- read.FASTA(iFile, type = "DNA")
 
 #Collect Frequencies of ambiguity

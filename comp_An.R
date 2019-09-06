@@ -260,15 +260,15 @@ compAnalyze <- function(subG) {
 }
 
 #Run across a set of several subGraphs created at various filters, analyzing GAIC at each with clusterAnalyze
-gaicRun <- function(iG) {
+gaicRun <- function(iG, cutoffs=NA) {
   #@param iG: Expecting the entire Graph, but in some cases may take a subset  
   #@return: A data frame of each runs cluster information (clusterAnalyze output)
   
   #Initialize a set of cutoffs to observe (based on the genetic distance distribution)
-  steps <- head(hist(iG$e$Distance, plot=FALSE)$breaks,-5)
-  cutoffs <- seq(0 , max(steps), max(steps)/50)
-  cutoffs <- seq(0, 0.04, 0.0008)
-  
+  if  (is.na(cutoffs)) {
+    steps <- head(hist(iG$e$Distance, plot=FALSE)$breaks,-5)
+    cutoffs <- seq(0 , max(steps), max(steps)/50) 
+  }
 
   #A set of several graphs created at different cutoffs
   gs <- lapply(cutoffs, function(d) {dFilt(iG, d)})
@@ -281,21 +281,21 @@ gaicRun <- function(iG) {
 }
 
 #####Testing#####
-
-#Create Graph and analyze it
-g <- impTN93("tn93StsubB.txt", NA)
-res <- gaicRun(g)
-
-#Extract GAICs and cutoffs for graphing purposes
-gaics <- sapply(res, function(x) {x$gaic})
-cutoffs <- names(res)  
-
-#Plot GAIC
-plot(cutoffs, gaics, type = "n", ylim=c(min(gaics),max(gaics)), xlab="Cutoffs", ylab = "GAIC")
-lines(cutoffs, gaics, lwd=1.6, col="orangered")
-points(cutoffs, gaics)
-abline(h=0)
-abline(v=cutoffs[which(gaics==min(gaics))[[1]]], lty=3)
-text(cutoffs[which(gaics==min(gaics))[[1]]+1.5], min(gaics), labels= round(min(gaics)))
-text(cutoffs[which(gaics==min(gaics))[[1]]], max(c(gaics,gaics))-1.5, labels=cutoffs[which(gaics==min(gaics))[[1]]])
-
+test <- function(){
+  #Create Graph and analyze it
+  g <- impTN93("tn93StsubB.txt", NA)
+  res <- gaicRun(g)
+  
+  #Extract GAICs and cutoffs for graphing purposes
+  gaics <- sapply(res, function(x) {x$gaic})
+  cutoffs <- names(res)  
+  
+  #Plot GAIC
+  plot(cutoffs, gaics, type = "n", ylim=c(min(gaics),max(gaics)), xlab="Cutoffs", ylab = "GAIC")
+  lines(cutoffs, gaics, lwd=1.6, col="orangered")
+  points(cutoffs, gaics)
+  abline(h=0)
+  abline(v=cutoffs[which(gaics==min(gaics))[[1]]], lty=3)
+  text(cutoffs[which(gaics==min(gaics))[[1]]+1.5], min(gaics), labels= round(min(gaics)))
+  text(cutoffs[which(gaics==min(gaics))[[1]]], max(c(gaics,gaics))-1.5, labels=cutoffs[which(gaics==min(gaics))[[1]]])
+}
