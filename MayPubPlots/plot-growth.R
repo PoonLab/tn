@@ -1,19 +1,19 @@
 
-GDst <- readRDS("tn93StGD.rds")
-GDna <- readRDS("tn93NAGD.rds")
+GDst <- readRDS("Data/PaperData(sem2)/tn93StsubB_GD.rds")
+GDna <- readRDS("Data/PaperData(sem2)/tn93NAsubB_GD.rds")
 
 st <- sapply(GDst, function(x) {
-  c(sum(x$growth), sum(x$growth>0))
+  c(sum(x$g), sum(x$g>0))
 })
 st <- data.frame(cutoff=as.numeric(colnames(st)), total.R=st[1,], n.clust=st[2,])
 
 na <- sapply(GDna, function(x) {
-  c(sum(x$growth), sum(x$growth>0))
+  c(sum(x$g), sum(x$g>0))
 })
 na <- data.frame(cutoff=as.numeric(colnames(na)), total.R=na[1,], n.clust=na[2,])
 
 
-pdf(file='growth.pdf', width=5, height=5)
+pdf(file="Data/PaperData(sem2)/growth.pdf", width=5, height=5)
 
 par(mar=c(5,5,1,1))
 plot(st$cutoff, st$total.R, type='n', ylim=c(0, max(st$total.R)),

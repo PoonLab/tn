@@ -1,5 +1,7 @@
 ##TO-DO: Specify source-file Location
 source("~/git/tn/comp_An.R")
+require(optparse)
+
 
 ## USAGE: Rscript ~/git/tn/OpClusters.R.R __tn93output.txt__##
 #Options...
@@ -12,7 +14,7 @@ source("~/git/tn/comp_An.R")
 #EX: runArgs <- list(f="~/Data/Seattle/analysis_PRO/tn93StsubB.txt", o=NA, y=0, m=NA, g="~/Data/Seattle/analysis_PRO/tn93StsubB_G.rds", r=5)
 
 #Test-EX: runArgs <- list(f=NA, o="~/Data/Tennessee/analysis/tn93TnsubB_nomet", y=0, m=NA, g="~/Data/Tennessee/analysis/tn93TnsubB_nomet_G.rds", r=5)
-#Test-Ex: runArgs <- list(f=NA, o="~/Data/Tennessee/analysis/tn93TnsubB_met", y=0, m=NA, g="~/Data/Tennessee/analysis/tn93TnsubB_met_G.rds", r=5)
+#Test-Ex: runArgs <- list(f=NA, o="~/Data/Tennessee/analysis/tn93TnsubB_met", y=0, m=NA, g="~/Data/Tennessee/analysis_PRO/tn93TnsubB_met_G.rds", r=5)
 
 ## Generating Analysis
 #____________________________________________________________________________________________________________________________#
@@ -20,15 +22,26 @@ source("~/git/tn/comp_An.R")
 #Expecting the output from a tn93 run formatted to a csv file.
 #Expecting patient information in the format ID_Date
 #The name/path of the output file, will both a pdf summary, a set of all clustering data, and a complete version of the graph in question 
-runArgs <- commandArgs(trailingOnly=T, asValues=T, defaults = list(f="stdin",o=NA,y=0,t=1,m=NA,g=NA, r=4))
-iFile <- runArgs$f
-oFile <- ifelse(is.na(runArgs$o), gsub(".txt$", "", iFile), runArgs$o)
-mtD <- runArgs$m
-gFile <- runArgs$g
-tRange <- runArgs$r:1
+option_list <- list( 
+  make_option(c("-f", "--file"), default="stdin"),
+  make_option(c("-o", "--output"), default=""),
+  make_option(c("-g", "--graph"), default=""),
+  make_option(c("-r", "--range"), default=5),
+  make_option(c("-m", "--meta"), default=""))
+
+opt <- parse_args(OptionParser(option_list=option_list))
+
+iFile <- opt$f
+oFile <- ifelse(opt$o%in%"", gsub(".txt$", "", iFile), opt$o)
+mtD <- opt$m
+gFile <- opt$g
+tRange <- opt$r:1
+
+print(oFile)
+
 
 #Load or create a graph, saving a newly created graph in an accessible file for later use
-if (!is.na(gFile)) {
+if (file.exists(gFile)) {
   g <- readRDS(gFile)
 } else {
   g <- impTN93(iFile, mtD)

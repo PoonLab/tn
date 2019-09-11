@@ -1,10 +1,15 @@
-stD <- readRDS("tn93StGD.rds")
-naD <- readRDS("tn93NAGD.rds")
+tn <- T
+
+stD <- readRDS("Data/Paper1/tn93StsubB_GD.rds")
+naD <- readRDS("Data/Paper1/tn93NAsubB_GD.rds")
+if(tn) {
+  tnD <- readRDS("Data/Tennessee/analysis_PRO/tn93TnsubB_nomet_GD.rds")
+}
 
 par(mar=c(5,5,1,1))
 limits <- par('usr')
 
-ageD <- lapply(stD, function(x) x$ageD)
+ageD <- lapply(stD, function(x) x$f)
 cutoffs <- names(ageD)
 r2 <- {}
 for (cutoff in cutoffs) {
@@ -20,7 +25,7 @@ plot(cutoffs, r2, type='l', col='dodgerblue', ylim=c(0.2, 0.65),
 points(cutoffs, r2, pch=21, col='white', bg='dodgerblue', cex=1.2)
 
 
-ageD <- lapply(stD, function(x) x$ageD)
+ageD <- lapply(stD, function(x) x$f)
 cutoffs <- names(ageD)
 r2 <- {}
 for (cutoff in cutoffs) {
@@ -38,7 +43,7 @@ points(cutoffs, r2, pch=21, col='white', bg='orange2', cex=1.2)
 pdf(file='decaylow.pdf', width=4.5, height=4.5)
 
 par(mar=c(5,5,1,1))
-ageD <- lapply(stD, function(x) x$ageD)
+ageD <- lapply(stD, function(x) x$f)
 ageDi <- ageD[["0.004"]]
 mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
 
@@ -87,7 +92,7 @@ lines(smooth.spline(x=ageDi$tDiff, y=mod$fitted.values),
 
 # North Alberta
 
-ageD <- lapply(naD, function(x) x$ageD)
+ageD <- lapply(naD, function(x) x$f)
 ageDi <- ageD[["0.004"]]
 
 mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')

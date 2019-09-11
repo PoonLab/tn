@@ -1,6 +1,8 @@
 ##TO-DO: Specify source-file Location
 source("~/git/tn/comp_An.R")
 require(scales)
+require(optparse)
+
 
 ## USAGE: Rscript ~/git/tn/OpClusters.R.R __tn93output.txt__##
 #Options...
@@ -11,7 +13,9 @@ require(scales)
 # -m: Takes the name and path of a meta-data csv. Containing Age, sex, risk and Diagnostic Year (overwrites collection year)
 # -r: How many repeats of 0.8, 0.6, and 0.4 resamples will be taken. 
 
-#EX2: runArgs <- list(f="~/Data/Seattle/analysis_PRO/tn93StsubB.txt", o=NA, y=0, m=NA, g="~/Data/Seattle/analysis_PRO/tn93StsubB_G.rds", r=30, s=T)
+#EX1: opt <- list(f="~/Data/Seattle/analysis_PRO/tn93StsubB.txt", o=NA, y=0, m=NA, g="~/Data/Seattle/analysis_PRO/tn93StsubB_G.rds", r=30, s=T)
+#EX2: opt <- list(f="~/Data/Tennessee/analysis_PRO/tn93TnsubB.txt", o="~/Data/Tennessee/analysis_PRO/tn93TnsubB_met", y=0, m=NA, g="~/Data/Tennessee/analysis_PRO/tn93TnsubB_met_G.rds", r=30, s=T)
+
 
 #Test-EX: runArgs <- list(f=NA, o="~/Data/Tennessee/analysis/tn93TnsubB_nomet_RobComp", y=0, m=NA, g="NM_RobComp_G.rds", r=30)
 #Test-Ex: runArgs <- list(f=NA, o="~/Data/Tennessee/analysis/tn93TnsubB_met_RobComp", y=0, m=NA, g="Met_RobComp_G.rds", r=30)
@@ -22,16 +26,27 @@ require(scales)
 #Expecting the output from a tn93 run formatted to a csv file.
 #Expecting patient information in the format ID_Date
 #The name/path of the output file, will both a pdf summary, a set of all clustering data, and a complete version of the graph in question 
-runArgs <- commandArgs(trailingOnly=T, asValues=T, defaults = list(f="stdin",o=NA,y=0,t=1,m=NA,r=20, s=F))
-iFile <- runArgs$f
-oFile <- ifelse(is.na(runArgs$o), gsub(".txt$", "", iFile), runArgs$o)
-mtD <- runArgs$m
-gFile <- runArgs$g
-repeats <- runArgs$r
-varSamp <- runArgs$s
+option_list <- list( 
+  make_option(c("-f", "--file"), default="stdin"),
+  make_option(c("-o", "--output"), default=""),
+  make_option(c("-g", "--graph"), default=""),
+  make_option(c("-r", "--repeats"), default=20),
+  make_option(c("-s", "--sampleVar"), default=T),
+  make_option(c("-m", "--meta"), default=""))
+
+opt <- parse_args(OptionParser(option_list=option_list))
+
+iFile <- opt$f
+oFile <- ifelse(opt$o%in%"", gsub(".txt$", "", iFile), opt$o)
+mtD <- opt$m
+gFile <- opt$g
+repeats <- opt$r
+varSamp <- opt$s
+
+print(opt)
 
 #Load or create a graph, saving a newly created graph in an accessible file for later use
-if (!is.na(gFile)&file.exists(gFile)) {
+if (file.exists(gFile)) {
   g <- readRDS(gFile)
 } else {
   g <- impTN93(iFile, mtD)

@@ -229,11 +229,19 @@ compAnalyze <- function(subG) {
   #Take the total edge frequency data from the graph and format this information into successes and attempts
   #An edge to the newest year falling below the max distance is considered a success
   ageD <- bind_rows(lapply(subG$f, function(t) {
-    tDiffs <- as.numeric(levels(as.factor(t$tDiff)))
-    pos <- sapply(tDiffs, function(td) {
-      nrow(subset(t, tDiff==td & Distance<=dMax))
-    })
-    data.frame(Positive=pos, Total=t$Total[[1]], tDiff=tDiffs)
+
+    if(nrow(t) == 0) {
+      return(data.frame(NULL))
+    }
+    else {
+      tDiffs <- as.numeric(levels(as.factor(t$tDiff)))
+      pos <- sapply(tDiffs, function(td) {
+        nrow(subset(t, tDiff==td & Distance<=dMax))
+      })
+      
+      data.frame(Positive=pos, Total=t$Total[[1]], tDiff=tDiffs)
+    }
+    
   }))
   
   #Obtain a model of case connection frequency to new cases as predicted by individual case age

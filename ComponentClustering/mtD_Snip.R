@@ -1,7 +1,7 @@
 #MetData Runtest
-source("~/git/tn/newLib.R")
+source("~/git/tn/comp_An.R")
 
-iFile <- "~/Data/Tennessee/tn93TnsubB.txt"
+iFile <- "~/Data/Tennessee/analysis_PRO/tn93TnsubB.txt"
 
 idf <- read.csv(iFile, stringsAsFactors = F)
 temp1 <- sapply(idf$ID1, function(x) (strsplit(x,'_')[[1]])[[1]])
@@ -55,8 +55,8 @@ g1 <- clsFilt(g1)
 g2 <- clsFilt(g2)
 
 #Save a copy of the complete list of minimum edges
-g1$f <- bpeFreq(g1)
-g2$f <- bpeFreq(g2)
+g1$f <- likData(g1)
+g2$f <- likData(g2)
 
 #TOFIX - Edges exist referencing Vertices that do not
 

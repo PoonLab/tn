@@ -1,7 +1,7 @@
-setwd('~/work/maup/data/pub1')
+setwd('~/Data/Paper1')
 
 # sampling year distribution
-naD <- read.csv('naD.txt', stringsAsFactors = FALSE)
+naD <- read.csv("tn93NAsubB.txt", stringsAsFactors = FALSE)
 
 # extract date info
 naD.labels <- unique(c(naD$ID1, naD$ID2))
@@ -14,7 +14,7 @@ get.year <- function(x) {
 
 naD.years <- get.year(naD.labels)
 
-stD <- read.csv('stD.txt', stringsAsFactors = FALSE)
+stD <- read.csv('tn93StsubB.txt', stringsAsFactors = FALSE)
 stD.labels <- unique(c(stD$ID1, stD$ID2))
 stD.years <- get.year(stD.labels)
 
@@ -44,7 +44,7 @@ abline(h=seq(25, 200, 50), col='white', lend=3)
 # draw axes (redraw y-axis)
 axis(side=1, at=seq(2, 44, 6), labels=NA)
 rug(x=seq(5, 41, 6), ticksize=-0.01, side=1)
-axis(side=2)
+#axis(side=2)
 
 # draw the bars in the foreground
 barplot(t(as.matrix(temp[,2:3])), beside=T, add=T, axes=F,
@@ -59,8 +59,8 @@ legend(x=1, y=145, legend=c('Seattle', 'N.Alberta'),
 
 
 # collect histogram data
-h1 <- hist(stD$Distance, breaks=50, plot=F)
-h2 <- hist(naD$Distance, plot=F, breaks=h1$breaks)
+h1 <- hist(stD$Distance[stD$Distance<0.05], breaks=50, plot=F)
+h2 <- hist(naD$Distance[naD$Distance<0.05], breaks=h1$breaks, plot=F)
 
 n.st <- length(stD.labels)
 n.na <- length(naD.labels)
@@ -80,13 +80,12 @@ dev.off()
 
 
 
-#barplot(h1$counts / choose(n.st,2), col=rgb(0.12,.56,1,.7), 
-#        border=rgb(0,0,0,0), space=0, xaxt='n', xlim=c(1,30),
-#        ylab='Frequency', xlab='TN93 distance', cex.lab=1.2)
-#axis(side=1, at=seq(0, length(h1$counts), 5),
-#     labels=seq(0, 0.05, length.out=11))
-#barplot(h2$counts / choose(n.na,2), add=T, col=rgb(.93,.604,.0,.7), space=0, 
-#        border=rgb(0,0,0,0))
+barplot(h2$counts / choose(n.na,2), col=rgb(.93,.604,.0,.7), ylim=c(0,0.002), 
+        border=rgb(0,0,0,0), yaxt='n', space=0, xaxt='n', xlim=c(1,25),
+        ylab='', xlab='', cex.lab=1.2)
+
+barplot(h1$counts / choose(n.st,2), add=T, col=rgb(0.12,.56,1,.7), space=0, 
+        border=rgb(0,0,0,0), yaxt='n')
 
 
 
