@@ -9,7 +9,7 @@ if(tn) {
 
 # log transformed plot  
 if(tn){
-  pdf(file='Data/Paper1/decay_tn.pdf', width=7.5, height=7.5)
+  pdf(file='Data/Paper1/decay_tn_met.pdf', width=7.5, height=7.5)
 } else {
   pdf(file='Data/Paper1/decay.pdf', width=5, height=5)
 }
@@ -21,7 +21,7 @@ limits <- par('usr')
 if(tn) {
   ageD <- lapply(tnD, function(x) x$f)
   ageDi <- ageD[["0.04"]]
-  ageDi <- subset(ageDi, tDiff<15)
+  ageDi <- subset(ageDi, Total>63 & tDiff<14)
 }else{
   ageD <- lapply(stD, function(x) x$f)
   ageDi <- ageD[["0.04"]]
@@ -57,10 +57,10 @@ axis(2, at=axTicks(side=2),
      las=2)
 
 if(tn) {
-  legend(x=12, y=0.55, legend=c('Tennessee', 'N.Alberta', 'Seattle'), pch=c(24,21,22), pt.cex=1.5,
+  legend("topright", legend=c('Tennessee', 'N.Alberta', 'Seattle'), pch=c(24,21,22), pt.cex=1.5,
          col='white', pt.bg=c('orangered', 'orange2', 'dodgerblue'), bty='n')
 } else {
-  legend(x=8, y=0.5, legend=c('Seattle', 'N.Alberta'), pch=c(21,22), pt.cex=1.5,
+  legend("topright", legend=c('Seattle', 'N.Alberta'), pch=c(21,22), pt.cex=1.5,
          col='white', pt.bg=c('dodgerblue', 'orange2'), bty='n')
 }
 

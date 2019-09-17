@@ -160,7 +160,6 @@ likData <- function(oClu, Dist) {
     return(tdD)
   }))
   
-  
   return(ageD)
 }
 
@@ -195,7 +194,6 @@ clmpAnalyze <- function(iT, Dist, nrates=2) {
   #Calculate growth from the two clmp runs and cluster size from the penultimate clmp run
   growth <- simGrow(nClu, oClu, Dist)
   csize <- table(c$Cluster)
-
   
   #Create two data frames from two predictive models, one based on absolute size (NULL) and our time-informed model
   df1 <- data.frame(Growth = as.numeric(growth), Pred = sapply(names(csize), function(x) { sum(subset(c, Cluster==as.numeric(x))$Weight) }))
@@ -212,11 +210,14 @@ clmpAnalyze <- function(iT, Dist, nrates=2) {
 }
 
 ###### Testing ######
-#Import Data
-TN93File <- "~/Data/Seattle/tn93StsubB.txt" 
-treeFile <- "~/Data/Seattle/analysis/FTStsubB.nwk"
-
-#Run Code
-Dist <- impTN93Dist(TN93File)
-t <- impTree(treeFile)
-clmpAnalyze(t, Dist)
+test <- function() {
+  
+  #Import Data
+  TN93File <- "~/Data/Seattle/analysis_PRO/tn93StsubB.txt" 
+  treeFile <- "~/Data/Seattle/analysis_PRO/FTStsubB.nwk"
+  
+  #Run Code
+  Dist <- impTN93Dist(TN93File)
+  t <- impTree(treeFile)
+  clmpAnalyze(t, Dist)
+}

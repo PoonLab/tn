@@ -248,6 +248,7 @@ compAnalyze <- function(subG) {
   #Use this to weight cases by age
   mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageD, family='binomial')
   subG$v$Weight <- predict(mod, data.frame(tDiff=max(subG$v$Time)-subG$v$Time), type='response')
+  # subG$v$Weight <- sapply(subG$v$ID, function(id) {as.numeric(substr(id,8,8))})
   
   #Create clusters for this subgraph and measure growth
   subG <- simGrow(subG)
@@ -261,7 +262,9 @@ compAnalyze <- function(subG) {
   
   #Save, gaic, model and age data as part of the output
   subG$gaic <- fit1$aic-fit2$aic
-  subG$mod <- mod
+  subG$ageMod <- mod
+  subG$ageFit <- fit1
+  subG$nullFit <- fit2
   subG$f <- ageD
   
   return(subG)

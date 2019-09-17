@@ -1,5 +1,5 @@
-runsMet <- readRDS("~/Data/Tennessee/analysis/tn93TnsubB_met_LD.rds")
-runsNM <- readRDS("~/Data/Tennessee/analysis/tn93TnsubB_nomet_LD.rds")
+runsMet <- readRDS("~/Data/Tennessee/analysis_PRO/tn93TnsubB_met_LD.rds")
+runsNM <- readRDS("~/Data/Tennessee/analysis_PRO/tn93TnsubB_nomet_LD.rds")
 table(runsMet[[5]]$`0`$v$Time)
 table(runsNM[[5]]$`0`$v$Time)
 
@@ -29,3 +29,10 @@ yMet <- tail(unname(table(runsMet[[5]]$`0`$v$Time)), 5)
 yNM <- tail(unname(table(runsNM[[5]]$`0`$v$Time)), 5)
 
 plot(c(yMet, yNM),c(minsMet,minsNM)) 
+
+
+resMet <- readRDS("~/Data/Tennessee/analysis_PRO/tn93TnsubB_met_GD.rds")
+resNM <- readRDS("~/Data/Tennessee/analysis_PRO/tn93TnsubB_GD.rds")
+
+tMet <- table(resMet[[1]]$v$Time)
+tNM <- table(resNM[[1]]$v$Time)

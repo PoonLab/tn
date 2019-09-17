@@ -55,3 +55,89 @@ if (!tn) {
 }
 
 dev.off()
+
+#########Gen Compare
+
+pdf(file="Data/Paper1/gaic_total.pdf", width=15, height=7.5)
+
+
+par(mfrow=c(1,2), mar=c(5,5,1,1))
+GD1 <- readRDS("Data/Paper1/tn93StsubB_GD.rds")
+GD2 <- readRDS("Data/Paper1/tn93NAsubB_GD.rds")
+
+col1 <- "dodgerblue"
+col2 <- "orange2"
+
+r1 <- sapply(GD1, function(x) {x$gaic})
+r2 <- sapply(GD2, function(x) {x$gaic})
+x <- seq(0,0.04,0.0008)
+
+par(mfrow=c(1,2), mar=c(5,5,1,1))
+plot(x, r1, xlim=c(0, 0.04), xlab='TN93 distance cutoff',
+     ylab='Generalized AIC', type='n', ylim=c(-80,12), cex.lab=1.5)
+
+# create a background
+bg <- par('usr')
+rect(xl=bg[1], yb=bg[3], xr=bg[2], yt=bg[4], col='ivory2', border=NA)
+abline(h=axTicks(side=2), col='white', lwd=3, lend=2)
+abline(h=axTicks(side=2)+diff(axTicks(side=2))[1]/2, col='white', lend=2)
+abline(v=axTicks(side=1), col='white', lwd=3, lend=2)
+abline(v=axTicks(side=1)+diff(axTicks(side=1))[1]/2, col='white', lend=2)
+abline(h=0, lty=2, lwd=3, col='grey50')
+box()
+
+
+lines(x, r1, col=col1, lwd=2)
+points(x, r1, pch=22, col='white', bg=col1, cex=1.5)
+
+text(x=x[which.min(r1)]+0.0035, y=min(r1), label="0.0160", cex=1.1)
+
+lines(x, r2, col=col2, lwd=2)
+points(x, r2, pch=22, col='white', bg=col2, cex=1.5)
+
+text(x=x[which.min(r2)]-0.001, y=min(r2)-2, label=format(x[which.min(r2)],digits=3), cex=1.1)
+
+legend("right", legend=c("Northern Alberta", "Seattle"), pch=c(22,22), 
+       col='white', pt.bg=c(col2,col1), pt.cex=1.5, cex=1.5, bty='n')
+
+
+######################################################
+
+GD1 <- readRDS("~/Data/compareFig/compareMet_GD.rds")
+GD2 <- readRDS("~/Data/compareFig/compareNM_GD.rds")
+
+col1 <- "indianred4"
+col2 <- "indianred1"
+
+r1 <- sapply(GD1, function(x) {x$gaic})
+r2 <- sapply(GD2, function(x) {x$gaic})
+x <- seq(0,0.04,0.0008)
+
+plot(x, r1, xlim=c(0, 0.04), xlab='TN93 distance cutoff',
+     ylab='Generalized AIC', type='n', ylim=c(-80,12), cex.lab=1.5)
+
+# create a background
+bg <- par('usr')
+rect(xl=bg[1], yb=bg[3], xr=bg[2], yt=bg[4], col='ivory2', border=NA)
+abline(h=axTicks(side=2), col='white', lwd=3, lend=2)
+abline(h=axTicks(side=2)+diff(axTicks(side=2))[1]/2, col='white', lend=2)
+abline(v=axTicks(side=1), col='white', lwd=3, lend=2)
+abline(v=axTicks(side=1)+diff(axTicks(side=1))[1]/2, col='white', lend=2)
+abline(h=0, lty=2, lwd=3, col='grey50')
+box()
+
+
+lines(x, r1, col=col1, lwd=2)
+points(x, r1, pch=22, col='white', bg=col1, cex=1.5)
+
+text(x=x[which.min(r1)]+0.0035, y=min(r1), label=format(x[which.min(r1)],digits=4), cex=1.1)
+
+lines(x, r2, col=col2, lwd=2)
+points(x, r2, pch=22, col='white', bg=col2, cex=1.5)
+
+text(x=x[which.min(r2)]-0.001, y=min(r2)-2, label="0.0160", cex=1.1)
+
+legend("right", legend=c("Tennessee (Collection)", "Tennessee (Diagnostic)"), pch=c(22,22), 
+       col='white', pt.bg=c(col2,col1), pt.cex=1.5, cex=1.5, bty='n')
+
+dev.off()

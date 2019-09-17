@@ -19,7 +19,7 @@ if (T) {
   mFile <- "~/Data/Tennessee/sourceData/TnMetD/tnMD.csv"
   
   df <- read.table(mFile,sep='\t', header=T)
-  vm <- data.frame(ID=df$CFAR_PID,Time=df$YEAR_OF_HIV_DX, stringsAsFactors = F) #Likely more members than vl
+  vm <- data.frame(ID=as.character(df$CFAR_PID),Time=df$YEAR_OF_HIV_DX, stringsAsFactors=F) #Likely more members than vl
   vm <- subset(vm, (ID%in%vl$ID)) #Likely just as many members as vl, but contains missing data
   vm <- subset(vm, !is.na(Time)) #Likely just as many members as vl
   elm <- subset(el, ID1%in%vm$ID & ID2%in%vm$ID ) #Could be fewer members than el
@@ -63,5 +63,5 @@ g2$f <- likData(g2)
 saveRDS(g1, "tn93TnsubB_nomet_G.rds")
 saveRDS(g2, "tn93TnsubB_met_G.rds")
 
-g1 <- readRDS("~/Data/Tennessee/analysis/tn93TnsubB_nomet_G.rds")
-g2 <- readRDS("~/Data/Tennessee/analysis/tn93TnsubB_met_G.rds")
+g1NM <- readRDS("~/Data/Tennessee/analysis_PRO/tn93TnsubB_nomet_G.rds")
+g2met <- readRDS("~/Data/Tennessee/analysis_PRO/tn93TnsubB_met_G.rds")
