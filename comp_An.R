@@ -186,11 +186,11 @@ likData <- function(iG) {
   
   #Take in total graph without the newest time point (otherwise, we include the validation set in or data set)
   iG <- tFilt(iG, as.numeric(tail(names(table(iG$v$Time)),2))[[1]])
-  tTab <- tail(table(iG$v$Time),-1) 
+  tTab <- table(iG$v$Time)
   
   #Obtain subsets of "Positives" (related cases) between one time point and another, annotated with the number of possible total positives.
   #Positives are only considered if, from the perspective of the newest time point, there are no old cases with a closer TN93 distance measurement
-  ageD <- lapply(as.numeric(names(tTab)), function(t){ 
+  ageD <- lapply(as.numeric(names(tail(tTab,-1))), function(t){ 
     
     #Close filter cases from the current time point t. Treating it as though it is the new time point
     tG <- tFilt(iG, t)
@@ -199,15 +199,18 @@ likData <- function(iG) {
     
     #To catch the event of a complete edgelist with no edges to year t
     if(nrow(tG$e)>0){
-      tG$e$Total <- tTab[as.character(t)]
-    } else {tG$e$Total <- integer(0)}
+      tG$e$vTotal <- tTab[as.character(t)]
+      oldT <- as.character(pmin(tG$e$t1,tG$e$t2))
+    } else {
+      tG$e$vTotal <- integer(0)
+    }
     
     #Given the filtered subgraph, record any edges to/from the time point of interest.
     #Notes only the Distance and time difference (between the older point and  the new) 
     #All of tdG is annotated The total number of cases in time t (ie. the total possible edges for that tMax value)
     tdD <- bind_rows(lapply(as.numeric(names(tdTab)), function(td) {
       es <- subset(tG$e, tDiff==td & tMax==t)
-      es[,c("Distance", "tMax", "tDiff", "Total")]
+      es[,c("Distance", "tMax", "tDiff", "vTotal")]
     })) 
     
     return(tdD)
@@ -225,6 +228,13 @@ compAnalyze <- function(subG) {
   #Obtain the frequency of edges between two years based on the time difference between those years
   #Annotate edge information with total possible edges to a given newer year
   dMax <- max(subG$e$Distance)
+  vTab <- table(subG$v$Time)
+  eTab <- rep(0, length(vTab))
+  names(eTab) <- names(vTab)
+  temp1 <- table(subG$e$t1) 
+  temp2 <- table(subG$e$t2)
+  eTab[names(temp1)] <- eTab[names(temp1)]+unname(temp1)
+  eTab[names(temp2)] <- eTab[names(temp2)]+unname(temp2)
   
   #Take the total edge frequency data from the graph and format this information into successes and attempts
   #An edge to the newest year falling below the max distance is considered a success
@@ -239,15 +249,21 @@ compAnalyze <- function(subG) {
         nrow(subset(t, tDiff==td & Distance<=dMax))
       })
       
-      data.frame(Positive=pos, Total=t$Total[[1]], tDiff=tDiffs)
+      #Consider the edge density of previous years
+      oldTs <- t$tMax[1:length(tDiffs)]-tDiffs
+      oeDens <- eTab[as.character(oldTs)]/vTab[as.character(oldTs)]
+      
+      data.frame(Positive=pos, vTotal=t$vTotal[[1]],  oeDens=as.numeric(oeDens), tDiff=tDiffs)
     }
     
   }))
   
   #Obtain a model of case connection frequency to new cases as predicted by individual case age
   #Use this to weight cases by age
-  mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageD, family='binomial')
-  subG$v$Weight <- predict(mod, data.frame(tDiff=max(subG$v$Time)-subG$v$Time), type='response')
+  mod <- glm(cbind(Positive, vTotal) ~ tDiff+oeDens, data=ageD, family='binomial')
+  subG$v$Weight <- predict(mod, type='response',
+                           data.frame(tDiff=max(subG$v$Time)-subG$v$Time, 
+                                      oeDens=eTab[as.character(subG$v$Time)]/vTab[as.character(subG$v$Time)]))
   # subG$v$Weight <- sapply(subG$v$ID, function(id) {as.numeric(substr(id,8,8))})
   
   #Create clusters for this subgraph and measure growth

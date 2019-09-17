@@ -3,7 +3,7 @@ tn <- T
 stD <- readRDS("Data/Paper1/tn93StsubB_GD.rds")
 naD <- readRDS("Data/Paper1/tn93NAsubB_GD.rds")
 if(tn) {
-  tnD <- readRDS("Data/Tennessee/analysis_PRO/tn93TnsubB_met_GD.rds")
+  tnD <- readRDS("Data/Tennessee/analysis_PRO/tn93TnsubB_nomet_GD.rds")
 }
 
 
@@ -21,18 +21,17 @@ limits <- par('usr')
 if(tn) {
   ageD <- lapply(tnD, function(x) x$f)
   ageDi <- ageD[["0.04"]]
-  ageDi <- subset(ageDi, Total>63 & tDiff<14)
+  ageDi <- subset(ageD, vTotal>63 & tDiff<14)
 }else{
   ageD <- lapply(stD, function(x) x$f)
   ageDi <- ageD[["0.04"]]
 }
 
-
-mod <- glm(cbind(Positive, Total) ~ tDiff, data=ageDi, family='binomial')
+mod <- glm(cbind(Positive, vTotal*oeDens) ~ tDiff, data=ageDi, family='binomial')
 
 set.seed(1)  # for reproducible jitter
 plot(jitter(ageDi$tDiff), 
-     ageDi$Positive/ageDi$Total, 
+     ageDi$Positive/(ageDi$vTotal*ageDi$oeDens), 
      log='y',
      type='n',
      xlab='Time lag (years)', 
@@ -49,7 +48,7 @@ abline(v=axTicks(side=1)+diff(axTicks(side=1))[1]/2, col='white', lend=2)
 abline(h=0, lty=2, lwd=3, col='grey50')
 box()
 
-points(jitter(ageDi$tDiff), ageDi$Positive/ageDi$Total, 
+points(jitter(ageDi$tDiff), ageDi$Positive/(ageDi$vTotal*ageDi$oeDens), 
        pch=ifelse(tn,24,21), bg=ifelse(tn,'orangered', 'dodgerblue'), col='white', cex=ifelse(tn,0.75,1.5))
 
 axis(2, at=axTicks(side=2), 
@@ -66,7 +65,7 @@ if(tn) {
 
 
 # indicate location of zeroes
-y <- ageDi$Positive/ageDi$Total
+y <- ageDi$Positive/(ageDi$vTotal*ageDi$oeDens)
 ymin <- min(y[y>0], na.rm=T)
 points(ageDi$tDiff[ageDi$Positive==0], 
        rep(ymin, sum(ageDi$Positive==0)), pch=4, lwd=2, col=ifelse(tn,'orangered', 'dodgerblue'))
