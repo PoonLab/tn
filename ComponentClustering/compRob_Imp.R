@@ -31,7 +31,7 @@ option_list <- list(
   make_option(c("-o", "--output"), default=""),
   make_option(c("-g", "--graph"), default=""),
   make_option(c("-r", "--repeats"), default=20),
-  make_option(c("-s", "--sampleVar"), default=T),
+  make_option(c("-s", "--sampleVar"), default=F),
   make_option(c("-m", "--meta"), default=""))
 
 opt <- parse_args(OptionParser(option_list=option_list))
@@ -68,7 +68,7 @@ gs  <- lapply(repeats, function(i){
   sID <- sample(iG$v$ID, size=round(i*nrow(iG$v)), replace=F)
   iG$v <- subset(iG$v, ID%in%sID)
   iG$e <- subset(iG$e, ID1%in%iG$v$ID & ID2%in%iG$v$ID)
-
+  
   #Filter out newest years for the sake of sample size
   if(max(iG$v$Time)<max(g$v$Time)){iG <- clsFilt(iG)}
   

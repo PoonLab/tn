@@ -227,20 +227,24 @@ compAnalyze <- function(subG) {
   
   #Obtain the frequency of edges between two years based on the time difference between those years
   #Annotate edge information with total possible edges to a given newer year
+  #Annotate edge information with the density of edges froma a given old year
   dMax <- max(subG$e$Distance)
   vTab <- table(subG$v$Time)
   eTab <- rep(0, length(vTab))
   names(eTab) <- names(vTab)
   temp1 <- table(subG$e$t1) 
   temp2 <- table(subG$e$t2)
+  temp3 <- table(subset(subG$e, t1==t2)$tMax)
   eTab[names(temp1)] <- eTab[names(temp1)]+unname(temp1)
   eTab[names(temp2)] <- eTab[names(temp2)]+unname(temp2)
+  eTab[names(temp3)] <- eTab[names(temp3)]-unname(temp3)
+  
   
   #Take the total edge frequency data from the graph and format this information into successes and attempts
   #An edge to the newest year falling below the max distance is considered a success
   ageD <- bind_rows(lapply(subG$f, function(t) {
 
-    if(nrow(t) == 0) {
+    if(nrow(t)==0) {
       return(data.frame(NULL))
     }
     else {
@@ -263,7 +267,7 @@ compAnalyze <- function(subG) {
   mod <- glm(cbind(Positive, vTotal) ~ tDiff+oeDens, data=ageD, family='binomial')
   subG$v$Weight <- predict(mod, type='response',
                            data.frame(tDiff=max(subG$v$Time)-subG$v$Time, 
-                                      oeDens=eTab[as.character(subG$v$Time)]/vTab[as.character(subG$v$Time)]))
+                                      oeDens=as.numeric(eTab[as.character(subG$v$Time)]/vTab[as.character(subG$v$Time)])) )
   # subG$v$Weight <- sapply(subG$v$ID, function(id) {as.numeric(substr(id,8,8))})
   
   #Create clusters for this subgraph and measure growth

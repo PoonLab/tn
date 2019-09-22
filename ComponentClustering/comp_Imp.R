@@ -11,15 +11,11 @@ require(R.utils)
 
 #
 
-#EX: runArgs <- list(f="~/Data/Seattle/analysis_PRO/tn93StsubB.txt", o=NA, y=0, m=NA, g="~/Data/Seattle/analysis_PRO/tn93StsubB_G.rds")
+#EX: runArgs <- list(f="~/Data/Seattle/analysis_2cv/tn93StsubB.txt", o=NA, y=0, m=NA, g="~/Data/Seattle/analysis_2cv/tn93StsubB_G.rds")
 #EX: runArgs <- list(f="~/Data/Seattle/analysis_PRO/tn93StsubB.txt", o="~/Data/Seattle/analysis_PRO/tn93StsubB_BAD, y=0, m=NA, g="~/Data/Seattle/analysis_PRO/tn93StsubB_G.rds")
-#EX: runArgs <- list(f="~/Data/NAlberta/analysis_PRO/tn93NAsubB.txt", o=NA, y=0, m=NA, g="~/Data/NAlberta/analysis_PRO/tn93NAsubB_G.rds")
-#EX: runArgs <- list(f="", o="~/Data/Tennessee/analysis_PRO/tn93TnsubB_met", y=0, m=NA, g="~/Data/Tennessee/analysis_PRO/tn93TnsubB_met_G.rds")
-#EX: runArgs <- list(f="~/Data/Tennessee/analysis_PRO/tn93TnsubB.txt", o="~/Data/Tennessee/analysis_PRO/tn93TnsubB_nomet", y=0, m=NA, g="")
-
-
-#Test-EX: runArgs <- list(f=NA, o="compareMet", y=0, m=NA, g="compareMet.rds")
-#Test-Ex: runArgs <- list(f=NA, o="compareNM", y=0, m=NA, g="compareNM.rds")
+#EX: runArgs <- list(f="~/Data/NAlberta/analysis_2cv/tn93NAsubB.txt", o="", y=0, m=NA, g="~/Data/NAlberta/analysis_2cv/tn93NAsubB_G.rds")
+#EX: runArgs <- list(f="", o="~/Data/Tennessee/analysis_PRO/tn93TnsubB_met", y=0, m=NA, g="~/Data/Tennessee/analysis_2cv/tn93TnsubB_G.rds")
+#EX: runArgs <- list(f="~/Data/Tennessee/analysis_2cv/tn93TnsubB.txt", o="~/Data/Tennessee/analysis_2cv/tn93TnsubB_nomet", y=0, m=NA, g="~/Data/Tennessee/analysis_2cv/tn93TnsubB_nomet_G.rds")
 
 
 ## Generating Analysis
@@ -36,7 +32,7 @@ gFile <- runArgs$g
 
 #Load or create a graph, saving a newly created graph in an accessible file for later use
 if ((!is.na(gFile))&file.exists(gFile)) {
-  g <- readRDS(gFile)
+    g <- readRDS(gFile)
 } else {
   g <- impTN93(iFile, mtD)
   saveRDS(g, file = paste0(oFile, "_G.rds"))

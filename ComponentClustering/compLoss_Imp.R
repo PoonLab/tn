@@ -11,10 +11,10 @@ require(optparse)
 # -g: The file path to saved graphical info. If one has already saved a graph, this will save time making one
 # -r: How many yeasrs beyond the most recent year will be examined
 
-#EX: runArgs <- list(f="~/Data/Seattle/analysis_PRO/tn93StsubB.txt", o=NA, y=0, m=NA, g="~/Data/Seattle/analysis_PRO/tn93StsubB_G.rds", r=5)
+#EX: runArgs <- list(f="~/Data/Seattle/analysis_2cv/tn93StsubB.txt", o=NA, y=0, m=NA, g="~/Data/Seattle/analysis_2cv/tn93StsubB_G.rds", r=5)
 
-#Test-EX: runArgs <- list(f=NA, o="~/Data/Tennessee/analysis/tn93TnsubB_nomet", y=0, m=NA, g="~/Data/Tennessee/analysis/tn93TnsubB_nomet_G.rds", r=5)
-#Test-Ex: runArgs <- list(f=NA, o="~/Data/Tennessee/analysis/tn93TnsubB_met", y=0, m=NA, g="~/Data/Tennessee/analysis_PRO/tn93TnsubB_met_G.rds", r=5)
+#Test-EX: runArgs <- list(f=NA, o="~/Data/Tennessee/analysis_2cv/tn93TnsubB_nomet", y=0, m=NA, g="~/Data/Tennessee/analysis/tn93TnsubB_nomet_G.rds", r=5)
+#Test-Ex: runArgs <- list(f=NA, o="~/Data/Tennessee/analysis_2cv/tn93TnsubB_met", y=0, m=NA, g="~/Data/Tennessee/analysis_PRO/tn93TnsubB_met_G.rds", r=5)
 
 ## Generating Analysis
 #____________________________________________________________________________________________________________________________#
