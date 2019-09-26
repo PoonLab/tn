@@ -6,7 +6,7 @@ require(clmp)
 ##TO-DO: Currently only accepts year dates. Work to allow more specific dates. 
 impTree <-function(iFile, minNS=63){
   #@param iFile: The name/path of the input file (expecting a newick file)
-  #@param minNS: The minimum number of acceptible new sequences By default we keep this high. Passed to sizeCheck.
+  #@param minNS: The minimum number of acceptible new sequences. Passed to sizeCheck().
   #@preturn: An ape tree object with associated lists of sequence ID and Time
 
   #Creating an ape tree object from the newick file
