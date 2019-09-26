@@ -1,7 +1,7 @@
 #MetData Runtest
-source("~/git/tn/newLib.R")
+source("~/git/tn/comp_An.R")
 
-iFile <- "~/Data/Tennessee/tn93TnsubB.txt"
+iFile <- "~/Data/Tennessee/analysis_PRO/tn93TnsubB.txt"
 
 idf <- read.csv(iFile, stringsAsFactors = F)
 temp1 <- sapply(idf$ID1, function(x) (strsplit(x,'_')[[1]])[[1]])
@@ -19,7 +19,7 @@ if (T) {
   mFile <- "~/Data/Tennessee/sourceData/TnMetD/tnMD.csv"
   
   df <- read.table(mFile,sep='\t', header=T)
-  vm <- data.frame(ID=df$CFAR_PID,Time=df$YEAR_OF_HIV_DX, stringsAsFactors = F) #Likely more members than vl
+  vm <- data.frame(ID=as.character(df$CFAR_PID),Time=df$YEAR_OF_HIV_DX, stringsAsFactors=F) #Likely more members than vl
   vm <- subset(vm, (ID%in%vl$ID)) #Likely just as many members as vl, but contains missing data
   vm <- subset(vm, !is.na(Time)) #Likely just as many members as vl
   elm <- subset(el, ID1%in%vm$ID & ID2%in%vm$ID ) #Could be fewer members than el
@@ -55,13 +55,13 @@ g1 <- clsFilt(g1)
 g2 <- clsFilt(g2)
 
 #Save a copy of the complete list of minimum edges
-g1$f <- bpeFreq(g1)
-g2$f <- bpeFreq(g2)
+g1$f <- likData(g1)
+g2$f <- likData(g2)
 
 #TOFIX - Edges exist referencing Vertices that do not
 
 saveRDS(g1, "tn93TnsubB_nomet_G.rds")
 saveRDS(g2, "tn93TnsubB_met_G.rds")
 
-g1 <- readRDS("~/Data/Tennessee/analysis/tn93TnsubB_nomet_G.rds")
-g2 <- readRDS("~/Data/Tennessee/analysis/tn93TnsubB_met_G.rds")
+g1NM <- readRDS("~/Data/Tennessee/analysis_PRO/tn93TnsubB_nomet_G.rds")
+g2met <- readRDS("~/Data/Tennessee/analysis_PRO/tn93TnsubB_met_G.rds")

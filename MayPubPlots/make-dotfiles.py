@@ -1,32 +1,32 @@
 import math
 
-if False:
+if True:
     # settings for Seattle
-    cutoff = 0.0144
+    cutoff = 0.0160
     newyear = 2012
-    code = 'stD'
+    code = 'tn93StsubB'
     nodecolor = 'dodgerblue'
     boldcolor = '#0051a5'
     origin = 1999
     scale_factor = 20.
-    padding = 0.2
+    padding = .9
 else:
     # settings for Northern Alberta
-    cutoff = 0.0112
+    cutoff = 0.0104
     newyear = 2013
-    code = 'naD'
+    code = 'tn93NAsubB'
     nodecolor = 'orange2'
     boldcolor = '#b47300'
     origin = 2006
     scale_factor = 10.
-    padding = 0.5
+    padding = 0.7
 
 
-handle = open('/home/art/work/maup/data/pub1/{}.txt'.format(code))
+handle = open('Data/PaperData2/{}.txt'.format(code))
 header = next(handle)
 
 # pass through once to calculate degree size
-dotfile = open('/home/art/papers/maup/images/{}.dot'.format(code), 'w')
+dotfile = open('Data/PaperData2/{}.dot'.format(code), 'w')
 dotfile.write("""
 graph seattle
 {
