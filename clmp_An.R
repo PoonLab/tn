@@ -213,8 +213,8 @@ clmpAnalyze <- function(iT, Dist, nrates=2) {
 test <- function() {
   
   #Import Data
-  TN93File <- "~/Data/Seattle/analysis_PRO/tn93StsubB.txt" 
-  treeFile <- "~/Data/Seattle/analysis_PRO/FTStsubB.nwk"
+  TN93File <- "~/Data/Seattle/analysis/tn93StsubB.txt" 
+  treeFile <- "~/Data/Seattle/analysis/FTStsubB.nwk"
   
   #Run Code
   Dist <- impTN93Dist(TN93File)
