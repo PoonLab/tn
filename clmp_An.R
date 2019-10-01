@@ -165,7 +165,7 @@ likData <- function(oClu, Dist) {
 
 #Analyze a given clustered Tree to establish the difference between the performance of two different models
 #Performance is defined as the ability for cluster growth to fit a predictive model.
-clmpAnalyze <- function(iT, Dist, nrates=2) {
+clmpAnalyze <- function(iT, Dist, nrates=2, crank=1) {
   #@param iT: An inputted tree representing the total dataset of interest (after some necessary filtering)
   #@param Dist: Genetic Distance information from impTN93Dist() (to pass to likData())
   #@param nrates: The number of rates for clmps MMPP model (to pass to clmp())
@@ -173,8 +173,8 @@ clmpAnalyze <- function(iT, Dist, nrates=2) {
 
   #Run clmp() on the tree up to the newest time poiunt and the penultimate time point
   oT <- tFilt(iT, max(iT$Time)-1)
-  nClu <- clmp(iT, nrates)
-  oClu <- clmp(oT, nrates)
+  nClu <- clmp(tree=iT,nrates=nrates,crank=crank)
+  oClu <- clmp(tree=oT,nrates=nrates,crank=crank)
   
   #Obtain likelihood data to inform a weighted model from the penultimate time point
   ageD <- likData(oClu, Dist)
@@ -203,7 +203,7 @@ clmpAnalyze <- function(iT, Dist, nrates=2) {
   
   #Summarize the GAIC, cluster info summary and package it all into a final result
   cSum <- data.frame(csize=as.numeric(csize), NullPred=df2$Pred, PropPred=df1$Pred, Growth=as.numeric(growth))
-  gaic <- fit2$aic - fit1$aic 
+  gaic <- fit1$aic-fit2$aic
   res <- list(c=c, cSum=cSum, GAIC=gaic, PropMod=fit1, NullMod=fit2)
   
   return(res)
@@ -213,11 +213,57 @@ clmpAnalyze <- function(iT, Dist, nrates=2) {
 test <- function() {
   
   #Import Data
-  TN93File <- "~/Data/Seattle/analysis_PRO/tn93StsubB.txt" 
+  TN93File <- "~/Data/Seattle/analysis_2cv/tn93StsubB.txt" 
   treeFile <- "~/Data/Seattle/analysis_PRO/FTStsubB.nwk"
   
   #Run Code
   Dist <- impTN93Dist(TN93File)
   t <- impTree(treeFile)
-  clmpAnalyze(t, Dist)
+  res <- clmpAnalyze(t, Dist)
 }
+
+#Import Data
+TN93File <- "~/Data/Seattle/analysis_2cv/tn93StsubB.txt" 
+treeFile <- "~/Data/Seattle/analysis_PRO/FTStsubB.nwk"
+
+#Run Code
+Dist <- impTN93Dist(TN93File)
+t <- impTree(treeFile)
+
+r1 <- clmpAnalyze(t,Dist,nrates=2)
+r2 <- clmpAnalyze(t,Dist,nrates=3)
+r3 <- clmpAnalyze(t,Dist,nrates=3, crank=2)
+r4 <- clmpAnalyze(t,Dist,nrates=4)
+r5 <- clmpAnalyze(t,Dist,nrates=4, crank=2)
+r6 <- clmpAnalyze(t,Dist,nrates=4, crank=3)
+r7 <- clmpAnalyze(t,Dist,nrates=5)
+r8 <- clmpAnalyze(t,Dist,nrates=5, crank=2)
+r9 <- clmpAnalyze(t,Dist,nrates=5, crank=3)
+r10 <- clmpAnalyze(t,Dist,nrates=5, crank=4)
+r11 <- clmpAnalyze(t,Dist,nrates=6)
+r12 <- clmpAnalyze(t,Dist,nrates=6, crank=2)
+r13 <- clmpAnalyze(t,Dist,nrates=6, crank=3)
+r14 <- clmpAnalyze(t,Dist,nrates=6, crank=4)
+r15 <- clmpAnalyze(t,Dist,nrates=6, crank=5)
+r16 <- clmpAnalyze(t,Dist,nrates=7)
+r17 <- clmpAnalyze(t,Dist,nrates=7, crank=2)
+r18 <- clmpAnalyze(t,Dist,nrates=7, crank=3)
+r19 <- clmpAnalyze(t,Dist,nrates=7, crank=4)
+r20 <- clmpAnalyze(t,Dist,nrates=7, crank=5)
+r21 <- clmpAnalyze(t,Dist,nrates=7, crank=6)
+r22 <- clmpAnalyze(t,Dist,nrates=8)
+r23 <- clmpAnalyze(t,Dist,nrates=8, crank=2)
+r24 <- clmpAnalyze(t,Dist,nrates=8, crank=3)
+r25 <- clmpAnalyze(t,Dist,nrates=8, crank=4)
+r26 <- clmpAnalyze(t,Dist,nrates=8, crank=5)
+r27 <- clmpAnalyze(t,Dist,nrates=8, crank=6)
+r28 <- clmpAnalyze(t,Dist,nrates=8, crank=7)
+r29 <- clmpAnalyze(t,Dist,nrates=9)
+r30 <- clmpAnalyze(t,Dist,nrates=9, crank=2)
+r31 <- clmpAnalyze(t,Dist,nrates=9, crank=3)
+r32 <- clmpAnalyze(t,Dist,nrates=9, crank=4)
+r33 <- clmpAnalyze(t,Dist,nrates=9, crank=5)
+r34 <- clmpAnalyze(t,Dist,nrates=9, crank=6)
+r35 <- clmpAnalyze(t,Dist,nrates=9, crank=7)
+r36 <- clmpAnalyze(t,Dist,nrates=9, crank=8)
+
