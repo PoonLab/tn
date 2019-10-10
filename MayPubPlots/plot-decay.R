@@ -11,12 +11,12 @@ if(tn) {
 
 # log transformed plot  
 if(tn){
-  pdf(file='Data/Paper1/decay_tn_met.pdf', width=15, height=7.5)
+  pdf(file='Data/Paper1/decay.pdf', width=15, height=7.5)
 } else {
   pdf(file='Data/Paper1/decay.pdf', width=5, height=5)
 }
 
-par(mfrow=c(1,2), mar=c(5,5,1,1))
+par(mfrow=c(1,2), mar=c(5,5,4,2))
 limits <- par('usr')
 
 # Tennessee
@@ -38,8 +38,8 @@ plot(jitter(ageDi$tDiff),
      log='y',
      type='n',
      xlab='Collection Time lag (In Years)', 
-     ylab=expression('Bipartite edge density'), # %*%10^-4), 
-     cex.lab=1.2, yaxt='n')
+     ylab=expression('Bipartite edge density'), 
+     cex.lab=1.8, yaxt='n', cex.axis=1.5, las=0)
 
 # draw background
 bg <- par('usr')
@@ -52,18 +52,18 @@ abline(h=0, lty=2, lwd=3, col='grey50')
 box()
 
 points(jitter(ageDi$tDiff), mod$y, 
-       pch=ifelse(tn,24,21), bg=ifelse(tn,'orangered', 'dodgerblue'), col='white', cex=ifelse(tn,0.75,1.5))
+       pch=ifelse(tn,24,21), bg=ifelse(tn,'orangered', 'dodgerblue'), col='white', cex=ifelse(tn,1,1.5))
 
 axis(2, at=axTicks(side=2), 
      labels=axTicks(side=2), # * 10^4,
-     las=2)
+     las=0, cex.axis = 1.5)
 
 if(tn) {
   legend("topright", legend=c('Tennessee', 'N.Alberta', 'Seattle'), pch=c(24,22,23), pt.cex=1.5,
-         col='white', pt.bg=c('orangered', 'orange2', 'dodgerblue'), bty='n')
+         col='white', pt.bg=c('orangered', 'orange2', 'dodgerblue'), bty='n', cex = 1.8)
 } else {
   legend("topright", legend=c('Seattle', 'N.Alberta'), pch=c(21,22), pt.cex=1.5,
-         col='white', pt.bg=c('dodgerblue', 'orange2'), bty='n')
+         col='white', pt.bg=c('dodgerblue', 'orange2'), bty='n', cex = 1.8)
 }
 
 
@@ -93,7 +93,7 @@ mod <- glm(cbind(Positive, vTotal) ~ tDiff, data=ageDi, family='binomial')
 
 set.seed(4)
 points(jitter(ageDi$tDiff), mod$y, pch=22, 
-       bg='orange2', col='white', cex=ifelse(tn,0.75,1.5))
+       bg='orange2', col='white', cex=ifelse(tn,1,1.5))
 lines(smooth.spline(ageDi$tDiff, mod$fitted.values),
       lwd=2, col='orange2')
 
@@ -106,7 +106,7 @@ if(tn) {
   
   set.seed(4)
   points(jitter(ageDi$tDiff), mod$y, pch=23, 
-         bg='dodgerblue', col='white', cex=0.75)
+         bg='dodgerblue', col='white', cex=1)
   lines(smooth.spline(ageDi$tDiff, mod$fitted.values),
         lwd=2, col='dodgerblue')
 }
@@ -134,7 +134,7 @@ plot(jitter(ageDi$tDiff),
      type='n',
      xlab='Time lag (years)', 
      ylab=expression('Bipartite edge density'), # %*%10^-4), 
-     cex.lab=1.2, yaxt='n')
+     cex.lab=1.8, yaxt='n', cex.axis=1.5)
 
 # draw background
 bg <- par('usr')
@@ -147,11 +147,11 @@ abline(h=0, lty=2, lwd=3, col='grey50')
 box()
 
 points(jitter(ageDi$tDiff), mod$y, 
-       pch=ifelse(tn,24,23), bg=ifelse(tn,"indianred4", 'dodgerblue'), col='white', cex=ifelse(tn,0.75,1.5))
+       pch=ifelse(tn,24,23), bg=ifelse(tn,"indianred4", 'dodgerblue'), col='white', cex=ifelse(tn,1,1.5))
 
 axis(2, at=axTicks(side=2), 
      labels=axTicks(side=2), # * 10^4,
-     las=2)
+     las=0, cex.axis=1.5)
 
 # indicate location of zeroes
 y <- ageDi$Positive/(ageDi$vTotal)
@@ -172,11 +172,11 @@ mod <- glm(cbind(Positive, vTotal) ~ tDiff, data=ageDi, family='binomial')
 
 set.seed(4)
 points(jitter(ageDi$tDiff), mod$y, pch=24, 
-       bg='indianred1', col='white', cex=ifelse(tn,0.75,1.5))
+       bg='indianred1', col='white', cex=ifelse(tn,1,1.5))
 lines(smooth.spline(ageDi$tDiff, mod$fitted.values),
       lwd=2, col='indianred1')
 
 legend("topright", legend=c('Tennessee (Diagnostic Dates)', 'Tennessee (Collection Dates)'), pch=c(24,24), pt.cex=1.5,
-       col='white', pt.bg=c('indianred4', 'indianred1'), bty='n')
+       col='white', pt.bg=c('indianred4', 'indianred1'), bty='n', cex = 1.8)
 
 dev.off()

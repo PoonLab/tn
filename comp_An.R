@@ -1,4 +1,5 @@
 library(dplyr,verbose = FALSE)
+library(ape)
 
 #Creates a set of data-frames representing a graph of sequences, with the edges between those sequences representing the TN93 Distance.
 #Sequences must be dated with the date separated from the id by '_'. 
@@ -43,6 +44,17 @@ impTN93 <- function(iFile, mtD, minNS=63){
   g$f <- likData(g)
   
   return(g)
+}
+
+#Creates a set of data-frames representing a graph of sequences, with the edges between those sequences representing .
+#Sequences must be dated with the date separated from the id by '_'. 
+##TO-DO: Currently only accepts year dates. Work to allow more specific dates. 
+impCLMP <- function(iFile, mtD, minNS=63){
+  #@param iFile: The name/path of the input file (expecting a newick file)
+  #@param minNS: The minimum number of acceptible new sequences By default we keep this high. Passed to sizeCheck.
+  #@preturn: An ape tree object with associated lists of sequence ID and Time
+  
+
 }
 
 #Create clusters based on component clustering by some measure of genetic distance
