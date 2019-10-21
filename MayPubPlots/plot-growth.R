@@ -35,9 +35,9 @@ NM <- data.frame(cutoff=as.numeric(colnames(NM)), total.R=NM[1,], n.clust=NM[2,]
 
 pdf(file="~/Data/Paper1/growth.pdf", width=15, height=7.5)
 
-par(mfrow=c(1,2), mar=c(5,5,1,1))
-plot(st$cutoff, st$total.R, type='n', ylim=c(0, max(st$total.R)),
-     xlab='TN93 distance cutoff', ylab='Cluster growth (R) | Number of active clusters', cex.lab=1.2)
+par(mfrow=c(1,2), mar=c(5,5,4,2))
+plot(st$cutoff, st$total.R, type='n', ylim=c(0, max(st$total.R)), cex.axis=1.5,
+     xlab='TN93 distance cutoff', ylab='Cluster growth (R) | Number of active clusters', cex.lab=1.8)
 
 # draw background
 bg <- par('usr')
@@ -59,10 +59,10 @@ points(tn$cutoff, tn$n.clust, pch=24, col='white', bg='orangered', cex=1.2)
 legend("topleft", legend=c('Seattle', 'N.Alberta', 'Tennessee'), 
        pch=c(23, 22, 24), col=c('dodgerblue', 'orange2', 'orangered'), 
        pt.bg=c('dodgerblue', 'orange2','orangered'), 
-       bty='n', lty=1)
+       bty='n', lty=1, cex=1.5)
 
-plot(met$cutoff, met$total.R, type='n', ylim=c(0, max(st$total.R)),
-     xlab='TN93 distance cutoff', ylab='Cluster growth (R) | Number of active clusters', cex.lab=1.2)
+plot(met$cutoff, met$total.R, type='n', ylim=c(0, max(st$total.R)), cex.axis=1.5,
+     xlab='TN93 distance cutoff', ylab='Cluster growth (R) | Number of active clusters', cex.lab=1.8)
 
 # draw background
 bg <- par('usr')
@@ -81,6 +81,6 @@ points(NM$cutoff, NM$n.clust, pch=24, col='white', bg='indianred4', cex=1.2)
 legend("topleft", legend=c('Tennessee (Collection Date)','Tennessee (Diagnostic Date)' ), 
        pch=c(24, 24), col=c('indianred1', 'indianred4'), 
        pt.bg=c('indianred1', 'indianred4'), 
-       bty='n', lty=1)
+       bty='n', lty=1, cex = 1.5)
 
 dev.off()

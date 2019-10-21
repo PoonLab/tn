@@ -26,14 +26,14 @@ plotLoss <- function(runs, colR, oFile, first=1) {
   minT <- min((runs[[1]])[[1]]$v$Time)
 
   pdf(file = oFile, width=6, height=12)
-  par(mfrow=c(5,1), mar = c(1,first,1,0) , oma=c(5,4,1,2), cex.lab=1.2)  
+  par(mfrow=c(5,1), mar = c(1,first,1,0) , oma=c(5,4,1,2))  
   
   #Make multiple plots for each run of GAICs with minimum labelled
   for (i in 1:length(gaics)) {
     
     #Initialize plot and background
     GAIC <- gaics[[i]]
-    plot(cutoffs, GAIC, ylim = c(minmin+(0.2*minmin),maxmax), xlab="", ylab = "GAIC")
+    plot(cutoffs, GAIC, ylim = c(minmin+(0.2*minmin),maxmax), xlab="", ylab = "GAIC", cex.lab=1.8, cex.axis=1.5)
     bg <- par('usr')
     rect(xl=bg[1], yb=bg[3], xr=bg[2], yt=bg[4], col='linen', border=NA)
     abline(h=axTicks(side=2), col='white', lwd=3, lend=2)
@@ -42,8 +42,8 @@ plotLoss <- function(runs, colR, oFile, first=1) {
     abline(v=axTicks(side=1)+diff(axTicks(side=1))[1]/2, col='white', lend=2)
     
     #Plot GAIC
-    lines(cutoffs, GAIC, lwd=1.6, col=colR)
-    legend("bottomright", legend = paste0("Years ", minT, "-", maxT-(length(gaics)-i)), cex = 1,bg ="white")
+    lines(cutoffs, GAIC, lwd=2, col=colR)
+    legend("bottomright", legend = paste0("Years ", minT, "-", maxT-(length(gaics)-i)), cex = 1.5,bg ="white")
     points(x=c(minsLoc[i]), y=c(mins[i]), cex=1)
     
     #Represents the location of the past run's MGAICE, Loss Ratio = minGAIC / Past minGAIC
@@ -55,14 +55,14 @@ plotLoss <- function(runs, colR, oFile, first=1) {
     #To create the Cutoff label
     if (i==5){
       par(xpd=NA)
-      title(xlab="Cutoffs")
+      title(xlab="Cutoffs", cex.lab=1.8)
     }
   }
   
   dev.off()
 }
 
-plotLoss(l1, "dodgerblue", "~/Data/Paper1/Loss_St.pdf", first=4)
-plotLoss(l2, "orangered","~/Data/Paper1/Loss_Tn.pdf")
+plotLoss(l1, "dodgerblue", "~/Data/Paper1/Loss_St.pdf", first=5)
+plotLoss(l2, "orangered","~/Data/Paper1/Loss_Tn.pdf", first=5)
 plotLoss(l3, "indianred1","~/Data/Paper1/Loss_Tn_Col.pdf" )
 plotLoss(l4, "indianred4", "~/Data/Paper1/Loss_Tn_Diag.pdf")

@@ -58,10 +58,10 @@ dev.off()
 
 #########Gen Compare
 
-pdf(file="Data/Paper1/gaic_total.pdf", width=15, height=7.5)
+pdf(file="Data/Paper1/gaic.pdf", width=15, height=7.5)
 
 
-par(mfrow=c(1,2), mar=c(5,5,1,1))
+par(mfrow=c(1,2), mar=c(5,5,4,2))
 GD1 <- readRDS("Data/Paper1/tn93StsubB_GD.rds")
 GD2 <- readRDS("Data/Paper1/tn93NAsubB_GD.rds")
 GD3 <- readRDS("Data/Paper1/tn93TnsubB_GD.rds")
@@ -77,7 +77,7 @@ x <- seq(0,0.04,0.0008)
 
 par(mfrow=c(1,2), mar=c(5,5,1,1))
 plot(x, r1, xlim=c(0, 0.04), xlab='TN93 distance cutoff',
-     ylab='Generalized AIC', type='n', ylim=c(-82,25), cex.lab=1.5)
+     ylab='Generalized AIC', type='n', ylim=c(-82,25), cex.lab=1.8, cex.axis=1.5)
 
 # create a background
 bg <- par('usr')
@@ -98,7 +98,7 @@ text(x=x[which.min(r1)]+0.0035, y=min(r1), label="0.0160", cex=1.1)
 lines(x, r2, col=col2, lwd=2)
 points(x, r2, pch=22, col='white', bg=col2, cex=1.5)
 
-text(x=x[which.min(r2)]-0.001, y=min(r2)-2.5, label=format(x[which.min(r2)],digits=3), cex=1.1)
+text(x=x[which.min(r2)]-0.001, y=min(r2)-2.5, label=format(x[which.min(r2)],digits=3), cex=1.2)
 
 lines(x, r3, col=col3, lwd=2)
 points(x, r3, pch=24, col='white', bg=col3, cex=1.5)
@@ -122,7 +122,7 @@ r2 <- sapply(GD2, function(x) {x$gaic})
 x <- seq(0,0.04,0.0008)
 
 plot(x, r1, xlim=c(0, 0.04), xlab='TN93 distance cutoff',
-     ylab='Generalized AIC', type='n', ylim=c(-82,25), cex.lab=1.5)
+     ylab='Generalized AIC', type='n', ylim=c(-82,25), cex.lab=1.8, cex.axis=1.5)
 
 # create a background
 bg <- par('usr')

@@ -21,12 +21,21 @@ else:
     scale_factor = 10.
     padding = 0.7
 
+cutoff = 0.0160
+newyear = 2015
+code = 'tn93TnsubB'
+nodecolor = 'orangered'
+boldcolor = '#b47300'
+origin = 2000
+scale_factor = 20.
+padding = 0.9
 
-handle = open('Data/PaperData2/{}.txt'.format(code))
+
+handle = open('Data/Paper1/{}.txt'.format(code))
 header = next(handle)
 
 # pass through once to calculate degree size
-dotfile = open('Data/PaperData2/{}.dot'.format(code), 'w')
+dotfile = open('Data/Paper1/{}.dot'.format(code), 'w')
 dotfile.write("""
 graph seattle
 {
@@ -72,6 +81,8 @@ for node in nodes:
 
 dotfile.write("}\n")
 dotfile.close()
+
+quit()
 
 print (count)
 print (newcount)
