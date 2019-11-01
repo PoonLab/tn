@@ -54,7 +54,7 @@ impTree <-function(iFile){
   })
     
   #A summary of cluster-relevant node information
-  t$nSum <- data.frame(NodeID=nodes, Dist=dist, Boot=as.numeric(oT$node.label))
+  t$nSum <- data.frame(NodeID=nodes, Dist=dist, Boot=as.numeric(t$node.label))
   
   return(t)
 }
@@ -77,6 +77,8 @@ bFilt <- function(iT, maxB) {
 STClu <- function(iT) {
   #@param iG: The inputted graph. Expecting all vertices, but some edges filtered by distance.
   #@return: The inputted graph, annotated with a cluster size summary and case membership in the vertices section
+
+  nodes <- iT$nSum
 
   #Obtain the descendants of each node
   decs <- lapply(nodes, function(x){

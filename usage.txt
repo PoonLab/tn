@@ -1,0 +1,6 @@
+FastTree -nt -gtr -log ~/Data/Seattle/SeattleB_PRO.fas > ~/tree.nwk
+
+taxit create -l  -P my.refpkg \
+    --aln-fasta cT.fasta \
+    --tree-stats treeStats.txt \
+    --tree-file oT.nwk
