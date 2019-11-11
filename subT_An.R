@@ -2,13 +2,19 @@ require("ape")
 require("phangorn")
 
 #A simple function, removing sequences that sit above a maximum time point (@param: maxT)
-tFilt <- function(iFile, maxT, oFile) {
+tFilt <- function(iFile, keepT, oFile) {
   
   #Obtain IDs and times of Sequences
   seqs <- read.dna(iFile, format = "fasta", as.character = T)
   IDs <- names(seqs[,1])
   times <- as.numeric(sapply(IDs, function(x) (strsplit(x,'_')[[1]])[[2]]))
-  keepInd <- which(times<maxT) 
+  
+  #For an even number of sequences at each year
+  #t <- as.numeric(names(table(times)))
+  #keepInd <- unlist(lapply(t, function(x){head(which(times==x), 100)}))
+  
+  #keep only those specified
+  keepInd <- which(times%in%keepT) 
   
   #Write only those sequences with ambiguity below 1.5% and sequence length above 85%
   write.dna(seqs[keepInd,], oFile, "fasta")
@@ -16,11 +22,11 @@ tFilt <- function(iFile, maxT, oFile) {
 
 #A function to create a temporary tree (currently uses FastTree)
 #TODO: Finalize with tempfile, raxmL and potential skipping (probably skipped at the imp level)
-makeTree <- function(iFile, MLfunLoc="~/Desktop/FastTree/FastTree",
-                     opt="-nt", relation=">", oFile="~/tree.nwk") {
+makeTree <- function(iFile, MLfunLoc="FastTree",
+                     opt="-nt -gtr -log log.txt ", relation=">", oFile="~/tree.tre") {
   
   #Runtext is input
-  runtext <- paste(MLfunLoc, opt, iFile, relation, oFile)
+  runtext <- paste("bash -c '", MLfunLoc, opt, iFile, relation, oFile,"'")
   system(runtext)
   
 }
@@ -73,12 +79,13 @@ bFilt <- function(iT, maxB) {
   return(iT)
 }
 
+##TO-DO: Slow
 #Create clusters based on component clustering by some measure of genetic distance
 STClu <- function(iT) {
   #@param iG: The inputted graph. Expecting all vertices, but some edges filtered by distance.
   #@return: The inputted graph, annotated with a cluster size summary and case membership in the vertices section
 
-  nodes <- iT$nSum
+  nodes <- (length(iT$ID)+1):(length(iT$ID)+iT$Nnode) 
 
   #Obtain the descendants of each node
   decs <- lapply(nodes, function(x){
@@ -87,9 +94,9 @@ STClu <- function(iT) {
     return(l)
   })
   
-  #Obtain only decsendant lists who are all within the list of clusters
+  #Obtain only descendant lists who are all within the list of clusters
   clu <- decs[sapply(decs, function(x){
-    (length(x)==length(which(x%in%iT$dSum$NodeID)))&&length(x>1)
+    (length(x)==length(which(x%in%iT$nSum$NodeID)))&&length(x>1)
   })]
   
   #Collapse all vectors that are subsets of other vectors in list
@@ -112,15 +119,17 @@ makeT <- F
 if(makeT) {
   
   #TreeFile Tests (FastTree)
-  makeTree("~/Data/Seattle/SeattleB_PRO.fas", oFile="~/nT.nwk")
-  #tf <- tempfile("nT", fileext=".nwk")
+  makeTree("~/Data/Seattle/SeattleB_PRO.fas", oFile="~/cT.nwk")
+  #tf <- tempfile("cT", fileext=".nwk")
   #makeTree("~/Data/Seattle/SeattleB_PRO.fas", oFile=tf)
   
-  nT <- impTree("~/nT.nwk")
-  maxT <- max(nT$Time)-1 #TO-DO: Use Table for this
+  cT <- impTree("~/cT.nwk")
+  keepT <- head(as.numeric(names(table(cT$Time))), -1)
+  nT <- head(as.numeric(names(table(cT$Time))), 1)
+
   #tf1 <- tempfile("oT", fileext=".fas")
-  tFilt("~/Data/Seattle/SeattleB_PRO.fas", maxT, "~/oT.fas")
-  
+  tFilt("~/Data/Seattle/SeattleB_PRO.fas", keepT, "~/oT.fas")
+  tFilt("~/Data/Seattle/SeattleB_PRO.fas", nT, "~/nT.fas")
   
   makeTree("oT.fas", oFile="~/oT.nwk")
   #tf2 <- tempfile("oT", fileext=".nwk")
@@ -129,7 +138,7 @@ if(makeT) {
 
 #Import trees from files
 oT <- impTree("oT.nwk")
-nT <- impTree("nT.nwk")
+cT <- impTree("cT.nwk")
 
 #Plot Test
 plotT <- F
