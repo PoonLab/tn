@@ -1,6 +1,15 @@
 require("ape")
 require("phangorn")
 
+#Obtain times from a properly formatted .fasta file
+getT <- function(iFile) {
+  
+  #Obtain IDs and times of Sequences
+  seqs <- read.dna(iFile, format = "fasta", as.character = T)
+  IDs <- names(seqs[,1])
+  return(as.numeric(sapply(IDs, function(x) (strsplit(x,'_')[[1]])[[2]])))
+}
+
 #A simple function, removing sequences that sit above a maximum time point (@param: maxT)
 tFilt <- function(iFile, keepT, oFile) {
   
@@ -17,18 +26,52 @@ tFilt <- function(iFile, keepT, oFile) {
   keepInd <- which(times%in%keepT) 
   
   #Write only those sequences with ambiguity below 1.5% and sequence length above 85%
-  write.dna(seqs[keepInd,], oFile, "fasta")
+  write.dna(seqs[keepInd,], colsep="", oFile, "fasta")
 }
 
-#A function to create a temporary tree (currently uses FastTree)
-#TODO: Finalize with tempfile, raxmL and potential skipping (probably skipped at the imp level)
-makeTree <- function(iFile, MLfunLoc="FastTree",
-                     opt="-nt -gtr -log log.txt ", relation=">", oFile="~/tree.tre") {
+#A function to create a temporary tree through FastTree
+FastTreeCall <- function(iFile, opt="-nt -gtr -log log.txt ", oFile) {
   
   #Runtext is input
-  runtext <- paste("bash -c '", MLfunLoc, opt, iFile, relation, oFile,"'")
-  system(runtext)
+  runText <- paste0("bash -c 'FastTree ", opt, iFile, " > ", oFile,"'")
+  system(runText)
+}
+
+#A function to create a temporary tree through RaxML
+RaxMLCall <- function(iFile, opt="-m GTRCAT -n Tree -p 123 -T 4 -s ", oFile) {
   
+  #Runtext is input
+  runText <- paste0("bash -c 'raxmlHPC ", opt, iFile, " -w ", oFile,"'")
+  system(runText)
+}
+
+#Simulate the growth of trees by placing recent sequences as tips on a fixed ML tree
+growthSim <- function(oTFile, sFile) {
+  
+  #Create a temporary reference package location
+  unlink(tempdir(), recursive = T)
+  tempdir(check=TRUE)
+  ref <- tempfile(fileext = ".refpkg")
+
+  #Create reference package using Taxtastic
+  runText <- paste0("taxit create -l pol_SubB -P ",  ref, 
+                    " --aln-fasta ", sFile,
+                    " --tree-stats ", oTFile, "/RAxML_info.Tree",
+                    " --tree-file ", oTFile, "/RAxML_result.Tree")
+  system(runText)
+  
+  #Run pplacer on reference package, calling the inputted sequence alignment
+  jplace <- tempfile(fileext=".jplace")
+  runText <- paste0("bash -c 'pplacer -o ", jplace, " -c ", ref, " ", sFile, "'")
+  system(runText)
+  
+  #Run guppy on pplacer alignment, creating a temporary file of 100 trees (each with 1 of the new cases bound to it)
+  oFile <- tempfile(fileext=".tre")
+  runText <- paste0("bash -c 'guppy sing --point-mass ", jplace, " -o ", oFile, "'")
+  system(runText)
+  trees <- read.tree(oFile)
+  
+  return(trees)
 }
 
 #Import Tree Data and annotate with sequence ID and Time
@@ -110,35 +153,41 @@ STClu <- function(iT) {
   return(clu)
 }
 
+#Build a temporary tree from old sequences. Currently uses RaxML for compatibility with pplacer. 
+tempTree <- function(sFile="~/Data/Seattle/SeattleB_PRO.fasta", oSFile, oTFile) {
+  
+  #Obtain Times from sequence file in order to specify the old partition
+  times <- getT(sFile)
+  keepT <- head(as.numeric(names(table(times))), -1)
+  
+  tFilt(sFile, keepT, oSFile)
+  
+  #Create trees, outputted to the temporary tree directory
+  RaxMLCall(oSFile, oTFile)
+}
 
 ###############Testing
 
+#Set up paths to dependencies
+old_path <- Sys.getenv("PATH")
+Sys.setenv(PATH=paste0(old_path,":~/Desktop/pplacer:~/Desktop/RAxML"))
 
-#Make Option
-makeT <- F
-if(makeT) {
-  
-  #TreeFile Tests (FastTree)
-  makeTree("~/Data/Seattle/SeattleB_PRO.fas", oFile="~/cT.nwk")
-  #tf <- tempfile("cT", fileext=".nwk")
-  #makeTree("~/Data/Seattle/SeattleB_PRO.fas", oFile=tf)
-  
-  cT <- impTree("~/cT.nwk")
-  keepT <- head(as.numeric(names(table(cT$Time))), -1)
-  nT <- head(as.numeric(names(table(cT$Time))), 1)
+#For test data
+sFile <- "~/subT_An_Files/testS.fasta"
+oTFile <- "~/subT_An_Files/TestML/partial"
+oSFile <- "~/subT_An_Files/testSF.fasta"
 
-  #tf1 <- tempfile("oT", fileext=".fas")
-  tFilt("~/Data/Seattle/SeattleB_PRO.fas", keepT, "~/oT.fas")
-  tFilt("~/Data/Seattle/SeattleB_PRO.fas", nT, "~/nT.fas")
-  
-  makeTree("oT.fas", oFile="~/oT.nwk")
-  #tf2 <- tempfile("oT", fileext=".nwk")
-  #makeTree(tf1, oFile=tf2)
+#100 test trees 
+trees <- growthSim(oTFile, sFile)
+
+#Make temporary trees
+makeTemp <- F
+if (makeTemp){
+  sFile = "test.fasta"
+  oSFile <- tempfile("oS", fileext=".fasta")
+  oTFile <- tempdir()
+  tempTree(sFile, oSFile, oTFile)
 }
-
-#Import trees from files
-oT <- impTree("oT.nwk")
-cT <- impTree("cT.nwk")
 
 #Plot Test
 plotT <- F

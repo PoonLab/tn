@@ -1,6 +1,6 @@
 require("ape")
 
-iFile <- "~/Data/Seattle/SeattleB.fas"
+iFile <- "~/Data/Tennessee/TennesseeB.fas"
 seqs <- read.dna(iFile, format = "fasta", as.character = T)
 
 #Collect Frequencies of ambiguity
@@ -19,4 +19,4 @@ lngs <- sapply(1:nrow(seqs), function(i) {
 })
 
 #Write only those sequences with ambiguity below 1.5% and sequence length above 85%
-write.dna(seqs[-union(which(fs>0.05),which(lngs<0.85) ),],  gsub(".fas$", "_PRO.fas", iFile), "fasta")
+write.dna(seqs[-union(which(fs>0.05),which(lngs<0.85)),], colsep = "", gsub(".fas$", "_PRO.fasta", iFile), "fasta")
