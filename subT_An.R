@@ -10,6 +10,14 @@ getT <- function(iFile) {
   return(as.numeric(sapply(IDs, function(x) (strsplit(x,'_')[[1]])[[2]])))
 }
 
+#Obtain times from a properly formatted .fasta file
+getIds <- function(iFile) {
+  
+  #Obtain IDs and times of Sequences
+  seqs <- read.dna(iFile, format = "fasta", as.character = T)
+  return(names(seqs[,1]))
+}
+
 #A simple function, removing sequences that sit above a maximum time point (@param: maxT)
 tFilt <- function(iFile, keepT, oFile) {
   
@@ -30,6 +38,7 @@ tFilt <- function(iFile, keepT, oFile) {
 }
 
 #A function to create a temporary tree through FastTree
+##TO-DO: Currently Unnused (possibly shouldn't ever be used?)
 FastTreeCall <- function(iFile, opt="-nt -gtr -log log.txt ", oFile) {
   
   #Runtext is input
@@ -71,7 +80,33 @@ growthSim <- function(oTFile, sFile) {
   system(runText)
   trees <- read.tree(oFile)
   
-  return(trees)
+  oT <- impTree(paste0(oTFile,"/RAxML_result.Tree"))
+  oIds <- oT$tip.label
+  nIds <- setdiff(getIds(sFile), oIds)
+  
+  #The nodes associated with new cases. If these nodes are in clusters, we presume that the new cases are in that cluster as well.
+  node.assoc <- sapply(trees, function(t){
+    nTip <- which(t$tip.label%in%nIds)
+    adj <- Siblings(t, nTip)
+    
+    #If the sibling is a tip, returns the sibling's parent in complete tree
+    if(adj<length(t$tip.label)) {
+      adj <- which(oT$tip.label%in%t$tip.label[adj])
+      parent <- oT$edge[which(oT$edge[,2]==adj),1]
+      return(parent) 
+    }
+    else{
+      return(adj)
+    }
+  })
+  
+  #Labelling new nodes consistantly and attatch this as growth info
+  ntip.label <- sapply(trees, function(t){t$tip.label[which(t$tip.label%in%nIds)]})
+  ntip.number <- length(oT$tip.label)+seq(1,length(nIds),1)
+  growth <-  data.frame(ntip.label=nIds, ntip.number=ntip.number, node.assoc=as.numeric(node.assoc), stringsAsFactors = F)
+  oT$growth <- growth
+  
+  return(oT)
 }
 
 #Import Tree Data and annotate with sequence ID and Time
@@ -86,7 +121,7 @@ impTree <-function(iFile){
   
   #Obtain lists of sequence ID and Time
   temp <- sapply(t$tip.label, function(x) strsplit(x, '_')[[1]])
-  ids <- temp[1,]
+  ids <- unname(temp[1,])
   times <- as.numeric(temp[2,])
   
   #Assign those lists to the tree
@@ -103,54 +138,84 @@ impTree <-function(iFile){
   })
     
   #A summary of cluster-relevant node information
-  t$nSum <- data.frame(NodeID=nodes, Dist=dist, Boot=as.numeric(t$node.label))
+  t$nSum <- data.frame(NodeID=nodes, Dist=dist) 
+  
+  ##TO-DO: Add bootstrap here. Requires bootstrap to be added in tree creation.
+  #bootstraps <- as.numeric(t$node.label)
+  #t$nSum$Boot <- bootstraps
   
   return(t)
 }
+
 
 ##TO-DO: Fuse two filt functions?
 
 #A simple function, removing edges that sit above a maximum ancestral edge length (@param:maxD).
 dFilt <- function(iT, maxD) {
-  iT$nSum <- subset(iT$nSum, Dist<maxD)
+  iT$nSum <- subset(iT$nSum, Dist<=maxD)
   return(iT)
 }
 
 #A simple function, removing edges that sit under a minimum bootstrap (@param:maxD).
+##Curruntly not used
 bFilt <- function(iT, maxB) {
-  iT$nSum <- subset(iT$nSum, Dist<maxD)
+  iT$nSum <- subset(iT$nSum, Dist<=maxD)
   return(iT)
 }
 
-##TO-DO: Slow
-#Create clusters based on component clustering by some measure of genetic distance
-STClu <- function(iT) {
-  #@param iG: The inputted graph. Expecting all vertices, but some edges filtered by distance.
-  #@return: The inputted graph, annotated with a cluster size summary and case membership in the vertices section
+####
 
+
+#Cluster using a moidify subtree-based method
+STClu <- function(iT) {
+
+  #Obtain a list of node numbers (matches indexes in the tree)
   nodes <- (length(iT$ID)+1):(length(iT$ID)+iT$Nnode) 
 
   #Obtain the descendants of each node
-  decs <- lapply(nodes, function(x){
-    l <- Descendants(iT,x,"all")
-    l <- setdiff(l, 1:length(iT$ID))
-    return(l)
+  decs <- lapply(nodes, function(x){Descendants(iT,x,"all")})
+  cluCon <- sapply(decs, function(x){
+    intNodes <- setdiff(x, 1:length(iT$ID))
+    (length(intNodes)==length(which(intNodes%in%iT$nSum$NodeID)))
   })
   
   #Obtain only descendant lists who are all within the list of clusters
-  clu <- decs[sapply(decs, function(x){
-    (length(x)==length(which(x%in%iT$nSum$NodeID)))&&length(x>1)
-  })]
+  clu <- decs[cluCon]
   
-  #Collapse all vectors that are subsets of other vectors in list
-  clu <- clu[!sapply(seq_along(clu), function(i) max(sapply(clu[-i],function(L) all(clu[[i]] %in% L))))]
-  
-  clu <- lapply(clu, function(x) {
-    chd <- iT$edge[which(iT$edge[,1]%in%x),2]
-    chd <- chd[chd%in%1:length(iT$ID)]
+  #Check the clustering conditions for all possible subtrees and ensure no cherry clusters are added
+  filtCon <- sapply(seq_along(clu), function(i){
+    subsetCon <- sum(sapply(clu[-i], function(L) {
+      all(clu[[i]] %in% L)
+    }))>0
+    
+    #A cherry alone cannot be a cluster
+    cherryCon <- length(clu[[i]])==2
+    
+    return(!(subsetCon||cherryCon))
   })
   
-  return(clu)
+  clu <- clu[filtCon]
+
+  clu <- lapply(clu, function(x){
+    
+    #Add new cases if they're associated with the internal node
+    gNodes <- which(x%in%iT$growth$node.assoc)
+    intNodes <- which(x>length(iT$ID))
+                      
+    growth <- unlist(sapply(x[gNodes], function(i){
+      nTip <- which(iT$growth$node.assoc%in%i)
+      iT$growth$ntip.number[nTip]
+    }))
+
+    x <- x[-intNodes]
+    x <- c(x,growth)
+    
+    return(x)
+  })
+
+  iT$clu <- clu
+  
+  return(iT)
 }
 
 #Build a temporary tree from old sequences. Currently uses RaxML for compatibility with pplacer. 
@@ -166,6 +231,9 @@ tempTree <- function(sFile="~/Data/Seattle/SeattleB_PRO.fasta", oSFile, oTFile) 
   RaxMLCall(oSFile, oTFile)
 }
 
+
+
+
 ###############Testing
 
 #Set up paths to dependencies
@@ -177,8 +245,10 @@ sFile <- "~/subT_An_Files/testS.fasta"
 oTFile <- "~/subT_An_Files/TestML/partial"
 oSFile <- "~/subT_An_Files/testSF.fasta"
 
-#100 test trees 
-trees <- growthSim(oTFile, sFile)
+iFile <-"~/subT_An_Files/TestML/partial/RAxML_result.Tree" 
+
+oT <- impTree(iFile) 
+oT <- growthSim(oTFile, sFile)
 
 #Make temporary trees
 makeTemp <- F
@@ -190,32 +260,48 @@ if (makeTemp){
 }
 
 #Plot Test
-plotT <- F
+plotT <- T
 if(plotT){
   
   #Clustering Test
-  cutoffs <- seq(0.001,0.02,0.0005)
+  dists <- oT$nSum$Dist[-1]
+  cutoffs <- seq(min(dists),max(dists),(max(dists)-min(dists))/50)
+  
   res <- lapply(cutoffs, function(x){
     subT <- dFilt(oT, x)
-    c <- STclu(subT)
-    return(c)
+    subT <- STClu(subT)
+    return(subT$clu)
   })
   
   cnum <- sapply(res, function(c) {
-    clustered <- sapply(c, function(x){length(x)})
-    sing <- rep(1,length(t$ID)-sum(clustered))
+    clustered <- sapply(c, function(x){length(x[x<=length(oT$ID)])})
+    sing <- rep(1,length(oT$ID)-sum(clustered))
     cnum <- (length(clustered)+length(sing))
     return(cnum)
   })
   
   csize <- sapply(res, function(c) {
-    clustered <- sapply(c, function(x){length(x)})
-    sing <- rep(1,length(t$ID)-sum(clustered))
+    clustered <- sapply(c, function(x){length(x[x<=length(oT$ID)])})
+    sing <- rep(1,length(oT$ID)-sum(clustered))
     csize <- mean(c(sing,clustered))
     return(csize)
   })
   
-  par(mfrow=c(1,2))
+  gmean <- sapply(res, function(c) {
+    mean(sapply(c, function(x){length(which(x>length(oT$ID)))}))
+  })
+  
+  gcover <- sapply(res, function(c) {
+    sum(sapply(c, function(x){length(which(x>length(oT$ID)))}))/nrow(oT$growth)
+  })
+  
+  par(mfrow=c(2,2))
   plot(cutoffs, cnum, xlab="Threshold", ylab="Number of Clusters")
-  plot(cutoffs, csize, xlab="Threshold", ylab="Mean Cluster Size")
+  lines(cutoffs, cnum)
+  plot(cutoffs[-51], csize[-51], xlab="Threshold", ylab="Mean Cluster Size")
+  lines(cutoffs[-51], csize[-51])
+  plot(cutoffs[-51], gmean[-51], xlab="Threshold", ylab="Mean Cluster Growth")
+  lines(cutoffs[-51], gmean[-51])
+  plot(cutoffs, gcover, xlab="Threshold", ylab="Total Growth Coverage")
+  lines(cutoffs, gcover)
 }
