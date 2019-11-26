@@ -4,7 +4,7 @@ library(ape)
 #Creates a set of data-frames representing a graph of sequences, with the edges between those sequences representing the TN93 Distance.
 #Sequences must be dated with the date separated from the id by '_'. 
 ##TO-DO: Currently only accepts year dates. Work to allow more specific dates. 
-impTN93 <- function(iFile, mtD, minNS=63){
+impTN93 <- function(iFile, mtD=NA, minNS=63){
   #@param iFile: The name/path of the input file (expecting tn93 output csv)
   #@param mtD: the filename for a dataframe of associated metadata (optional).
   #@param minNS: The minimum number of acceptible new Sequences. By default we keep this high.
@@ -35,26 +35,31 @@ impTN93 <- function(iFile, mtD, minNS=63){
   #If the newest timepoint contains a small number of sequences, we remove the newest year from consideration
   g <- list(v=vl[order(vl$Time),], e=el[order(el$tMax),], f=el[order(el$tMax),])
   while(nrow(subset(g$v,Time==max(Time)))<=minNS) {
-    g <- tFilt(g, max(g$v$Time)-1)
+    keepT <- head(as.numeric(names(table(g$v$Time))),-1)
+    g <- tFilt(g, keepT)
   }
   
   #Permanently remove edges from the new year such that only the closest edge between new vertices and old vertices remains
+  #Obtain new vertices and remove any internal edges within the new vertices 
+  #We are not interested in completely new clustering
+  nV <- subset(g$v, Time==max(Time))
+  
+  #Obtain the closest retrospective edge of every vertex
+  minE <- bind_rows(lapply(1:nrow(nV), function(i){
+    v <- nV[i,]
+    incE <- subset(g$e, (ID1%in%v$ID)|(ID2%in%v$ID))
+    retE <- subset(incE, (tMax==v$Time)&(tDiff>0))
+    retE[which(retE$Distance==min(retE$Distance))[[1]],]
+  }))
+  
+  #Obtain minimum distance edges and replace the set of new edges
+  g$e <- subset(g$e, tMax!=max(tMax))
+  g$e <- rbind(g$e, minE)
+  
   #'g$f' represents the closest edge for all vertices (excluding edges within that vertex's own year)
-  g <- clsFilt(g)
   g$f <- likData(g)
   
   return(g)
-}
-
-#Creates a set of data-frames representing a graph of sequences, with the edges between those sequences representing .
-#Sequences must be dated with the date separated from the id by '_'. 
-##TO-DO: Currently only accepts year dates. Work to allow more specific dates. 
-impCLMP <- function(iFile, mtD, minNS=63){
-  #@param iFile: The name/path of the input file (expecting a newick file)
-  #@param minNS: The minimum number of acceptible new sequences By default we keep this high. Passed to sizeCheck.
-  #@preturn: An ape tree object with associated lists of sequence ID and Time
-  
-
 }
 
 #Create clusters based on component clustering by some measure of genetic distance
@@ -123,43 +128,11 @@ dFilt <- function(iG, maxD) {
 }
 
 #A simple function, removing vertices that sit above a maximum time point (@param: maxT)
-tFilt <- function(iG, maxT) {
-  iG$v <- subset(iG$v, Time<=maxT)
-  iG$e <- subset(iG$e, tMax<=maxT)
+tFilt <- function(iG, keepT) {
+  iG$v <- subset(iG$v, Time%in%keepT)
+  iG$e <- subset(iG$e, tMax%in%keepT)
   return(iG)
 }
-
-#Filter the edges coming from new cases such that the new cases have no edges to eachother and only one edge leading from them to old cases
-#This is a simplification to help resolve the merging involved in cluster growth and to prevent growth by whole clusters.
-clsFilt <- function(iG){
-  #@param iG: The inputted graph. Expecting the entire Graph with new year included.
-  #@return: The inputted graph with the new year connected by only its shortest edges per vertex
-  
-  #Obtain new vertices and remove any internal edges within the new vertices 
-  #We are not interested in completely new clustering
-  nV <- subset(iG$v, Time==max(Time))$ID
-  iG$e <- subset(iG$e, !(t1==max(tMax) & t2==max(tMax))) 
-  
-  #Obtain edges leading to newer vertices
-  nE <- subset(iG$e, tMax==max(tMax))
-  
-  #Obtain the minimum of these edges for each new vertex
-  minEi <- sapply(nV, function(v) {
-    incEi <- c(which(nE$ID1%in%v), which(nE$ID2%in%v))
-    
-    if (length(incEi)>0) {
-      incE <- nE[incEi,]
-      return(incEi[which(incE$Distance==min(incE$Distance))[[1]]])
-    }else{0}
-  })
-  
-  #Obtain minimum distance edges and replace the set of new edges
-  minE <- nE[minEi[minEi>0],]
-  iG$e <- subset(iG$e, tMax!=max(tMax))
-  iG$e <- rbind(iG$e, minE)
-  
-  return(iG)
-} 
 
 #Simulate the growth of clusters, showing the difference in cluster size between the newest and the penultimate time point
 #The frame of reference for clusters is the penultimate year, simulating one making forcasting decisions based on one time point and validating them with the next
@@ -174,7 +147,8 @@ simGrow <- function(iG) {
   nG <- compClu(nG)
   
   #obtain clusters at an old time point
-  oG <- compClu(tFilt(iG, as.numeric(tail(names(table(iG$v$Time)),2))[[1]]))
+  keepT <- head(as.numeric(names(table(iG$v$Time))),-1)
+  oG <- compClu(tFilt(iG, keepT))
   
   #Define growth as the difference in cluster size between new and old graphs 
   #After clsFilter(), nG will have the same number of clusters as oG, and similar membership
@@ -197,38 +171,24 @@ likData <- function(iG) {
   #         Each positive also carries it's Genetic Distance measurement and time point difference (between time points)
   
   #Take in total graph without the newest time point (otherwise, we include the validation set in or data set)
-  iG <- tFilt(iG, as.numeric(tail(names(table(iG$v$Time)),2))[[1]])
-  tTab <- table(iG$v$Time)
+  keepT <- tail(head(as.numeric(names(table(iG$v$Time))),-1),-1)
+  subG <- tFilt(iG, keepT)
   
-  #Obtain subsets of "Positives" (related cases) between one time point and another, annotated with the number of possible total positives.
-  #Positives are only considered if, from the perspective of the newest time point, there are no old cases with a closer TN93 distance measurement
-  ageD <- lapply(as.numeric(names(tail(tTab,-1))), function(t){ 
+  #Obtain the closest retrospective edge of every vertex
+  f <- bind_rows(lapply(2:nrow(subG$v), function(i){
     
-    #Close filter cases from the current time point t. Treating it as though it is the new time point
-    tG <- tFilt(iG, t)
-    tdTab <- tail(table(tG$e$tDiff),-1) 
-    tG <- clsFilt(tG)
+    v <- subG$v[i,]
     
-    #To catch the event of a complete edgelist with no edges to year t
-    if(nrow(tG$e)>0){
-      tG$e$vTotal <- tTab[as.character(t)]
-      oldT <- as.character(pmin(tG$e$t1,tG$e$t2))
-    } else {
-      tG$e$vTotal <- integer(0)
-    }
+    incE <- subset(iG$e, (ID1%in%v$ID)|(ID2%in%v$ID))
+    retE <- subset(incE, (tMax==v$Time)&(tDiff>0))
+    minE <- retE[which(retE$Distance==min(retE$Distance))[[1]],]
+    df <- data.frame(Distance=minE$Distance, tMax=minE$tMax, tDiff=minE$tDiff, vTotal=nrow(subset(iG$v, Time==v$Time)))
     
-    #Given the filtered subgraph, record any edges to/from the time point of interest.
-    #Notes only the Distance and time difference (between the older point and  the new) 
-    #All of tdG is annotated The total number of cases in time t (ie. the total possible edges for that tMax value)
-    tdD <- bind_rows(lapply(as.numeric(names(tdTab)), function(td) {
-      es <- subset(tG$e, tDiff==td & tMax==t)
-      es[,c("Distance", "tMax", "tDiff", "vTotal")]
-    })) 
+    return(df)
     
-    return(tdD)
-  }) 
+  }))
   
-  return(ageD)
+  return(f)
 }
 
 #Analyze a given Clustered Graph to establish the difference between the performance of two different models
@@ -237,41 +197,32 @@ compAnalyze <- function(subG) {
   #@param subG: A subGraph cut based on a threshold distance, expecting a member of the multiGraph set
   #@return: A graph annotated with growth, cluster info and level of predictive performance (measured through GAIC)
   
-  #Obtain the frequency of edges between two years based on the time difference between those years
-  #Annotate edge information with total possible edges to a given newer year
-  #Annotate edge information with the density of edges froma a given old year
+  #Obtain some summarized information from the sub-Graph
   dMax <- max(subG$e$Distance)
+  tTab <- table(subG$f$tMax)
   vTab <- table(subG$v$Time)
-  eTab <- rep(0, length(vTab))
+  eTab <- sapply(as.numeric(names(vTab)), function(t){
+    nrow(subset(subG$e, (t1==t|t2==t)))
+  })
   names(eTab) <- names(vTab)
-  temp1 <- table(subG$e$t1) 
-  temp2 <- table(subG$e$t2)
-  temp3 <- table(subset(subG$e, t1==t2)$tMax)
-  eTab[names(temp1)] <- eTab[names(temp1)]+unname(temp1)
-  eTab[names(temp2)] <- eTab[names(temp2)]+unname(temp2)
-  eTab[names(temp3)] <- eTab[names(temp3)]-unname(temp3)
-  
   
   #Take the total edge frequency data from the graph and format this information into successes and attempts
   #An edge to the newest year falling below the max distance is considered a success
-  ageD <- bind_rows(lapply(subG$f, function(t) {
-
-    if(nrow(t)==0) {
-      return(data.frame(NULL))
-    }
-    else {
-      tDiffs <- as.numeric(levels(as.factor(t$tDiff)))
-      pos <- sapply(tDiffs, function(td) {
-        nrow(subset(t, tDiff==td & Distance<=dMax))
-      })
-      
-      #Consider the edge density of previous years
-      oldTs <- t$tMax[1:length(tDiffs)]-tDiffs
-      oeDens <- eTab[as.character(oldTs)]/vTab[as.character(oldTs)]
-      
-      data.frame(Positive=pos, vTotal=t$vTotal[[1]],  oeDens=as.numeric(oeDens), tDiff=tDiffs)
-    }
+  ageD <- bind_rows(lapply(as.numeric(names(tTab)), function(t) {
+    temp <- subset(subG$f, tMax==t)
+    dfs <- split(temp, temp$tDiff)
     
+    Positive <- sapply(dfs, function(df){length(which(df$Distance<=dMax))})
+    vTotal <- sapply(dfs, function(df){df$vTotal[[1]]})
+    tDiff <- as.numeric(names(Positive))
+    oeDens <- sapply(tDiff, function(tD){
+      oTime <- t-tD
+      return(eTab[as.character(oTime)]/vTab[as.character(oTime)])
+    })
+    
+    
+    res <- data.frame(Positive=as.numeric(Positive), vTotal=as.numeric(vTotal), oeDens=oeDens, tDiff)
+    return(res)
   }))
   
   #Obtain a model of case connection frequency to new cases as predicted by individual case age
@@ -279,7 +230,7 @@ compAnalyze <- function(subG) {
   mod <- glm(cbind(Positive, vTotal) ~ tDiff+oeDens, data=ageD, family='binomial')
   subG$v$Weight <- predict(mod, type='response',
                            data.frame(tDiff=max(subG$v$Time)-subG$v$Time, 
-                                      oeDens=as.numeric(eTab[as.character(subG$v$Time)]/vTab[as.character(subG$v$Time)])) )
+                                      oeDens=as.numeric(eTab[as.character(subG$v$Time)]/vTab[as.character(subG$v$Time)])))
   # subG$v$Weight <- sapply(subG$v$ID, function(id) {as.numeric(substr(id,8,8))})
   
   #Create clusters for this subgraph and measure growth
@@ -298,6 +249,8 @@ compAnalyze <- function(subG) {
   subG$ageFit <- fit1
   subG$nullFit <- fit2
   subG$f <- ageD
+  
+  print(subG$gaic)
   
   return(subG)
 }
@@ -326,7 +279,7 @@ gaicRun <- function(iG, cutoffs=NA) {
 #####Testing#####
 test <- function(){
   #Create Graph and analyze it
-  g <- impTN93("tn93StsubB.txt", NA)
+  g <- impTN93("Data/Seattle/analysis_PRO/tn93StsubB.txt")
   res <- gaicRun(g)
   
   #Extract GAICs and cutoffs for graphing purposes

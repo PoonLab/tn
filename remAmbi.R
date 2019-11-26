@@ -1,6 +1,9 @@
 require("ape")
 
-iFile <- "~/Data/Tennessee/TennesseeB.fas"
+## USAGE: Rscript remAmbi.R [INSERT FASTA FILE HERE] ##
+
+#Take input      
+iFile <- commandArgs(trailingOnly = T)
 seqs <- read.dna(iFile, format = "fasta", as.character = T)
 
 #Collect Frequencies of ambiguity
@@ -18,5 +21,13 @@ lngs <- sapply(1:nrow(seqs), function(i) {
   (length(iSeq) - lGaps)/length(iSeq)
 })
 
-#Write only those sequences with ambiguity below 1.5% and sequence length above 85%
-write.dna(seqs[-union(which(fs>0.05),which(lngs<0.85)),], colsep = "", gsub(".fas$", "_PRO.fasta", iFile), "fasta")
+badSeq <- union(which(fs>0.05),which(lngs<0.85))
+
+if(length(badSeq)==0) {
+  print("No unnacceptable Sequences")
+} else {
+  #Write only those sequences with ambiguity below 1.5% and sequence length above 85%
+  write.dna(seqs[-badSeq,], colsep = "", 
+            gsub(".fasta$", "_PRO.fasta", iFile), "fasta")
+}
+

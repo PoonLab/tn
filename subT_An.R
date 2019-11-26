@@ -18,6 +18,29 @@ getIds <- function(iFile) {
   return(names(seqs[,1]))
 }
 
+#Obtain the patristic distances through a 
+setDist <- function(iT, terminal=F) {
+  dist <- dist.nodes(iT)
+  
+  if(!terminal){
+    parents <- unique(iT$edge[which(iT$edge[,2]<=length(iT$tip.label)),1])
+    coord <- lapply(parents, function(x) { Children(iT, x) })
+    rCoord <- tail(coord,1)[[1]]
+    coord <- head(coord,-1)
+    
+    for(x in coord) {
+      dist[x[1],x[2]] <- 0
+    }
+    dist[rCoord[1], rCoord[2]] <- 0
+    dist[rCoord[2], rCoord[3]] <- 0
+    dist[rCoord[1], rCoord[3]] <- 0
+  }
+  
+  iT$dist <- dist 
+  
+  return(iT)
+}
+
 #A simple function, removing sequences that sit above a maximum time point (@param: maxT)
 tFilt <- function(iFile, keepT, oFile) {
   
@@ -90,7 +113,7 @@ growthSim <- function(oTFile, sFile) {
     adj <- Siblings(t, nTip)
     
     #If the sibling is a tip, returns the sibling's parent in complete tree
-    if(adj<length(t$tip.label)) {
+    if(adj<=length(t$tip.label)) {
       adj <- which(oT$tip.label%in%t$tip.label[adj])
       parent <- oT$edge[which(oT$edge[,2]==adj),1]
       return(parent) 
@@ -147,7 +170,6 @@ impTree <-function(iFile){
   return(t)
 }
 
-
 ##TO-DO: Fuse two filt functions?
 
 #A simple function, removing edges that sit above a maximum ancestral edge length (@param:maxD).
@@ -165,8 +187,7 @@ bFilt <- function(iT, maxB) {
 
 ####
 
-
-#Cluster using a moidify subtree-based method
+#Cluster using a modified subtree-based method
 STClu <- function(iT) {
 
   #Obtain a list of node numbers (matches indexes in the tree)
@@ -198,7 +219,7 @@ STClu <- function(iT) {
 
   clu <- lapply(clu, function(x){
     
-    #Add new cases if they're associated with the internal node
+    #Add new cases if they're associated with the internal
     gNodes <- which(x%in%iT$growth$node.assoc)
     intNodes <- which(x>length(iT$ID))
                       
@@ -231,8 +252,14 @@ tempTree <- function(sFile="~/Data/Seattle/SeattleB_PRO.fasta", oSFile, oTFile) 
   RaxMLCall(oSFile, oTFile)
 }
 
-
-
+likData <- function(iT){
+  
+  sapply(seq_along(iT$dist[,1]), function(i) {
+    row <- iT$dist[i,]
+    which(row==min(row))[[1]]
+  })
+  
+}
 
 ###############Testing
 
@@ -249,6 +276,19 @@ iFile <-"~/subT_An_Files/TestML/partial/RAxML_result.Tree"
 
 oT <- impTree(iFile) 
 oT <- growthSim(oTFile, sFile)
+oT <- setDist(oT, terminal=F)
+
+
+##Time-Scaling Tree
+if(FALSE) {
+  df <- data.frame("Root to Tip Dist"=as.numeric(oT$dist[401,1:400]), "Time"=as.numeric(oT$Time))
+  fit <- lm(df$Root.to.Tip.Dist~df$Time, df)
+  r2 <- summary(fit)$r.squared
+  plot(df$Time, df$Root.to.Tip.Dist, xlab = "Col Date", ylab = "Root to Tip Distance", xaxp= c(2006, 2009, 3))
+  abline(fit$coefficients[1],fit$coefficients[2],col="red")
+  legend("topright", legend = paste0("R-Squared= ", r2))
+}
+
 
 #Make temporary trees
 makeTemp <- F
@@ -260,7 +300,7 @@ if (makeTemp){
 }
 
 #Plot Test
-plotT <- T
+plotT <- F
 if(plotT){
   
   #Clustering Test
@@ -276,7 +316,7 @@ if(plotT){
   cnum <- sapply(res, function(c) {
     clustered <- sapply(c, function(x){length(x[x<=length(oT$ID)])})
     sing <- rep(1,length(oT$ID)-sum(clustered))
-    cnum <- (length(clustered)+length(sing))
+    cnum <- (length(clustered)+length(sing)) 
     return(cnum)
   })
   
@@ -298,10 +338,10 @@ if(plotT){
   par(mfrow=c(2,2))
   plot(cutoffs, cnum, xlab="Threshold", ylab="Number of Clusters")
   lines(cutoffs, cnum)
-  plot(cutoffs[-51], csize[-51], xlab="Threshold", ylab="Mean Cluster Size")
-  lines(cutoffs[-51], csize[-51])
-  plot(cutoffs[-51], gmean[-51], xlab="Threshold", ylab="Mean Cluster Growth")
-  lines(cutoffs[-51], gmean[-51])
+  plot(cutoffs, csize, xlab="Threshold", ylab="Mean Cluster Size")
+  lines(cutoffs, csize)
+  plot(cutoffs, gmean, xlab="Threshold", ylab="Mean Cluster Growth")
+  lines(cutoffs, gmean)
   plot(cutoffs, gcover, xlab="Threshold", ylab="Total Growth Coverage")
   lines(cutoffs, gcover)
 }
