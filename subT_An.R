@@ -18,29 +18,6 @@ getIds <- function(iFile) {
   return(names(seqs[,1]))
 }
 
-#Obtain the patristic distances through a 
-setDist <- function(iT, terminal=F) {
-  dist <- dist.nodes(iT)
-  
-  if(!terminal){
-    parents <- unique(iT$edge[which(iT$edge[,2]<=length(iT$tip.label)),1])
-    coord <- lapply(parents, function(x) { Children(iT, x) })
-    rCoord <- tail(coord,1)[[1]]
-    coord <- head(coord,-1)
-    
-    for(x in coord) {
-      dist[x[1],x[2]] <- 0
-    }
-    dist[rCoord[1], rCoord[2]] <- 0
-    dist[rCoord[2], rCoord[3]] <- 0
-    dist[rCoord[1], rCoord[3]] <- 0
-  }
-  
-  iT$dist <- dist 
-  
-  return(iT)
-}
-
 #A simple function, removing sequences that sit above a maximum time point (@param: maxT)
 tFilt <- function(iFile, keepT, oFile) {
   
@@ -126,8 +103,8 @@ growthSim <- function(oTFile, sFile) {
   #Labelling new nodes consistantly and attatch this as growth info
   ntip.label <- sapply(trees, function(t){t$tip.label[which(t$tip.label%in%nIds)]})
   ntip.number <- length(oT$tip.label)+seq(1,length(nIds),1)
-  growth <-  data.frame(ntip.label=nIds, ntip.number=ntip.number, node.assoc=as.numeric(node.assoc), stringsAsFactors = F)
-  oT$growth <- growth
+  growth <-  data.frame(ntip.label=nIds, ntip.number=as.numeric(ntip.number), node.assoc=as.numeric(node.assoc), stringsAsFactors = F)
+  oT$gSum <- growth
   
   return(oT)
 }
@@ -135,7 +112,7 @@ growthSim <- function(oTFile, sFile) {
 #Import Tree Data and annotate with sequence ID and Time
 #Sequences must be dated with the date separated from the id by '_'. 
 ##TO-DO: Currently only accepts year dates. Work to allow more specific dates. 
-impTree <-function(iFile){
+impTree <-function(iFile, terminal=F){
   #@param iFile: The name/path of the input file (expecting a newick file)
   #@preturn: An ape tree object with associated lists of sequence ID and Time
   
@@ -150,18 +127,38 @@ impTree <-function(iFile){
   #Assign those lists to the tree
   t$Time <- times
   t$ID <- ids
+  tips <- 1:length(t$ID)
   
   #Summarize internal branch length information
-  nodes <- unique(t$edge[,1])
-  dist <- sapply(nodes, function(x) {
-    if(x%in%t$edge[,2]){
-      t$edge.length[which(t$edge[,2]%in%x)]
-    }
-    else {NA}
+  t$dist <- dist.nodes(t)
+  t$dist <- t$dist[tips, tips]
+  t$tDiff <- sapply(1:length(t$ID), function(i){
+    t1 <- t$Time[i]
+    sapply(1:length(t$ID), function(j){
+      t2 <- t$Time[j]
+      abs(t2-t1)
+    })
   })
-    
-  #A summary of cluster-relevant node information
-  t$nSum <- data.frame(NodeID=nodes, Dist=dist) 
+  
+  #In this case, we set terminal branch lengths to 0. Meaning that they are not a factor for growth or clustering
+  if(!terminal){
+    parents <- unique(t$edge[which(t$edge[,2]%in%tips),1])
+  }
+  
+  #Obtain a list of node numbers (matches indexes in the tree)
+  nodes <- (length(t$ID)+1):(length(t$ID)+t$Nnode) 
+  tipD <- t$dist[1:length(t$ID),1:length(t$ID)] #Subset of just terminal tip to tip distances
+  
+  #Obtain the descendants of each node
+  decs <- lapply(nodes, function(x){Descendants(t,x,"all")})
+  meanDist <- sapply(decs, function(x) {
+    tips <- x[which(x<=length(t$ID))] 
+    mean <- mean(sapply(tips, function(tip){mean(tipD[tip,tips])}))
+    return(mean)
+  })
+  
+  #Set up a node-summary data frame
+  t$nSum <- data.frame(nID=nodes, mDist=meanDist)
   
   ##TO-DO: Add bootstrap here. Requires bootstrap to be added in tree creation.
   #bootstraps <- as.numeric(t$node.label)
@@ -170,71 +167,61 @@ impTree <-function(iFile){
   return(t)
 }
 
-##TO-DO: Fuse two filt functions?
-
 #A simple function, removing edges that sit above a maximum ancestral edge length (@param:maxD).
 dFilt <- function(iT, maxD) {
-  iT$nSum <- subset(iT$nSum, Dist<=maxD)
+  iT$nSum <- subset(iT$nSum, mDist<=maxD)
   return(iT)
 }
-
-#A simple function, removing edges that sit under a minimum bootstrap (@param:maxD).
-##Curruntly not used
-bFilt <- function(iT, maxB) {
-  iT$nSum <- subset(iT$nSum, Dist<=maxD)
-  return(iT)
-}
-
-####
 
 #Cluster using a modified subtree-based method
 STClu <- function(iT) {
 
   #Obtain a list of node numbers (matches indexes in the tree)
-  nodes <- (length(iT$ID)+1):(length(iT$ID)+iT$Nnode) 
+  nodes <- iT$nSum$nID
 
-  #Obtain the descendants of each node
+  #Obtain the descendants of potential clustering node
   decs <- lapply(nodes, function(x){Descendants(iT,x,"all")})
-  cluCon <- sapply(decs, function(x){
-    intNodes <- setdiff(x, 1:length(iT$ID))
-    (length(intNodes)==length(which(intNodes%in%iT$nSum$NodeID)))
-  })
-  
-  #Obtain only descendant lists who are all within the list of clusters
-  clu <- decs[cluCon]
   
   #Check the clustering conditions for all possible subtrees and ensure no cherry clusters are added
-  filtCon <- sapply(seq_along(clu), function(i){
-    subsetCon <- sum(sapply(clu[-i], function(L) {
-      all(clu[[i]] %in% L)
-    }))>0
+  filt <- sapply(seq_along(decs), function(i){
     
+    #A cluster cannot be the subset of a larget cluster
+    if(length(decs)>1){
+      subsetCon <- sum(sapply(decs[-i], function(L) {all(decs[[i]] %in% L)}))>0
+    }
+    else {
+      subsetCon <- F
+    }
+
     #A cherry alone cannot be a cluster
-    cherryCon <- length(clu[[i]])==2
+    cherryCon <- length(decs[[i]])==2
     
-    return(!(subsetCon||cherryCon))
+    return((subsetCon||cherryCon))
   })
   
-  clu <- clu[filtCon]
+  #Remove non-clusters from the list
+  decs[filt] <- NULL
 
-  clu <- lapply(clu, function(x){
+  #Remove internal nodes for summary. Only cases are of interest
+  clu <- lapply(decs, function(x){
     
     #Add new cases if they're associated with the internal
-    gNodes <- which(x%in%iT$growth$node.assoc)
+    gNodes <- subset(iT$gSum, node.assoc%in%x)$ntip.number
     intNodes <- which(x>length(iT$ID))
                       
-    growth <- unlist(sapply(x[gNodes], function(i){
-      nTip <- which(iT$growth$node.assoc%in%i)
-      iT$growth$ntip.number[nTip]
-    }))
-
     x <- x[-intNodes]
-    x <- c(x,growth)
+    x <- c(x,gNodes)
     
     return(x)
   })
-
-  iT$clu <- clu
+  
+  #Add singletons and summarise clusters
+  sing <- as.list(1:(length(iT$tip.label)))
+  cTips <- unlist(clu)
+  filt <- sapply(sing, function(tip){tip%in%cTips})
+  sing[filt] <- NULL
+  
+  iT$clu <- c(clu,sing)
   
   return(iT)
 }
@@ -252,12 +239,10 @@ tempTree <- function(sFile="~/Data/Seattle/SeattleB_PRO.fasta", oSFile, oTFile) 
   RaxMLCall(oSFile, oTFile)
 }
 
+
 likData <- function(iT){
   
-  sapply(seq_along(iT$dist[,1]), function(i) {
-    row <- iT$dist[i,]
-    which(row==min(row))[[1]]
-  })
+  
   
 }
 
@@ -276,19 +261,7 @@ iFile <-"~/subT_An_Files/TestML/partial/RAxML_result.Tree"
 
 oT <- impTree(iFile) 
 oT <- growthSim(oTFile, sFile)
-oT <- setDist(oT, terminal=F)
-
-
-##Time-Scaling Tree
-if(FALSE) {
-  df <- data.frame("Root to Tip Dist"=as.numeric(oT$dist[401,1:400]), "Time"=as.numeric(oT$Time))
-  fit <- lm(df$Root.to.Tip.Dist~df$Time, df)
-  r2 <- summary(fit)$r.squared
-  plot(df$Time, df$Root.to.Tip.Dist, xlab = "Col Date", ylab = "Root to Tip Distance", xaxp= c(2006, 2009, 3))
-  abline(fit$coefficients[1],fit$coefficients[2],col="red")
-  legend("topright", legend = paste0("R-Squared= ", r2))
-}
-
+oT <- STClu(oT)
 
 #Make temporary trees
 makeTemp <- F
@@ -300,11 +273,11 @@ if (makeTemp){
 }
 
 #Plot Test
-plotT <- F
+plotT <- T
 if(plotT){
   
   #Clustering Test
-  dists <- oT$nSum$Dist[-1]
+  dists <- oT$nSum$mDist
   cutoffs <- seq(min(dists),max(dists),(max(dists)-min(dists))/50)
   
   res <- lapply(cutoffs, function(x){
@@ -332,7 +305,7 @@ if(plotT){
   })
   
   gcover <- sapply(res, function(c) {
-    sum(sapply(c, function(x){length(which(x>length(oT$ID)))}))/nrow(oT$growth)
+    sum(sapply(c, function(x){length(which(x>length(oT$ID)))}))/nrow(oT$gSum)
   })
   
   par(mfrow=c(2,2))
