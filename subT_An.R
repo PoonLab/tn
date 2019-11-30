@@ -1,5 +1,6 @@
 require("ape")
 require("phangorn")
+library("dplyr",verbose = FALSE)
 
 #Obtain times from a properly formatted .fasta file
 getT <- function(iFile) {
@@ -100,10 +101,17 @@ growthSim <- function(oTFile, sFile) {
     }
   })
   
+  #Take in the distance calculated by 
+  dist <- sapply(trees, function(t){
+    nTip <- which(t$tip.label%in%nIds)
+    dist <- t$edge.length[which(t$edge[,2]==nTip)]
+    return(dist)
+  })
+  
   #Labelling new nodes consistantly and attatch this as growth info
   ntip.label <- sapply(trees, function(t){t$tip.label[which(t$tip.label%in%nIds)]})
   ntip.number <- length(oT$tip.label)+seq(1,length(nIds),1)
-  growth <-  data.frame(ntip.label=nIds, ntip.number=as.numeric(ntip.number), node.assoc=as.numeric(node.assoc), stringsAsFactors = F)
+  growth <-  data.frame(ntip.label=nIds, ntip.number=as.numeric(ntip.number), node.assoc=as.numeric(node.assoc), distance=dist, stringsAsFactors = F)
   oT$gSum <- growth
   
   return(oT)
@@ -134,10 +142,7 @@ impTree <-function(iFile, terminal=F){
   t$dist <- t$dist[tips, tips]
   t$tDiff <- sapply(1:length(t$ID), function(i){
     t1 <- t$Time[i]
-    sapply(1:length(t$ID), function(j){
-      t2 <- t$Time[j]
-      abs(t2-t1)
-    })
+    sapply(1:length(t$ID), function(j){ t1 - t$Time[j]})
   })
   
   #In this case, we set terminal branch lengths to 0. Meaning that they are not a factor for growth or clustering
@@ -169,7 +174,15 @@ impTree <-function(iFile, terminal=F){
 
 #A simple function, removing edges that sit above a maximum ancestral edge length (@param:maxD).
 dFilt <- function(iT, maxD) {
+  
+  #Remove nodes with a greater mean distance than maxD from consideration.
   iT$nSum <- subset(iT$nSum, mDist<=maxD)
+  
+  #New cases above the max distance from their associated node are considered not to associate with that node
+  if(length(which(iT$gSum$distance>=maxD))>0){
+    iT$gSum[which(iT$gSum$distance>=maxD),]$node.assoc <- 0 
+  }
+
   return(iT)
 }
 
@@ -185,7 +198,7 @@ STClu <- function(iT) {
   #Check the clustering conditions for all possible subtrees and ensure no cherry clusters are added
   filt <- sapply(seq_along(decs), function(i){
     
-    #A cluster cannot be the subset of a larget cluster
+    #A cluster cannot be the subset of a larger cluster
     if(length(decs)>1){
       subsetCon <- sum(sapply(decs[-i], function(L) {all(decs[[i]] %in% L)}))>0
     }
@@ -205,7 +218,7 @@ STClu <- function(iT) {
   #Remove internal nodes for summary. Only cases are of interest
   clu <- lapply(decs, function(x){
     
-    #Add new cases if they're associated with the internal
+    #Add new cases if they're associated with the internal and if 
     gNodes <- subset(iT$gSum, node.assoc%in%x)$ntip.number
     intNodes <- which(x>length(iT$ID))
                       
@@ -216,7 +229,7 @@ STClu <- function(iT) {
   })
   
   #Add singletons and summarise clusters
-  sing <- as.list(1:(length(iT$tip.label)))
+  sing <- as.list(1:(length(iT$tip.label)+nrow(iT$gSum)))
   cTips <- unlist(clu)
   filt <- sapply(sing, function(tip){tip%in%cTips})
   sing[filt] <- NULL
@@ -239,10 +252,111 @@ tempTree <- function(sFile="~/Data/Seattle/SeattleB_PRO.fasta", oSFile, oTFile) 
   RaxMLCall(oSFile, oTFile)
 }
 
+#Obtains some likelihood data in order to weight cases based on their recency 
+likData <- function(iT, maxD){
+  
+  #Obtain some summarized information from the sub-Graph
+  vTab <- table(iT$Time)
+  times <- as.numeric(names(vTab))
+  eTab <- sapply(times, function(t){
+    tTips <- which(iT$Time==t)
+    tDist <- unlist(unname(lapply(tTips, function(x){iT$dist[x, -x]})))
+    length(which(tDist<=maxD))
+  })
+  names(eTab) <- names(vTab)
+  
+  #Obtain the minimum retrospective distance for each member sequence 
+  ##TO-DO: Optimize, this should only happen once. It may belong in the tree-creation call ##
+  minE <- bind_rows(sapply(1:length(iT$ID), function(i){
+    retro <- which(iT$tDiff[i,]<0)
+    row <- iT$dist[i,retro]
+    
+    #For the earliest year
+    if(length(row)==0){
+      NULL
+    }
+    else {
+      close <- which(row==min(row))[[1]]
+      data.frame(Tip=i, Distance=row[close], tDiff=abs(iT$tDiff[i,retro[close]]))  
+    }
+  }))
+  
+  #Take the total edge frequency data from the graph and format this information into successes and attempts
+  #An edge to the newest year falling below the max distance is considered a success
+  ageD <- bind_rows(lapply(times, function(t) {
+    temp <- subset(minE, Tip%in%which(iT$Time==t))
+    dfs <- split(temp, temp$tDiff)
+    
+    Positive <- sapply(dfs, function(df){length(which(df$Distance<=maxD))})
+    vTotal <- sapply(dfs, function(df){vTab[as.character(t)]})
+    tDiff <- as.numeric(names(Positive))
+    oeDens <- sapply(tDiff, function(tD){
+      oTime <- t-tD
+      return(eTab[as.character(oTime)]/vTab[as.character(oTime)])
+    })
+    
+    
+    res <- data.frame(Positive=as.numeric(Positive), vTotal=as.numeric(vTotal), oeDens=oeDens, tDiff)
+    return(res)
+  }))
+  
 
-likData <- function(iT){
+  return(ageD)
+
+}
+
+#Obtain GAIC at several different cutoffs
+GAICRun <- function(iT) {
+  
+  #Clustering Test
+  dists <- iT$nSum$mDist
+  cutoffs <- seq(min(dists),max(dists),(max(dists)-min(dists))/50)
+  
+  res <- sapply(cutoffs, function(x){
+    print(x)
+    subT <- dFilt(iT, x)
+    subT <- STClu(subT)
+    ageD <- likData(subT, x)
+    
+    #Obtain a model of case connection frequency to new cases as predicted by individual case age
+    #Use this to weight cases by age
+    mod <- glm(cbind(Positive, vTotal) ~ tDiff+oeDens, data=ageD, family='binomial')
+    subT$Weight <- predict(mod, type='response',
+                             data.frame(tDiff=max(subT$Time)+1-subT$Time, 
+                                        oeDens=as.numeric(eTab[as.character(subT$Time)]/vTab[as.character(subT$Time)])))
+    
+    #Filter clusters such that new singletons are not considered.
+    clu <- subT$clu
+    filt <- sapply(clu, function(c){length(which(c<=length(subT$ID)))==0})
+    clu[filt] <- NULL  
+    
+    #Create clusters for this subgraph and measure growth
+    cGrowth <- sapply(clu, function(c) {
+      length(which(c>length(subT$ID)))
+    })
+    cPred <- sapply(clu, function(c) {
+      sum(subT$Weight[c[which(c<=length(subT$ID))]])
+    })
+    
+    cNPred <- sapply(clu, function(c) {
+      length(c[which(c<=length(subT$ID))])
+    })
+    
+    #Create two data frames from two predictive models, one based on absolute size (NULL) and our date-informed model
+    df1 <- data.frame(Growth = cGrowth, Pred = cPred)
+    df2 <- data.frame(Growth = cGrowth, Pred = cNPred * (sum(cGrowth)/sum(cNPred)))
+    fit1 <- glm(Growth ~ Pred, data = df1, family = "poisson")
+    fit2 <- glm(Growth ~ Pred, data = df2, family = "poisson")
+    
+    #Save, gaic, model and age data as part of the output
+    gaic <- fit1$aic-fit2$aic
+    print(gaic)
+    return(gaic)
+  })
   
   
+  plot(res)
+  lines(res)
   
 }
 
@@ -283,29 +397,35 @@ if(plotT){
   res <- lapply(cutoffs, function(x){
     subT <- dFilt(oT, x)
     subT <- STClu(subT)
-    return(subT$clu)
+    return(subT)
   })
   
-  cnum <- sapply(res, function(c) {
-    clustered <- sapply(c, function(x){length(x[x<=length(oT$ID)])})
-    sing <- rep(1,length(oT$ID)-sum(clustered))
-    cnum <- (length(clustered)+length(sing)) 
-    return(cnum)
-  })
+  cnum <- sapply(res, function(c) {length(c)})
   
   csize <- sapply(res, function(c) {
-    clustered <- sapply(c, function(x){length(x[x<=length(oT$ID)])})
-    sing <- rep(1,length(oT$ID)-sum(clustered))
-    csize <- mean(c(sing,clustered))
-    return(csize)
+    mean(sapply(c, function(x) {length(x)})) 
   })
   
   gmean <- sapply(res, function(c) {
-    mean(sapply(c, function(x){length(which(x>length(oT$ID)))}))
+    mean(sapply(c, function(x){
+      if(length(x)>1) {
+        length(which(x>length(oT$ID)))
+      }
+      else {
+        0
+      }
+    }))
   })
   
   gcover <- sapply(res, function(c) {
-    sum(sapply(c, function(x){length(which(x>length(oT$ID)))}))/nrow(oT$gSum)
+    sum(sapply(c, function(x){
+      if(length(x)>1) {
+        length(which(x>length(oT$ID)))
+      }
+      else {
+        0
+      }
+    }))/nrow(oT$gSum)
   })
   
   par(mfrow=c(2,2))
@@ -318,3 +438,4 @@ if(plotT){
   plot(cutoffs, gcover, xlab="Threshold", ylab="Total Growth Coverage")
   lines(cutoffs, gcover)
 }
+
