@@ -36,7 +36,7 @@ modAIC <- sapply(res, function(x) {x$ageFit$aic})
 nullAIC <- sapply(res, function(x) {x$nullFit$aic})
 
 #Create visual output pdf
-pdf(file = paste0(oFile, "_VS.pdf"))
+pdf(file = paste0(oFile, "_VS.pdf"), width = 10, height = 12)
 par(mfrow=c(2, 1), mar = c(1,4,1,2), oma=c(5,4,1,2), cex.lab=1.2)
 
 #Plot both AIC measurements for comparison
@@ -52,11 +52,11 @@ abline(v=axTicks(side=1)+diff(axTicks(side=1))[1]/2, col='white', lend=2)
 abline(h=0)
 
 #Locate minimum
-abline(v=cutoffs[which(gaics==min(gaics))[[1]]], lty=3)
+abline(v=cutoffs[which(gaics==min(gaics))[[1]]], lty=3, lwd=2)
 
 polygon(c(0, cutoffs, max(cutoffs)), c(0, modAIC, 0) , col=rgb(1,0,0,0.4))
 polygon(c(0, cutoffs, max(cutoffs)), c(0, nullAIC, 0) , col=rgb(0,1,1,0.4))
-legend("topright",
+legend("topright", bg="white",
        legend=c("Proposed Model", "Null Model", "Overlap"), 
        fill=c(rgb(1,0,0,0.4), rgb(0,1,1,0.4), rgb(0,0.65,0.65,0.7)))
 
@@ -79,9 +79,9 @@ points(cutoffs, gaics)
 abline(h=0)
 
 #Locate minimum and annotate Graph
-abline(v=cutoffs[which(gaics==min(gaics))[[1]]], lty=3)
+abline(v=cutoffs[which(gaics==min(gaics))[[1]]], lty=3,lwd=2)
 text(cutoffs[which(gaics==min(gaics))[[1]]+2.0], min(gaics), labels= round(min(gaics)))
-text(cutoffs[which(gaics==min(gaics))[[1]]], max(gaics)-0.10*(max(gaics)), labels=cutoffs[which(gaics==min(gaics))[[1]]])
+text(cutoffs[which(gaics==min(gaics))[[1]]+2.0], max(gaics)-0.10*(max(gaics)), labels=cutoffs[which(gaics==min(gaics))[[1]]])
 
 #Title
 par(xpd=NA)
