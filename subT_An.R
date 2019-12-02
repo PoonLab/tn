@@ -38,23 +38,6 @@ tFilt <- function(iFile, keepT, oFile) {
   write.dna(seqs[keepInd,], colsep="", oFile, "fasta")
 }
 
-#A function to create a temporary tree through FastTree
-##TO-DO: Currently Unnused (possibly shouldn't ever be used?)
-FastTreeCall <- function(iFile, opt="-nt -gtr -log log.txt ", oFile) {
-  
-  #Runtext is input
-  runText <- paste0("bash -c 'FastTree ", opt, iFile, " > ", oFile,"'")
-  system(runText)
-}
-
-#A function to create a temporary tree through RaxML
-RaxMLCall <- function(iFile, opt="-m GTRCAT -n Tree -p 123 -T 4 -s ", oFile) {
-  
-  #Runtext is input
-  runText <- paste0("bash -c 'raxmlHPC ", opt, iFile, " -w ", oFile,"'")
-  system(runText)
-}
-
 #Simulate the growth of trees by placing recent sequences as tips on a fixed ML tree
 growthSim <- function(oTFile, sFile) {
   
@@ -300,8 +283,15 @@ likData <- function(iT, maxD){
     return(res)
   }))
   
+  #Obtain a model of case connection frequency to new cases as predicted by individual case age
+  #Use this to weight cases by age
+  mod <- glm(cbind(Positive, vTotal) ~ tDiff+oeDens, data=ageD, family='binomial')
+  weight <- predict(mod, type='response',
+                         data.frame(tDiff=max(subT$Time)+1-subT$Time, 
+                                    oeDens=as.numeric(eTab[as.character(subT$Time)]/vTab[as.character(subT$Time)])))
+  
 
-  return(ageD)
+  return(weight)
 
 }
 
@@ -312,18 +302,12 @@ GAICRun <- function(iT) {
   dists <- iT$nSum$mDist
   cutoffs <- seq(min(dists),max(dists),(max(dists)-min(dists))/50)
   
-  res <- sapply(cutoffs, function(x){
-    print(x)
+  res1 <- sapply(cutoffs, function(x){
+    #print(x)
     subT <- dFilt(iT, x)
     subT <- STClu(subT)
-    ageD <- likData(subT, x)
+    subT$Weigth <- likData(subT, x)
     
-    #Obtain a model of case connection frequency to new cases as predicted by individual case age
-    #Use this to weight cases by age
-    mod <- glm(cbind(Positive, vTotal) ~ tDiff+oeDens, data=ageD, family='binomial')
-    subT$Weight <- predict(mod, type='response',
-                             data.frame(tDiff=max(subT$Time)+1-subT$Time, 
-                                        oeDens=as.numeric(eTab[as.character(subT$Time)]/vTab[as.character(subT$Time)])))
     
     #Filter clusters such that new singletons are not considered.
     clu <- subT$clu
@@ -350,7 +334,7 @@ GAICRun <- function(iT) {
     
     #Save, gaic, model and age data as part of the output
     gaic <- fit1$aic-fit2$aic
-    print(gaic)
+    #print(gaic)
     return(gaic)
   })
   
@@ -367,24 +351,24 @@ old_path <- Sys.getenv("PATH")
 Sys.setenv(PATH=paste0(old_path,":~/Desktop/pplacer:~/Desktop/RAxML"))
 
 #For test data
-sFile <- "~/subT_An_Files/testS.fasta"
-oTFile <- "~/subT_An_Files/TestML/partial"
-oSFile <- "~/subT_An_Files/testSF.fasta"
+sFile <- "~/Data/Seattle/SeattleB_PRO.fasta"
+oTFile <- "~/Data/Seattle/SeattleB_RAxML"
+oSFile <- "~/Data/Seattle/SeattleB_PRO_Filt.fasta"
 
-iFile <-"~/subT_An_Files/TestML/partial/RAxML_result.Tree" 
+shorten <- F
+if(shorten){
+  #For Real data
+  sFile <- "~/Data/Seattle/SeattleB_PRO.fasta"
+  keepT <- head(as.numeric(names(table(getT(sFile)))),-1)
+  oSName <- "~/Data/Seattle/SeattleB_PRO_Filt.fasta"
+  oSFile <- tFilt(sFile, keepT, oSName)
+}
+
+iFile <-"~/Data/Seattle/SeattleB_RAxML/RAxML_result.Tree" 
 
 oT <- impTree(iFile) 
 oT <- growthSim(oTFile, sFile)
 oT <- STClu(oT)
-
-#Make temporary trees
-makeTemp <- F
-if (makeTemp){
-  sFile = "test.fasta"
-  oSFile <- tempfile("oS", fileext=".fasta")
-  oTFile <- tempdir()
-  tempTree(sFile, oSFile, oTFile)
-}
 
 #Plot Test
 plotT <- T

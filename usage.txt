@@ -1,6 +1,6 @@
 FastTree -nt -gtr -log ~/Data/Seattle/SeattleB_PRO.fas > ~/tree.nwk
 
-raxmlHPC -m GTRCAT -n Tree -p 123 -T 4 -s ~/Data/Seattle/SeattleB_PRO.fasta ~Data/Seattle/Tree
+raxmlHPC -m GTRCAT -n Tree -p 123 -T 4 -s ~/Data/Seattle/SeattleB_PRO.fasta ~/Data/Seattle/Tree
 
 taxit create -l pol_SubB_st -P test.refpkg --aln-fasta testSF.fasta --tree-stats TestML/partial/RAxML_info.Tree --tree-file TestML/partial/RAxML_result.Tree
 
