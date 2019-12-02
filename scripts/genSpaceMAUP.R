@@ -36,7 +36,7 @@ modAIC <- sapply(res, function(x) {x$ageFit$aic})
 nullAIC <- sapply(res, function(x) {x$nullFit$aic})
 
 #Create visual output pdf
-pdf(file = paste0(oFile, "_VS.pdf"), width = 10, height = 12)
+#pdf(file = paste0(oFile, "_VS.pdf"), width = 10, height = 12)
 par(mfrow=c(2, 1), mar = c(1,4,1,2), oma=c(5,4,1,2), cex.lab=1.2)
 
 #Plot both AIC measurements for comparison

@@ -1,4 +1,6 @@
-#Usage "python3 prePro.py3 [input file]"
+#Working towards a simple method of fasta header pre-processing (purely for
+
+#USAGE: "python3 prePro.py3 [input file]"
 
 import sys, os
 inFile = open(sys.argv[1], "r")

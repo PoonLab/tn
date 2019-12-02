@@ -103,7 +103,7 @@ growthSim <- function(oTFile, sFile) {
 #Import Tree Data and annotate with sequence ID and Time
 #Sequences must be dated with the date separated from the id by '_'. 
 ##TO-DO: Currently only accepts year dates. Work to allow more specific dates. 
-impTree <-function(iFile, terminal=F){
+impTree <-function(iFile, terminal=T){
   #@param iFile: The name/path of the input file (expecting a newick file)
   #@preturn: An ape tree object with associated lists of sequence ID and Time
   
@@ -190,7 +190,8 @@ STClu <- function(iT) {
     }
 
     #A cherry alone cannot be a cluster
-    cherryCon <- length(decs[[i]])==2
+    #cherryCon <- length(decs[[i]])==2
+    cherryCon <- F
     
     return((subsetCon||cherryCon))
   })
@@ -302,11 +303,11 @@ GAICRun <- function(iT) {
   dists <- iT$nSum$mDist
   cutoffs <- seq(min(dists),max(dists),(max(dists)-min(dists))/50)
   
-  res1 <- sapply(cutoffs, function(x){
-    #print(x)
+  res <- sapply(cutoffs, function(x){
+    print(x)
     subT <- dFilt(iT, x)
     subT <- STClu(subT)
-    subT$Weigth <- likData(subT, x)
+    subT$Weight <- likData(subT, x)
     
     
     #Filter clusters such that new singletons are not considered.
@@ -334,7 +335,7 @@ GAICRun <- function(iT) {
     
     #Save, gaic, model and age data as part of the output
     gaic <- fit1$aic-fit2$aic
-    #print(gaic)
+    print(gaic)
     return(gaic)
   })
   
@@ -369,9 +370,10 @@ iFile <-"~/Data/Seattle/SeattleB_RAxML/RAxML_result.Tree"
 oT <- impTree(iFile) 
 oT <- growthSim(oTFile, sFile)
 oT <- STClu(oT)
+GAICRun(oT)
 
 #Plot Test
-plotT <- T
+plotT <- F
 if(plotT){
   
   #Clustering Test

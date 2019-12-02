@@ -1,10 +1,10 @@
 
-GDst <- readRDS("~/Data/Paper1/tn93StsubB_GD.rds")
-GDna <- readRDS("~/Data/Paper1/tn93NAsubB_GD.rds")
-GDtn <- readRDS("~/Data/Paper1/tn93TnsubB_GD.rds")
+GDst <- readRDS("~/Data/Paper1/Data/tn93StsubB_GD.rds")
+GDna <- readRDS("~/Data/Paper1/Data/tn93NAsubB_GD.rds")
+GDtn <- readRDS("~/Data/Paper1/Data/tn93TnsubB_GD.rds")
 
-GDtn_met <- readRDS("~/Data/Paper1/tn93TnsubB_met_GD.rds")
-GDtn_NM <- readRDS("~/Data/Paper1/tn93TnsubB_nomet_GD.rds")
+GDtn_met <- readRDS("~/Data/Paper1/Data/tn93TnsubB_met_GD.rds")
+GDtn_NM <- readRDS("~/Data/Paper1/Data/tn93TnsubB_nomet_GD.rds")
 
 
 st <- sapply(GDst, function(x) {
@@ -55,11 +55,12 @@ points(st$cutoff, st$n.clust, pch=23, col='white', bg='dodgerblue', cex=1.2)
 points(na$cutoff, na$n.clust, pch=22, col='white', bg='orange2', cex=1.2)
 points(tn$cutoff, tn$n.clust, pch=24, col='white', bg='orangered', cex=1.2)
 
+#legend('topright',c('','name'),lty=c(1,NA),pch=c(NA,'X'),bg='white',ncol=2)
 
-legend("topleft", legend=c('Seattle', 'N.Alberta', 'Tennessee'), 
-       pch=c(23, 22, 24), col=c('dodgerblue', 'orange2', 'orangered'), 
+legend("topleft",  legend=c('Seattle', 'N.Alberta', 'Tennessee'), 
+       pch=c(23,22,24), col=c('dodgerblue', 'orange2', 'orangered'), 
        pt.bg=c('dodgerblue', 'orange2','orangered'), 
-       bty='n', lty=1, cex=1.5)
+       bty='n', lty=1, cex=1.5, merge = F)
 
 plot(met$cutoff, met$total.R, type='n', ylim=c(0, max(st$total.R)), cex.axis=1.5,
      xlab='TN93 distance cutoff', ylab='Cluster growth (R) | Number of active clusters', cex.lab=1.8)
@@ -81,6 +82,6 @@ points(NM$cutoff, NM$n.clust, pch=24, col='white', bg='indianred4', cex=1.2)
 legend("topleft", legend=c('Tennessee (Collection Date)','Tennessee (Diagnostic Date)' ), 
        pch=c(24, 24), col=c('indianred1', 'indianred4'), 
        pt.bg=c('indianred1', 'indianred4'), 
-       bty='n', lty=1, cex = 1.5)
+       bty='n', lty=1, cex = 1.5, merge = F)
 
 dev.off()
