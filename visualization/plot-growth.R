@@ -57,10 +57,17 @@ points(tn$cutoff, tn$n.clust, pch=24, col='white', bg='orangered', cex=1.2)
 
 #legend('topright',c('','name'),lty=c(1,NA),pch=c(NA,'X'),bg='white',ncol=2)
 
-legend("topleft",  legend=c('Seattle', 'N.Alberta', 'Tennessee'), 
+
+
+legend("topleft",  legend=c('Seattle', 'N.Alberta', 'Tennessee'),
        pch=c(23,22,24), col=c('dodgerblue', 'orange2', 'orangered'), 
        pt.bg=c('dodgerblue', 'orange2','orangered'), 
-       bty='n', lty=1, cex=1.5, merge = F)
+       bty='n', cex=1.5, xjust = 1, inset = c(0.05,0))
+
+legend("topleft",  legend=c('','',''), lty=c(1,1,1),
+       col=c('dodgerblue', 'orange2', 'orangered'), lwd=2.4,
+       pt.bg=c('dodgerblue', 'orange2','orangered'), 
+       bty='n', cex=1.5, xjust = 0, seg.len=0.5)
 
 plot(met$cutoff, met$total.R, type='n', ylim=c(0, max(st$total.R)), cex.axis=1.5,
      xlab='TN93 distance cutoff', ylab='Cluster growth (R) | Number of active clusters', cex.lab=1.8)
@@ -82,6 +89,11 @@ points(NM$cutoff, NM$n.clust, pch=24, col='white', bg='indianred4', cex=1.2)
 legend("topleft", legend=c('Tennessee (Collection Date)','Tennessee (Diagnostic Date)' ), 
        pch=c(24, 24), col=c('indianred1', 'indianred4'), 
        pt.bg=c('indianred1', 'indianred4'), 
-       bty='n', lty=1, cex = 1.5, merge = F)
+       bty='n', cex = 1.5, xjust = 1, inset = c(0.05,0))
+
+legend("topleft", legend=c('',''), 
+       col=c('indianred1', 'indianred4'), lwd=2.4,
+       pt.bg=c('indianred1', 'indianred4'), 
+       bty='n', lty=1, cex = 1.5, xjust = 0, seg.len=0.5)
 
 dev.off()

@@ -38,6 +38,8 @@ tFilt <- function(iFile, keepT, oFile) {
   write.dna(seqs[keepInd,], colsep="", oFile, "fasta")
 }
 
+###^^^^^CUT?^^^^^###
+
 #Simulate the growth of trees by placing recent sequences as tips on a fixed ML tree
 growthSim <- function(oTFile, sFile) {
   
@@ -103,54 +105,44 @@ growthSim <- function(oTFile, sFile) {
 #Import Tree Data and annotate with sequence ID and Time
 #Sequences must be dated with the date separated from the id by '_'. 
 ##TO-DO: Currently only accepts year dates. Work to allow more specific dates. 
-impTree <-function(iFile, terminal=T){
+impTree <-function(tFile, sFile){
   #@param iFile: The name/path of the input file (expecting a newick file)
   #@preturn: An ape tree object with associated lists of sequence ID and Time
   
-  #Creating an ape tree object from the newick file
-  t <- read.tree(iFile)
+  tFile <- "~/Data/Seattle/SeattleB_RAxML/RAxML_result.Tree" 
+  sFile <- "~/Data/Seattle/SeattleB_PRO.fasta"
+  
+  #Creating an ape phylogeny object from the newick file, store in a greater list "t" as "p" for phylogeny
+  t <- list()
+  t$p <- read.tree(tFile)
   
   #Obtain lists of sequence ID and Time
-  temp <- sapply(t$tip.label, function(x) strsplit(x, '_')[[1]])
+  temp <- sapply(t$p$tip.label, function(x) strsplit(x, '_')[[1]])
   ids <- unname(temp[1,])
   times <- as.numeric(temp[2,])
-  
-  #Assign those lists to the tree
-  t$Time <- times
-  t$ID <- ids
-  tips <- 1:length(t$ID)
+  t$v <- data.frame(ID=ids, Time=times, stringsAsFactors = F)
+  tips <- 1:nrow(t$v)
   
   #Summarize internal branch length information
-  t$dist <- dist.nodes(t)
-  t$dist <- t$dist[tips, tips]
-  t$tDiff <- sapply(1:length(t$ID), function(i){
-    t1 <- t$Time[i]
-    sapply(1:length(t$ID), function(j){ t1 - t$Time[j]})
+  t$e$dist <- dist.nodes(t$p)[tips, tips]
+  t$e$tDiff <- sapply(tips, function(i){
+    t1 <- t$v$Time[i]
+    sapply(tips, function(j){ t1 - t$v$Time[j] })
   })
   
-  #In this case, we set terminal branch lengths to 0. Meaning that they are not a factor for growth or clustering
-  if(!terminal){
-    parents <- unique(t$edge[which(t$edge[,2]%in%tips),1])
-  }
-  
-  #Obtain a list of node numbers (matches indexes in the tree)
-  nodes <- (length(t$ID)+1):(length(t$ID)+t$Nnode) 
-  tipD <- t$dist[1:length(t$ID),1:length(t$ID)] #Subset of just terminal tip to tip distances
-  
-  #Obtain the descendants of each node
-  decs <- lapply(nodes, function(x){Descendants(t,x,"all")})
+  #Summarize information by node, representing the potential to cluster by subtree
+  #Obtain the mean branch length under each node
+  ##TO-DO: Add bootstrap here. Requires bootstrap to be added in tree creation.
+  nodes <- (max(tips)+2):(max(tips)*2-2) 
+  decs <- lapply(nodes, function(x){Descendants(t$p,x,"all")})
   meanDist <- sapply(decs, function(x) {
-    tips <- x[which(x<=length(t$ID))] 
-    mean <- mean(sapply(tips, function(tip){mean(tipD[tip,tips])}))
+    x <- x[which(x%in%tips)] 
+    mean <- mean(sapply(x, function(tip){mean(tipD[tip,tips])}))
     return(mean)
   })
   
   #Set up a node-summary data frame
-  t$nSum <- data.frame(nID=nodes, mDist=meanDist)
-  
-  ##TO-DO: Add bootstrap here. Requires bootstrap to be added in tree creation.
-  #bootstraps <- as.numeric(t$node.label)
-  #t$nSum$Boot <- bootstraps
+  t$n <- data.frame(ID=nodes, mDist=meanDist)
   
   return(t)
 }
@@ -288,8 +280,8 @@ likData <- function(iT, maxD){
   #Use this to weight cases by age
   mod <- glm(cbind(Positive, vTotal) ~ tDiff+oeDens, data=ageD, family='binomial')
   weight <- predict(mod, type='response',
-                         data.frame(tDiff=max(subT$Time)+1-subT$Time, 
-                                    oeDens=as.numeric(eTab[as.character(subT$Time)]/vTab[as.character(subT$Time)])))
+                         data.frame(tDiff=max(iT$Time)+1-iT$Time, 
+                                    oeDens=as.numeric(eTab[as.character(iT$Time)]/vTab[as.character(iT$Time)])))
   
 
   return(weight)
@@ -301,7 +293,7 @@ GAICRun <- function(iT) {
   
   #Clustering Test
   dists <- iT$nSum$mDist
-  cutoffs <- seq(min(dists),max(dists),(max(dists)-min(dists))/50)
+  cutoffs <- seq(0,0.15,0.15/50)
   
   res <- sapply(cutoffs, function(x){
     print(x)
@@ -339,38 +331,16 @@ GAICRun <- function(iT) {
     return(gaic)
   })
   
-  
-  plot(res)
-  lines(res)
+  return(res)
   
 }
 
 ###############Testing
 
-#Set up paths to dependencies
-old_path <- Sys.getenv("PATH")
-Sys.setenv(PATH=paste0(old_path,":~/Desktop/pplacer:~/Desktop/RAxML"))
-
-#For test data
-sFile <- "~/Data/Seattle/SeattleB_PRO.fasta"
-oTFile <- "~/Data/Seattle/SeattleB_RAxML"
-oSFile <- "~/Data/Seattle/SeattleB_PRO_Filt.fasta"
-
-shorten <- F
-if(shorten){
-  #For Real data
-  sFile <- "~/Data/Seattle/SeattleB_PRO.fasta"
-  keepT <- head(as.numeric(names(table(getT(sFile)))),-1)
-  oSName <- "~/Data/Seattle/SeattleB_PRO_Filt.fasta"
-  oSFile <- tFilt(sFile, keepT, oSName)
-}
-
-iFile <-"~/Data/Seattle/SeattleB_RAxML/RAxML_result.Tree" 
-
 oT <- impTree(iFile) 
 oT <- growthSim(oTFile, sFile)
 oT <- STClu(oT)
-GAICRun(oT)
+res <- GAICRun(oT)
 
 #Plot Test
 plotT <- F
@@ -378,7 +348,7 @@ if(plotT){
   
   #Clustering Test
   dists <- oT$nSum$mDist
-  cutoffs <- seq(min(dists),max(dists),(max(dists)-min(dists))/50)
+  cutoffs <-seq(min(dists),0.20,(0.20-min(dists))/50)
   
   res <- lapply(cutoffs, function(x){
     subT <- dFilt(oT, x)
