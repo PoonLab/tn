@@ -38,32 +38,66 @@ tFilt <- function(iFile, keepT, oFile) {
   write.dna(seqs[keepInd,], colsep="", oFile, "fasta")
 }
 
+#Build a temporary tree from old sequences. Currently uses RaxML for compatibility with pplacer. 
+tempTree <- function(sFile="~/Data/Seattle/SeattleB_PRO.fasta", oSFile, oTFile) {
+  
+  #Obtain Times from sequence file in order to specify the old partition
+  times <- getT(sFile)
+  keepT <- head(as.numeric(names(table(times))), -1)
+  
+  tFilt(sFile, keepT, oSFile)
+  
+  #Create trees, outputted to the temporary tree directory
+  RaxMLCall(oSFile, oTFile)
+}
+
+#A simple function, removing edges that sit above a maximum ancestral edge length (@param:maxD).
+dFilt <- function(iT, maxD) {
+  
+  #Remove nodes with a greater mean distance than maxD from consideration.
+  iT$nSum <- subset(iT$nSum, mDist<=maxD)
+  
+  #New cases above the max distance from their associated node are considered not to associate with that node
+  if(length(which(iT$gSum$distance>=maxD))>0){
+    iT$gSum[which(iT$gSum$distance>=maxD),]$node.assoc <- 0 
+  }
+  
+  return(iT)
+}
+
+
+
 ###^^^^^CUT?^^^^^###
 
 #Simulate the growth of trees by placing recent sequences as tips on a fixed ML tree
-growthSim <- function(oTFile, sFile) {
+growthSim <- function(iT, tFile, sFile, iFile) {
+  
+  
+  tFile <- "~/Data/Seattle/SeattleB_RAxML/RAxML_result.Tree" 
+  iFile <- "~/Data/Seattle/SeattleB_RAxML/RAxML_info.Tree"
+  sFile <- "~/Data/Seattle/SeattleB_PRO.fasta"
+  
+  find.file("pplacer")
   
   #Create a temporary reference package location
   unlink(tempdir(), recursive = T)
   tempdir(check=TRUE)
   ref <- tempfile(fileext = ".refpkg")
-
+  
   #Create reference package using Taxtastic
-  runText <- paste0("taxit create -l pol_SubB -P ",  ref, 
-                    " --aln-fasta ", sFile,
-                    " --tree-stats ", oTFile, "/RAxML_info.Tree",
-                    " --tree-file ", oTFile, "/RAxML_result.Tree")
-  system(runText)
+  runText <- paste0("taxit create -l pol_SubB -P ",  ref,  " --aln-fasta ", 
+                    sFile, " --tree-stats ", iFile, " --tree-file ", tFile)
+  system2(runText)
   
   #Run pplacer on reference package, calling the inputted sequence alignment
   jplace <- tempfile(fileext=".jplace")
   runText <- paste0("bash -c 'pplacer -o ", jplace, " -c ", ref, " ", sFile, "'")
-  system(runText)
+  system2(runText)
   
   #Run guppy on pplacer alignment, creating a temporary file of 100 trees (each with 1 of the new cases bound to it)
   oFile <- tempfile(fileext=".tre")
   runText <- paste0("bash -c 'guppy sing --point-mass ", jplace, " -o ", oFile, "'")
-  system(runText)
+  system2(runText)
   trees <- read.tree(oFile)
   
   oT <- impTree(paste0(oTFile,"/RAxML_result.Tree"))
@@ -105,12 +139,9 @@ growthSim <- function(oTFile, sFile) {
 #Import Tree Data and annotate with sequence ID and Time
 #Sequences must be dated with the date separated from the id by '_'. 
 ##TO-DO: Currently only accepts year dates. Work to allow more specific dates. 
-impTree <-function(tFile, sFile){
+impTree <-function(tFile){
   #@param iFile: The name/path of the input file (expecting a newick file)
   #@preturn: An ape tree object with associated lists of sequence ID and Time
-  
-  tFile <- "~/Data/Seattle/SeattleB_RAxML/RAxML_result.Tree" 
-  sFile <- "~/Data/Seattle/SeattleB_PRO.fasta"
   
   #Creating an ape phylogeny object from the newick file, store in a greater list "t" as "p" for phylogeny
   t <- list()
@@ -124,6 +155,7 @@ impTree <-function(tFile, sFile){
   tips <- 1:nrow(t$v)
   
   #Summarize internal branch length information
+  t$e <- list()
   t$e$dist <- dist.nodes(t$p)[tips, tips]
   t$e$tDiff <- sapply(tips, function(i){
     t1 <- t$v$Time[i]
@@ -134,65 +166,41 @@ impTree <-function(tFile, sFile){
   #Obtain the mean branch length under each node
   ##TO-DO: Add bootstrap here. Requires bootstrap to be added in tree creation.
   nodes <- (max(tips)+2):(max(tips)*2-2) 
-  decs <- lapply(nodes, function(x){Descendants(t$p,x,"all")})
-  meanDist <- sapply(decs, function(x) {
+  des <- lapply(nodes, function(x){Descendants(t$p,x,"all")})
+  meanDist <- sapply(des, function(x) {
     x <- x[which(x%in%tips)] 
-    mean <- mean(sapply(x, function(tip){mean(tipD[tip,tips])}))
+    mean <- mean(sapply(x, function(tip){t$e$dist[tip,tips[-tip]]}))
     return(mean)
   })
   
   #Set up a node-summary data frame
-  t$n <- data.frame(ID=nodes, mDist=meanDist)
+  t$n <- list()
+  t$n$des <- des
+  t$n$agg <- data.frame(ID=nodes, mDist=meanDist)
+  names(t$n$des) <- t$n$agg$ID
   
   return(t)
 }
 
-#A simple function, removing edges that sit above a maximum ancestral edge length (@param:maxD).
-dFilt <- function(iT, maxD) {
-  
-  #Remove nodes with a greater mean distance than maxD from consideration.
-  iT$nSum <- subset(iT$nSum, mDist<=maxD)
-  
-  #New cases above the max distance from their associated node are considered not to associate with that node
-  if(length(which(iT$gSum$distance>=maxD))>0){
-    iT$gSum[which(iT$gSum$distance>=maxD),]$node.assoc <- 0 
-  }
-
-  return(iT)
-}
 
 #Cluster using a modified subtree-based method
-STClu <- function(iT) {
+STClu <- function(iT, maxD) {
 
-  #Obtain a list of node numbers (matches indexes in the tree)
-  nodes <- iT$nSum$nID
-
-  #Obtain the descendants of potential clustering node
-  decs <- lapply(nodes, function(x){Descendants(iT,x,"all")})
+  #Identify potential clusters by some criterion
+  cluNames <- as.character(subset(iT$n$agg, mDist<maxD)$ID)
   
   #Check the clustering conditions for all possible subtrees and ensure no cherry clusters are added
-  filt <- sapply(seq_along(decs), function(i){
-    
-    #A cluster cannot be the subset of a larger cluster
-    if(length(decs)>1){
-      subsetCon <- sum(sapply(decs[-i], function(L) {all(decs[[i]] %in% L)}))>0
-    }
-    else {
-      subsetCon <- F
-    }
-
-    #A cherry alone cannot be a cluster
-    #cherryCon <- length(decs[[i]])==2
-    cherryCon <- F
-    
-    return((subsetCon||cherryCon))
-  })
+  subset <- unname(sapply(cluNames, function(name){
+    sum(sapply(setdiff(cluNames, name), function(L) {
+      all(iT$n$des[[name]] %in% iT$n$des[[L]])
+    }))>0
+  }))
   
   #Remove non-clusters from the list
-  decs[filt] <- NULL
+  cluNames <- cluNames[!subset]
 
   #Remove internal nodes for summary. Only cases are of interest
-  clu <- lapply(decs, function(x){
+  clu <- lapply(iT$n$des[cluNames], function(x){
     
     #Add new cases if they're associated with the internal and if 
     gNodes <- subset(iT$gSum, node.assoc%in%x)$ntip.number
@@ -215,18 +223,6 @@ STClu <- function(iT) {
   return(iT)
 }
 
-#Build a temporary tree from old sequences. Currently uses RaxML for compatibility with pplacer. 
-tempTree <- function(sFile="~/Data/Seattle/SeattleB_PRO.fasta", oSFile, oTFile) {
-  
-  #Obtain Times from sequence file in order to specify the old partition
-  times <- getT(sFile)
-  keepT <- head(as.numeric(names(table(times))), -1)
-  
-  tFilt(sFile, keepT, oSFile)
-  
-  #Create trees, outputted to the temporary tree directory
-  RaxMLCall(oSFile, oTFile)
-}
 
 #Obtains some likelihood data in order to weight cases based on their recency 
 likData <- function(iT, maxD){
@@ -337,7 +333,13 @@ GAICRun <- function(iT) {
 
 ###############Testing
 
-oT <- impTree(iFile) 
+tFile <- "~/Data/Seattle/SeattleB_RAxML/RAxML_result.Tree" 
+iFile <- "~/Data/Seattle/SeattleB_RAxML/RAxML_info.Tree"
+sFile <- "~/Data/Seattle/SeattleB_PRO.fasta"
+
+oT <- impTree(tFile) 
+
+
 oT <- growthSim(oTFile, sFile)
 oT <- STClu(oT)
 res <- GAICRun(oT)
