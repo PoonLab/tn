@@ -70,70 +70,34 @@ dFilt <- function(iT, maxD) {
 ###^^^^^CUT?^^^^^###
 
 #Simulate the growth of trees by placing recent sequences as tips on a fixed ML tree
-growthSim <- function(iT, tFile, sFile, iFile) {
+growthSim <- function(iT, gFile) {
   
+  #Obtain a set of trees with tips added
+  ts <- read.tree(gFile)
   
-  tFile <- "~/Data/Seattle/SeattleB_RAxML/RAxML_result.Tree" 
-  iFile <- "~/Data/Seattle/SeattleB_RAxML/RAxML_info.Tree"
-  sFile <- "~/Data/Seattle/SeattleB_PRO.fasta"
-  
-  find.file("pplacer")
-  
-  #Create a temporary reference package location
-  unlink(tempdir(), recursive = T)
-  tempdir(check=TRUE)
-  ref <- tempfile(fileext = ".refpkg")
-  
-  #Create reference package using Taxtastic
-  runText <- paste0("taxit create -l pol_SubB -P ",  ref,  " --aln-fasta ", 
-                    sFile, " --tree-stats ", iFile, " --tree-file ", tFile)
-  system2(runText)
-  
-  #Run pplacer on reference package, calling the inputted sequence alignment
-  jplace <- tempfile(fileext=".jplace")
-  runText <- paste0("bash -c 'pplacer -o ", jplace, " -c ", ref, " ", sFile, "'")
-  system2(runText)
-  
-  #Run guppy on pplacer alignment, creating a temporary file of 100 trees (each with 1 of the new cases bound to it)
-  oFile <- tempfile(fileext=".tre")
-  runText <- paste0("bash -c 'guppy sing --point-mass ", jplace, " -o ", oFile, "'")
-  system2(runText)
-  trees <- read.tree(oFile)
-  
-  oT <- impTree(paste0(oTFile,"/RAxML_result.Tree"))
-  oIds <- oT$tip.label
-  nIds <- setdiff(getIds(sFile), oIds)
-  
-  #The nodes associated with new cases. If these nodes are in clusters, we presume that the new cases are in that cluster as well.
-  node.assoc <- sapply(trees, function(t){
-    nTip <- which(t$tip.label%in%nIds)
-    adj <- Siblings(t, nTip)
+  #The nodes in iT associated with new cases in t
+  iT$g<- bind_rows(lapply(ts, function(t) {
     
-    #If the sibling is a tip, returns the sibling's parent in complete tree
-    if(adj<=length(t$tip.label)) {
-      adj <- which(oT$tip.label%in%t$tip.label[adj])
-      parent <- oT$edge[which(oT$edge[,2]==adj),1]
-      return(parent) 
+    temp <- sapply(t$tip.label, function(x) strsplit(x, '_')[[1]])
+    times <- as.numeric(temp[2,])
+    ids <- temp[1,]
+    nTip <- which(times>max(iT$v$Time))
+    dist <- t$edge.length[which(t$edge[,2]==nTip)]
+    
+    nAdj <- Siblings(t, nTip)
+    
+    #If the sibling is a tip, returns the sibling's parent in iT
+    if(nAdj<=length(t$tip.label)) {
+      adj <- which(iT$v$ID%in%ids[nAdj])
+      parent <- iT$p$edge[which(iT$p$edge[,2]==adj),1]
+      return(data.frame(ID=ids[nTip], node=parent, dist=dist)) 
     }
     else{
-      return(adj)
+      return(data.frame(ID=ids[nTip], node=nAdj, dist=dist))
     }
-  })
-  
-  #Take in the distance calculated by 
-  dist <- sapply(trees, function(t){
-    nTip <- which(t$tip.label%in%nIds)
-    dist <- t$edge.length[which(t$edge[,2]==nTip)]
-    return(dist)
-  })
-  
-  #Labelling new nodes consistantly and attatch this as growth info
-  ntip.label <- sapply(trees, function(t){t$tip.label[which(t$tip.label%in%nIds)]})
-  ntip.number <- length(oT$tip.label)+seq(1,length(nIds),1)
-  growth <-  data.frame(ntip.label=nIds, ntip.number=as.numeric(ntip.number), node.assoc=as.numeric(node.assoc), distance=dist, stringsAsFactors = F)
-  oT$gSum <- growth
-  
-  return(oT)
+  }))
+
+  return(iT)
 }
 
 #Import Tree Data and annotate with sequence ID and Time
@@ -190,39 +154,35 @@ STClu <- function(iT, maxD) {
   cluNames <- as.character(subset(iT$n$agg, mDist<maxD)$ID)
   
   #Check the clustering conditions for all possible subtrees and ensure no cherry clusters are added
-  subset <- unname(sapply(cluNames, function(name){
+  subCon <- unname(sapply(cluNames, function(name){
     sum(sapply(setdiff(cluNames, name), function(L) {
       all(iT$n$des[[name]] %in% iT$n$des[[L]])
     }))>0
   }))
   
   #Remove non-clusters from the list
-  cluNames <- cluNames[!subset]
+  cluNames <- cluNames[!subCon]
 
   #Remove internal nodes for summary. Only cases are of interest
-  clu <- lapply(iT$n$des[cluNames], function(x){
+  clu <- lapply(cluNames, function(i){
     
-    #Add new cases if they're associated with the internal and if 
-    gNodes <- subset(iT$gSum, node.assoc%in%x)$ntip.number
-    intNodes <- which(x>length(iT$ID))
-                      
-    x <- x[-intNodes]
-    x <- c(x,gNodes)
+    #Obtain Tips already in Cluster
+    iDes <- iT$n$des[[i]]
+    iTipDes <- iT$v$ID[iDes[which(iDes<length(iT$v$ID))]]
     
-    return(x)
+    #Add new cases if they're associated with the internal
+    gTips <- subset(iT$g, iT$g$node%in%c(iDes,as.numeric(i)))$ID
+    return(c(iTipDes, gTips))
   })
   
-  #Add singletons and summarise clusters
-  sing <- as.list(1:(length(iT$tip.label)+nrow(iT$gSum)))
-  cTips <- unlist(clu)
-  filt <- sapply(sing, function(tip){tip%in%cTips})
-  sing[filt] <- NULL
-  
-  iT$clu <- c(clu,sing)
+  #Add singletons and summerize clusters
+  sing <- as.list(setdiff(iT$g$ID, unlist(clu)))
+  iT$c <- c(clu,sing)
   
   return(iT)
 }
 
+######Point of Edit
 
 #Obtains some likelihood data in order to weight cases based on their recency 
 likData <- function(iT, maxD){
@@ -334,15 +294,14 @@ GAICRun <- function(iT) {
 ###############Testing
 
 tFile <- "~/Data/Seattle/SeattleB_RAxML/RAxML_result.Tree" 
-iFile <- "~/Data/Seattle/SeattleB_RAxML/RAxML_info.Tree"
-sFile <- "~/Data/Seattle/SeattleB_PRO.fasta"
+gFile <- "~/Data/Seattle/SeattleB_pplacer/st.tre"
 
 oT <- impTree(tFile) 
+oT <- growthSim(tFile, gFile)
 
-
-oT <- growthSim(oTFile, sFile)
-oT <- STClu(oT)
-res <- GAICRun(oT)
+#oT <- growthSim(oTFile, sFile)
+#oT <- STClu(oT)
+#res <- GAICRun(oT)
 
 #Plot Test
 plotT <- F

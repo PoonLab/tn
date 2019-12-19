@@ -1,0 +1,13 @@
+#!/bin/bash
+
+OUTPUT=$1
+SEQUENCE=$2
+STATS=$3
+TREE=$4
+
+mkdir "${OUTPUT}"
+cd ${OUTPUT}
+
+taxit create -l pol_SubB -P "${OUTPUT}.refpkg" --aln-fasta "${SEQUENCE}" --tree-stats "${STATS}" --tree-file "${TREE}"
+pplacer -o "${OUTPUT}.jplace" -c "${OUTPUT}.refpkg" "${SEQUENCE}"
+guppy sing --point-mass "${OUTPUT}.jplace" -o "${OUTPUT}.tre"
