@@ -1,4 +1,4 @@
-require("ape")
+require("ape") # Possibly Unneeded
 require("phangorn")
 library("dplyr",verbose = FALSE)
 
@@ -65,40 +65,57 @@ dFilt <- function(iT, maxD) {
   return(iT)
 }
 
-
-
-###^^^^^CUT?^^^^^###
-
-#Simulate the growth of trees by placing recent sequences as tips on a fixed ML tree
-growthSim <- function(iT, gFile) {
+#Obtains some likelihood data in order to weight cases based on their recency 
+likData <- function(iT){
   
-  #Obtain a set of trees with tips added
-  ts <- read.tree(gFile)
-  
-  #The nodes in iT associated with new cases in t
-  iT$g<- bind_rows(lapply(ts, function(t) {
+  #Obtain the minimum retrospective distance for each member sequence 
+  ##TO-DO: Optimize, this should only happen once. It may belong in the tree-creation call ##
+  f <- bind_rows(sapply(1:length(iT$v$ID), function(i){
+    retro <- which(iT$tDiff[i,]<0)
+    row <- iT$dist[i,retro]
     
-    temp <- sapply(t$tip.label, function(x) strsplit(x, '_')[[1]])
-    times <- as.numeric(temp[2,])
-    ids <- temp[1,]
-    nTip <- which(times>max(iT$v$Time))
-    dist <- t$edge.length[which(t$edge[,2]==nTip)]
-    
-    nAdj <- Siblings(t, nTip)
-    
-    #If the sibling is a tip, returns the sibling's parent in iT
-    if(nAdj<=length(t$tip.label)) {
-      adj <- which(iT$v$ID%in%ids[nAdj])
-      parent <- iT$p$edge[which(iT$p$edge[,2]==adj),1]
-      return(data.frame(ID=ids[nTip], node=parent, dist=dist)) 
+    #For the earliest year
+    if(length(row)==0){
+      NULL
     }
-    else{
-      return(data.frame(ID=ids[nTip], node=nAdj, dist=dist))
+    else {
+      close <- which(row==min(row))[[1]]
+      data.frame(Tip=i, Distance=row[close], tDiff=abs(iT$tDiff[i,retro[close]]))  
     }
   }))
-
-  return(iT)
+  
+  #Take the total edge frequency data from the graph and format this information into successes and attempts
+  #An edge to the newest year falling below the max distance is considered a success
+  ageD <- bind_rows(lapply(times, function(t) {
+    temp <- subset(minE, Tip%in%which(iT$Time==t))
+    dfs <- split(temp, temp$tDiff)
+    
+    Positive <- sapply(dfs, function(df){length(which(df$Distance<=maxD))})
+    vTotal <- sapply(dfs, function(df){vTab[as.character(t)]})
+    tDiff <- as.numeric(names(Positive))
+    oeDens <- sapply(tDiff, function(tD){
+      oTime <- t-tD
+      return(eTab[as.character(oTime)]/vTab[as.character(oTime)])
+    })
+    
+    
+    res <- data.frame(Positive=as.numeric(Positive), vTotal=as.numeric(vTotal), oeDens=oeDens, tDiff)
+    return(res)
+  }))
+  
+  #Obtain a model of case connection frequency to new cases as predicted by individual case age
+  #Use this to weight cases by age
+  mod <- glm(cbind(Positive, vTotal) ~ tDiff+oeDens, data=ageD, family='binomial')
+  weight <- predict(mod, type='response',
+                    data.frame(tDiff=max(iT$Time)+1-iT$Time, 
+                               oeDens=as.numeric(eTab[as.character(iT$Time)]/vTab[as.character(iT$Time)])))
+  
+  
+  return(weight)
+  
 }
+
+###^^^^^CUT?^^^^^###
 
 #Import Tree Data and annotate with sequence ID and Time
 #Sequences must be dated with the date separated from the id by '_'. 
@@ -137,6 +154,20 @@ impTree <-function(tFile){
     return(mean)
   })
   
+  #The minimum retrospective edge to 
+  t$f <- bind_rows(lapply(which(t$v$Time>min(t$v$Time)), function(i){
+    inc <- t$e$dist[i,-i]
+    iTD <- t$e$tDiff[i,-i]
+    ret <- inc[which(iTD<0)]
+    
+    minE <- which(ret==min(ret)[[1]]) 
+    minD <- ret[minE]
+    minTD <- (iTD[which(iTD<0)])[minE]
+      
+    df <- data.frame(Index=minE, Distance=minD, tDiff=minTD)
+    return(df)
+  }))
+  
   #Set up a node-summary data frame
   t$n <- list()
   t$n$des <- des
@@ -146,6 +177,43 @@ impTree <-function(tFile){
   return(t)
 }
 
+
+#After simulating the growth of trees by placing recent sequences as tips on a fixed ML tree
+growthSim <- function(iT, gFile) {
+  
+  #Obtain a set of trees with tips added
+  ts <- read.tree(gFile)
+  
+  #The nodes in iT associated with new cases in t
+  iT$g<- bind_rows(lapply(ts, function(t) {
+    
+    temp <- sapply(t$tip.label, function(x) strsplit(x, '_')[[1]])
+    times <- as.numeric(temp[2,])
+    ids <- temp[1,]
+    nTip <- which(times>max(iT$v$Time))
+    nAdj <- Siblings(t, nTip)
+    
+    dist <- t$edge.length[which(t$edge[,2]==nTip)]
+    
+    #If the sibling is a tip, returns the sibling's parent in iT
+    if(nAdj<=length(t$tip.label)) {
+      adj <- which(iT$v$ID%in%ids[nAdj])
+      parent <- iT$p$edge[which(iT$p$edge[,2]==adj),1]
+
+      return(data.frame(ID=ids[nTip], node=parent, dist=dist)) 
+    }
+    else{
+      return(data.frame(ID=ids[nTip], node=nAdj, dist=dist))
+    }
+  }))
+  
+  #Calculate the "Breaking distance (ie. the distance required to p)
+  iT$g$breakD <- sapply(node, function(x){
+    
+  })
+  
+  return(iT)
+}
 
 #Cluster using a modified subtree-based method
 STClu <- function(iT, maxD) {
@@ -175,73 +243,23 @@ STClu <- function(iT, maxD) {
     return(c(iTipDes, gTips))
   })
   
+  iT$c <- list()
+  
   #Add singletons and summerize clusters
-  sing <- as.list(setdiff(iT$g$ID, unlist(clu)))
-  iT$c <- c(clu,sing)
+  sing <- as.list(setdiff(c(iT$v$ID, iT$g$ID), unlist(clu)))
+  iT$c$membership <- c(clu,sing)
+  temp <- sapply(iT$c$membership, function(x){
+    newCases <- length(which(x%in%iT$g$ID))
+    oldCases <- length(x) - newCases
+    
+    return(c(oldCases,newCases))
+  }) 
   
+  #For growth, record the number of old and new cases in the clusters which contain old cases
+  colnames(temp) <- 1:length(temp[1,])
+  iT$c$growth <- temp[,which(temp[1,]>0)]
+    
   return(iT)
-}
-
-######Point of Edit
-
-#Obtains some likelihood data in order to weight cases based on their recency 
-likData <- function(iT, maxD){
-  
-  #Obtain some summarized information from the sub-Graph
-  vTab <- table(iT$Time)
-  times <- as.numeric(names(vTab))
-  eTab <- sapply(times, function(t){
-    tTips <- which(iT$Time==t)
-    tDist <- unlist(unname(lapply(tTips, function(x){iT$dist[x, -x]})))
-    length(which(tDist<=maxD))
-  })
-  names(eTab) <- names(vTab)
-  
-  #Obtain the minimum retrospective distance for each member sequence 
-  ##TO-DO: Optimize, this should only happen once. It may belong in the tree-creation call ##
-  minE <- bind_rows(sapply(1:length(iT$ID), function(i){
-    retro <- which(iT$tDiff[i,]<0)
-    row <- iT$dist[i,retro]
-    
-    #For the earliest year
-    if(length(row)==0){
-      NULL
-    }
-    else {
-      close <- which(row==min(row))[[1]]
-      data.frame(Tip=i, Distance=row[close], tDiff=abs(iT$tDiff[i,retro[close]]))  
-    }
-  }))
-  
-  #Take the total edge frequency data from the graph and format this information into successes and attempts
-  #An edge to the newest year falling below the max distance is considered a success
-  ageD <- bind_rows(lapply(times, function(t) {
-    temp <- subset(minE, Tip%in%which(iT$Time==t))
-    dfs <- split(temp, temp$tDiff)
-    
-    Positive <- sapply(dfs, function(df){length(which(df$Distance<=maxD))})
-    vTotal <- sapply(dfs, function(df){vTab[as.character(t)]})
-    tDiff <- as.numeric(names(Positive))
-    oeDens <- sapply(tDiff, function(tD){
-      oTime <- t-tD
-      return(eTab[as.character(oTime)]/vTab[as.character(oTime)])
-    })
-    
-    
-    res <- data.frame(Positive=as.numeric(Positive), vTotal=as.numeric(vTotal), oeDens=oeDens, tDiff)
-    return(res)
-  }))
-  
-  #Obtain a model of case connection frequency to new cases as predicted by individual case age
-  #Use this to weight cases by age
-  mod <- glm(cbind(Positive, vTotal) ~ tDiff+oeDens, data=ageD, family='binomial')
-  weight <- predict(mod, type='response',
-                         data.frame(tDiff=max(iT$Time)+1-iT$Time, 
-                                    oeDens=as.numeric(eTab[as.character(iT$Time)]/vTab[as.character(iT$Time)])))
-  
-
-  return(weight)
-
 }
 
 #Obtain GAIC at several different cutoffs
@@ -295,13 +313,11 @@ GAICRun <- function(iT) {
 
 tFile <- "~/Data/Seattle/SeattleB_RAxML/RAxML_result.Tree" 
 gFile <- "~/Data/Seattle/SeattleB_pplacer/st.tre"
+maxD <- 0.16
 
 oT <- impTree(tFile) 
-oT <- growthSim(tFile, gFile)
-
-#oT <- growthSim(oTFile, sFile)
-#oT <- STClu(oT)
-#res <- GAICRun(oT)
+oT <- growthSim(oT, gFile)
+oT <- STClu(oT, maxD)
 
 #Plot Test
 plotT <- F
