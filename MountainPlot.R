@@ -1,4 +1,4 @@
-source("comp_Lib.R")
+source("~/git/tn/comp_Lib.R")
 require(R.utils)
 
 ## Generating Analysis

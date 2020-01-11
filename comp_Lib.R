@@ -199,10 +199,11 @@ compAnalyze <- function(subG) {
   dMax <- max(subG$e$Distance)
   tTab <- table(subG$f$tMax)
   vTab <- table(subG$v$Time)
-  eTab <- sapply(as.numeric(names(vTab)), function(t){
-    nrow(subset(subG$e, (t1==t|t2==t)))
-  })
-  names(eTab) <- names(vTab)
+  
+  #Get a rating, accounting for the potential biases created by old outbreak
+  bias <- table(subG$f$tMax-subG$f$tDiff) / 
+    table(subG$v$Time)[which(names(table(subG$v$Time))%in%names(table(subG$f$tMax-subG$f$tDiff)))]
+  bias <- sapply(1:length(bias), function(i){bias[i]/ mean(bias[-i])})
   
   #Take the total edge frequency data from the graph and format this information into successes and attempts
   #An edge to the newest year falling below the max distance is considered a success
@@ -213,22 +214,18 @@ compAnalyze <- function(subG) {
     Positive <- sapply(dfs, function(df){length(which(df$Distance<=dMax))})
     vTotal <- rep((vTab[[as.character(t)]]),length(dfs))
     tDiff <- as.numeric(names(Positive))
-    oeDens <- sapply(tDiff, function(tD){
-      oTime <- t-tD
-      return(eTab[as.character(oTime)]/vTab[as.character(oTime)])
-    })
+    otBias <- sapply(tDiff, function(tD){ bias[as.character(t-tD)]})
+    res <- data.frame(Positive=as.numeric(Positive), vTotal=vTab[[as.character(t)]], otBias=as.numeric(otBias), tDiff)
     
-    
-    res <- data.frame(Positive=as.numeric(Positive), vTotal=vTab[[as.character(t)]], oeDens=oeDens, tDiff)
     return(res)
   }))
   
   #Obtain a model of case connection frequency to new cases as predicted by individual case age
   #Use this to weight cases by age
-  mod <- glm(cbind(Positive, vTotal) ~ tDiff+oeDens, data=ageD, family='binomial')
+  mod <- glm(cbind(Positive, vTotal) ~ tDiff+otBias, data=ageD, family='binomial')
   subG$v$Weight <- predict(mod, type='response',
                            data.frame(tDiff=max(subG$v$Time)-subG$v$Time, 
-                                      oeDens=as.numeric(eTab[as.character(subG$v$Time)]/vTab[as.character(subG$v$Time)])))
+                                      otBias=sapply(subG$v$Time, function(x){bias[as.character(x)]}) ))
   # subG$v$Weight <- sapply(subG$v$ID, function(id) {as.numeric(substr(id,8,8))})
   
   #Create clusters for this subgraph and measure growth
