@@ -20,20 +20,24 @@ if ((!is.na(gFile))&file.exists(gFile)) {
   saveRDS(g, file = paste0(oFile, "_G.rds"))
 }
 
+print(gFile)
+
 #Obtain cluster info for all subgraphs
 res <- gaicRun(g)
 
 #Save all growth data in accessable files
-saveRDS(res, file = paste0(oFile, "_GD.rds"))
+#saveRDS(res, file = paste0(oFile, "_GD.rds"))
 cutoffs <- as.numeric(names(res))
 
 ## Generate Pictures and output summary
 #__________________________________________________________________________________________________________________________#
 
 #Extract GAICs, AICs and cutoffs for graphing purposes
-gaics <- sapply(res, function(x) {x$gaic})
-modAIC <- sapply(res, function(x) {x$ageFit$aic})
-nullAIC <- sapply(res, function(x) {x$nullFit$aic})
+gaics <- sapply(res, function(x) {x$a$gaic})
+modAIC <- sapply(res, function(x) {x$a$ageFit$aic})
+nullAIC <- sapply(res, function(x) {x$a$nullFit$aic})
+
+pdf(paste0(oFile,".pdf"))
 
 #Create visual output pdf
 #pdf(file = paste0(oFile, "_VS.pdf"), width = 10, height = 12)

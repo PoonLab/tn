@@ -195,38 +195,20 @@ compAnalyze <- function(subG) {
   #@param subG: A subGraph cut based on a threshold distance, expecting a member of the multiGraph set
   #@return: A graph annotated with growth, cluster info and level of predictive performance (measured through GAIC)
   
-  #Obtain some summarized information from the sub-Graph
-  dMax <- max(subG$e$Distance)
-  tTab <- table(subG$f$tMax)
-  vTab <- table(subG$v$Time)
-  
-  #Get a rating, accounting for the potential biases created by old outbreak
-  bias <- table(subG$f$tMax-subG$f$tDiff) / 
-    table(subG$v$Time)[which(names(table(subG$v$Time))%in%names(table(subG$f$tMax-subG$f$tDiff)))]
-  bias <- sapply(1:length(bias), function(i){bias[i]/ mean(bias[-i])})
-  
-  #Take the total edge frequency data from the graph and format this information into successes and attempts
-  #An edge to the newest year falling below the max distance is considered a success
-  ageD <- bind_rows(lapply(as.numeric(names(tTab)), function(t) {
-    temp <- subset(subG$f, tMax==t)
-    dfs <- split(temp, temp$tDiff)
-    
-    Positive <- sapply(dfs, function(df){length(which(df$Distance<=dMax))})
-    vTotal <- rep((vTab[[as.character(t)]]),length(dfs))
-    tDiff <- as.numeric(names(Positive))
-    otBias <- sapply(tDiff, function(tD){ bias[as.character(t-tD)]})
-    res <- data.frame(Positive=as.numeric(Positive), vTotal=vTab[[as.character(t)]], otBias=as.numeric(otBias), tDiff)
-    
-    return(res)
+  #Obtain successes (retrospective growth) and attempts (possible retrospective growths)
+  tTab <- as.numeric(table(subG$v$Time))
+  tDiffs <-(max(subG$f$tMax))-as.numeric(names(table(subG$f$tMax)))
+  maxD <- max(subG$e$Distance)
+  ageD <- bind_rows(lapply(tDiffs[tDiffs>0] , function(x){
+    data.frame(tDiff=x, 
+               Positive=nrow(subset(subG$f, tDiff==x & Distance<=maxD)), 
+               vTotal=sum(tail(tTab),-x) )
   }))
   
   #Obtain a model of case connection frequency to new cases as predicted by individual case age
   #Use this to weight cases by age
-  mod <- glm(cbind(Positive, vTotal) ~ tDiff+otBias, data=ageD, family='binomial')
-  subG$v$Weight <- predict(mod, type='response',
-                           data.frame(tDiff=max(subG$v$Time)-subG$v$Time, 
-                                      otBias=sapply(subG$v$Time, function(x){bias[as.character(x)]}) ))
-  # subG$v$Weight <- sapply(subG$v$ID, function(id) {as.numeric(substr(id,8,8))})
+  mod <- glm(cbind(Positive, vTotal) ~ tDiff, data=ageD, family='binomial')
+  subG$v$Weight <- predict(mod, type='response', data.frame(tDiff=max(subG$v$Time)-subG$v$Time))   
   
   #Create clusters for this subgraph and measure growth
   subG <- simGrow(subG)
@@ -238,11 +220,14 @@ compAnalyze <- function(subG) {
   fit1 <- glm(Growth ~ Pred, data = df1, family = "poisson")
   fit2 <- glm(Growth ~ Pred, data = df2, family = "poisson")
   
+  #For the analysis
+  subG$a <- list()
+  
   #Save, gaic, model and age data as part of the output
-  subG$gaic <- fit1$aic-fit2$aic
-  subG$ageMod <- mod
-  subG$ageFit <- fit1
-  subG$nullFit <- fit2
+  subG$a$gaic <- fit1$aic-fit2$aic
+  subG$a$ageMod <- mod
+  subG$a$ageFit <- fit1
+  subG$a$nullFit <- fit2
   subG$f <- ageD
 
   return(subG)

@@ -28,6 +28,16 @@ impTree <-function(tFile){
     sapply(tips, function(j){ t1 - t$v$Time[j] })
   })
   
+  t$e$el <- bind_rows(lapply(tips, function(i){
+    inc <- tips[which(tips>i)]
+    tip <- rep(i, length(inc))
+    dist <- t$e$dist[i, inc]
+    tDiff <- t$e$tDiff[i, inc]
+    return(data.frame(ID1=tip, ID2=inc, Distance=dist, tDiff=abs(tDiff)))
+  }))
+  
+  t$e$tdTab <- table(t$e$el$tDiff)
+  
   #Summarize information by node, representing the potential to cluster by subtree
   #Obtain the mean branch length under each node
   ##TO-DO: Add bootstrap here. Requires bootstrap to be added in tree creation.
@@ -60,10 +70,16 @@ impTree <-function(tFile){
 
   })))
   
+  #Obtain the average recency of cases
+  meanRecency <- sapply(des, function(x) {
+    desTips <- x[which(x%in%tips)]
+    max(t$v$Time)+1 - mean(t$v[desTips,]$Time)
+  })
+  
   #Set up a node-summary data frame
   t$n <- list()
   t$n$des <- des
-  t$n$agg <- data.frame(ID=nodes, mDist=meanDist)
+  t$n$agg <- data.frame(ID=nodes, mDist=meanDist, mRec=meanRecency)
   names(t$n$des) <- t$n$agg$ID
   
   return(t)
@@ -124,6 +140,10 @@ STClu <- function(iT, maxD) {
     
   }
   
+  #Mark down clusters in the trees 'n' list item
+  iT$n$agg$Clustered <- rep(FALSE, nrow(iT$n$agg))
+  iT$n$agg$Clustered[which(iT$n$agg$ID%in%cluNames)] <- TRUE
+  
   cluNames <- temp
 
   #Remove internal nodes for summary. Only cases are of interest
@@ -163,11 +183,15 @@ STClu <- function(iT, maxD) {
   #Add singletons and summerize clusters
   sing <- as.list(setdiff(c(iT$v$ID, iT$g$ID), unlist(clu)))
   iT$c$membership <- c(clu,sing)
-  temp <- sapply(iT$c$membership, function(x){
+  
+  temp <- sapply(1:length(iT$c$membership), function(i){
+    
+    x <- iT$c$membership[[i]]
     newCases <- length(which(x%in%iT$g$ID))
     oldCases <- length(x) - newCases
+    meanRec <- max(iT$v$Time)+1-mean(subset(iT$v, ID%in%x)$Time)
     
-    return(c(oldCases,newCases))
+    return(c(oldCases,newCases, meanRec))
   }) 
   
   #For growth, record the number of old and new cases in the clusters which contain old cases
@@ -181,48 +205,25 @@ STClu <- function(iT, maxD) {
 GAICRun <- function(iT, cutoffs) {
   
   #Clustering Test
-  res <- lapply(cutoffs, function(x){
-    print(x)
-    subT <- STClu(iT, x)
+  res <- lapply(cutoffs, function(maxD){
+    print(maxD)
+    subT <- STClu(iT, maxD)
     
-    times <- table(subT$v$Time)
-    
-    #Get a rating, accounting for the potential biases created by old outbreak
-    bias <- table(iT$v$Time+iT$v$tDiff) / 
-      table(iT$v$Time)[which(names(table(iT$v$Time))%in%names(table(iT$v$Time+iT$v$tDiff)))]
-    bias <- sapply(1:length(bias), function(i){bias[i]/ mean(bias[-i])})
- 
-    
-    #Obtain the age-based data in order to weight vertices
-    ageD <- bind_rows(lapply(2:length(times), function(i){
-      
-      t <- times[i]
-      tV <- subset(subT$v, Time==as.numeric(names(t)))
-      
-      #Obtain a set of tDiffs (retrospective time lag) and positives at those time lags
-      tDiffs <- as.numeric(names(times))-as.numeric(names(t))
-      otBias <- bias[names(times[which(tDiffs<0)])]
-      pos <-sapply(tDiffs[tDiffs<0], function(td){nrow((subset(tV, (tDiff==td)&(Distance<x))))})
-      
-      #Total Possible positives (attempts)
-      tot <- rep(unname(t), length(pos))
-      df <- data.frame(Total=tot, Positives=pos, tDiff=abs(tDiffs[tDiffs<0]), otBias=as.numeric(otBias))
-
-      return(df)
+    #Obtain successes (retrospective growth) and attempts (possible retrospective growths)
+    tTab <- as.numeric(table(subT$v$Time))
+    tDiffs <- as.numeric(names(subT$e$tdTab))
+    ageD <- bind_rows(lapply(tDiffs[tDiffs>0] , function(x){
+      data.frame(tDiff=x, 
+                 Positive=nrow(subset(subT$e$el, Distance<maxD & tDiff==x)), 
+                 vTotal=nrow(subset(subT$e$el, tDiff==x)))
     }))
-    
+
     #Weighting cases using a model based on case recency
-    mod <- glm(cbind(Positives, Total) ~ tDiff + otBias, data=ageD, family='binomial')
-    subT$v$Weight <- predict(mod, type='response', 
-                             data.frame(tDiff=max(subT$v$Time)+1-subT$v$Time, 
-                                        otBias=sapply(subT$v$Time, function(x){bias[as.character(x)]})))
-    
-    #Weight clusters using their member case weights (0 represents a cluster of all new cases, and is ignored)
-    cluWeights <- sapply(subT$c$membership, function(c){sum(subset(subT$v, ID%in%c)$Weight)})
-    cluWeights <- cluWeights[cluWeights>0]
+    mod <- glm(cbind(Positive, vTotal) ~ tDiff, data=ageD, family='binomial')
+    cluWeights <- predict(mod, type='response', data.frame(tDiff=as.numeric(subT$c$growth[3,])))
     
     #Create two data frames from two predictive models, one based on absolute size (NULL) and our date-informed model
-    df1 <- data.frame(Growth = subT$c$growth[2,], Pred = cluWeights) 
+    df1 <- data.frame(Growth = subT$c$growth[2,], Pred = subT$c$growth[2,]*cluWeights) 
     df2 <- data.frame(Growth = subT$c$growth[2,], Pred = subT$c$growth[2,]*(subT$c$growth[1,]/sum(subT$c$growth[1,])))
     fit1 <- glm(Growth ~ Pred, data = df1, family = "poisson")
     fit2 <- glm(Growth ~ Pred, data = df2, family = "poisson")
@@ -254,11 +255,15 @@ gFile <- "~/Data/Seattle/SeattleB_pplacer/st.tre"
 oT <- impTree(tFile) 
 oT <- growthSim(oT, gFile)
 
-cutoffs <- seq(0,0.25,0.002)
+cutoffs <- seq(0,0.25,0.005)
 res <- GAICRun(oT, cutoffs)
 
 gaics <- sapply(res, function(x){x$a$gaic})
-aic <- sapply(res, function(x){x$a$propFit$aic})
+plot(cutoffs, gaics, xlab = "Mean Cutoff", ylab="GAIC")
+lines(gaics)
+modAIC <- sapply(res, function(x){x$a$propFit$aic})
+nullAIC <- modAIC-gaics
+
 ageDs <- sapply(res, function(x){x$ageD})
 
 
