@@ -95,7 +95,7 @@ step <- max(cutoffs) / (length(cutoffs)-1)
 minsLoc <- sapply(gaics, function(x){step*(which(x==min(x))[[1]]-1)}) 
 
 #Create a dataframe of cutoff to GAIC, and also fund the absolut minimumm and the absolute maximum for scale
-df <- data.frame(Cutoff=as.numeric(names(unlist(gaics))), GAIC=unname(unlist(gaics)))
+df <- data.frame(Cutoff=cutoffs, GAIC=unname(unlist(gaics)))
 mins <- sapply(gaics, function(x){min(x)}) 
 maxs <- sapply(gaics, function(x){max(x)})
 
@@ -116,17 +116,17 @@ title(xlab= "Cutoffs",
       ylab = "GAIC")
 plot.window(xlim = c(min(cutoffs), max(cutoffs)), ylim = c(minmin, maxmax))
 axis(2, at=round(seq(minmin,maxmax,((maxmax-minmin)/10))), labels = round(seq(minmin,maxmax,((maxmax-minmin)/10))), las=2)
-axis(1, at=seq(0,0.04,0.005), labels=seq(0,0.040,0.005))
+axis(1, at=cutoffs, labels=cutoffs)
 
 # create a background
-#bg <- par('usr')
-#rect(xl=bg[1], yb=bg[3], xr=bg[2], yt=bg[4], col='linen', border=NA)
-#abline(h=axTicks(side=2), col='white', lwd=3, lend=2)
-#abline(h=axTicks(side=2)+diff(axTicks(side=2))[1]/2, col='white', lend=2)
-#abline(v=axTicks(side=1), col='white', lwd=3, lend=2)
-#abline(v=axTicks(side=1)+diff(axTicks(side=1))[1]/2, col='white', lend=2)
-#abline(0,0, lty=2, lwd=3, col='grey50')
-#box()
+bg <- par('usr')
+rect(xl=bg[1], yb=bg[3], xr=bg[2], yt=bg[4], col='linen', border=NA)
+abline(h=axTicks(side=2), col='white', lwd=3, lend=2)
+abline(h=axTicks(side=2)+diff(axTicks(side=2))[1]/2, col='white', lend=2)
+abline(v=axTicks(side=1), col='white', lwd=3, lend=2)
+abline(v=axTicks(side=1)+diff(axTicks(side=1))[1]/2, col='white', lend=2)
+abline(0,0, lty=2, lwd=3, col='grey50')
+box()
 
 if (varSamp) {
   #Add lines and a smooth trend
@@ -140,7 +140,7 @@ if (varSamp) {
          fill=c("darkblue", "darkorchid", "darkturquoise"))
   
 } else {
-  for (i in gaics) {lines(as.numeric(names(i)), unname(i), col="darkturquoise")}
+  for (i in gaics) {lines(cutoffs, unname(i), col="darkturquoise")}
 }
 
 smooth <- smooth.spline(df)

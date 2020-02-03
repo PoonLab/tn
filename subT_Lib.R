@@ -7,11 +7,11 @@ library("dplyr",verbose = FALSE)
 ##TO-DO: Currently only accepts year dates. Work to allow more specific dates. 
 impTree <-function(tFile){
   #@param iFile: The name/path of the input file (expecting a newick file)
-  #@preturn: An ape tree object with associated lists of sequence ID and Time
+  #@return: A list of 3 Objects. The ape phylo object, a vertex list, and a list of edge information
   
-  #Creating an ape phylogeny object from the newick file, store in a greater list "t" as "p" for phylogeny
+  #Obtaining and midpioint rooting an ape phylogeny object from the newick file, store in a greater list "t" as "p" for phylogeny
   t <- list()
-  t$p <- read.tree(tFile)
+  t$p <- midpoint(read.tree(tFile))
   
   #Obtain lists of sequence ID and Time
   temp <- sapply(t$p$tip.label, function(x) strsplit(x, '_')[[1]])
@@ -20,14 +20,18 @@ impTree <-function(tFile){
   t$v <- data.frame(ID=ids, Time=times, stringsAsFactors = F)
   tips <- 1:nrow(t$v)
   
-  #Summarize internal branch length information
+  #Summarize internal branch length information 
+  #Time differences, phenetic distance matrix, pairwise distances, and a table of timne differences
   t$e <- list()
   t$e$dist <- dist.nodes(t$p)
   t$e$tDiff <- sapply(tips, function(i){
     t1 <- t$v$Time[i]
     sapply(tips, function(j){ t1 - t$v$Time[j] })
   })
+  t$e$tdTab <- table(t$e$el$tDiff)
   
+  #Create a pairwise edgelist similair to tn93 output. 
+  ##TO-DO: Currently acts as an alternative data structure for the storedge of edge info. Possibly redundant
   t$e$el <- bind_rows(lapply(tips, function(i){
     inc <- tips[which(tips>i)]
     tip <- rep(i, length(inc))
@@ -35,19 +39,6 @@ impTree <-function(tFile){
     tDiff <- t$e$tDiff[i, inc]
     return(data.frame(ID1=tip, ID2=inc, Distance=dist, tDiff=abs(tDiff)))
   }))
-  
-  t$e$tdTab <- table(t$e$el$tDiff)
-  
-  #Summarize information by node, representing the potential to cluster by subtree
-  #Obtain the mean branch length under each node
-  ##TO-DO: Add bootstrap here. Requires bootstrap to be added in tree creation.
-  nodes <- (max(tips)+2):(max(tips)*2-2) 
-  des <- lapply(nodes, function(x){Descendants(t$p,x,"all")})
-  meanDist <- sapply(des, function(x) {
-    x <- sort(x[which(x%in%tips)]) 
-    m <- mean(unlist(sapply(head(x,-1), function(tip){t$e$dist[tip,x[which(x>tip)]]})))
-    return(m)
-  })
   
   #The minimum retrospective edge to each tip (except those at the earliest time point)
   t$v <- cbind(t$v, bind_rows(lapply(tips, function(i){
@@ -70,19 +61,38 @@ impTree <-function(tFile){
 
   })))
   
-  #Obtain the average recency of cases
+  return(t)
+}
+
+#Summarize information by node, representing the potential to cluster by subtree
+#Obtain the mean branch length under each node
+##TO-DO: Add bootstrap here. Requires bootstrap to be added in tree creation.
+nodeInfo <- function(iT) {
+  
+  tips <- 1:nrow(iT$v)
+  nodes <- (max(tips)+2):(max(tips)*2-2) 
+  des <- lapply(nodes, function(x){Descendants(iT$p,x,"all")})
+  
+  #Obtain the average within subtree patristic distances
+  meanDist <- sapply(des, function(x) {
+    x <- sort(x[which(x%in%tips)]) 
+    m <- mean(unlist(sapply(head(x,-1), function(tip){iT$e$dist[tip,x[which(x>tip)]]})))
+    return(m)
+  })
+  
+  #Obtain the average recency of subtrees
   meanRecency <- sapply(des, function(x) {
     desTips <- x[which(x%in%tips)]
-    max(t$v$Time)+1 - mean(t$v[desTips,]$Time)
+    max(iT$v$Time)+1 - mean(iT$v[desTips,]$Time)
   })
   
   #Set up a node-summary data frame
-  t$n <- list()
-  t$n$des <- des
-  t$n$agg <- data.frame(ID=nodes, mDist=meanDist, mRec=meanRecency)
-  names(t$n$des) <- t$n$agg$ID
+  iT$n <- list()
+  iT$n$des <- des
+  iT$n$agg <- data.frame(ID=nodes, mDist=meanDist, mRec=meanRecency)
+  names(iT$n$des) <- iT$n$agg$ID
   
-  return(t)
+  return(iT)
 }
 
 #After simulating the growth of trees by placing recent sequences as tips on a fixed ML tree
@@ -98,21 +108,18 @@ growthSim <- function(iT, gFile) {
     temp <- sapply(t$tip.label, function(x) strsplit(x, '_')[[1]])
     times <- as.numeric(temp[2,])
     ids <- temp[1,]
-    nTip <- which(times>max(iT$v$Time))
-    nAdj <- Siblings(t, nTip)
-    dist <- t$edge.length[which(t$edge[,2]==nTip)]
+    sharedIds <- which(ids%in%iT$v$ID)
+    nTip <- which(times==max(times))
     
-    #If the sibling is a tip, returns the sibling's parent in iT
-    if(nAdj<=length(t$tip.label)) {
-      adj <- which(iT$v$ID%in%ids[nAdj])
-      parent <- iT$p$edge[which(iT$p$edge[,2]==adj),1]
+    tips <- 1:length(t$tip.label)
+    dists <- dist.nodes(t)[tips, sharedIds]
+    eRet <- dists[nTip,-nTip]
+    minRet <- which(eRet==min(eRet))[[1]]
+    nAdj <- ids[[as.numeric(names(eRet)[minRet])]]
+    parent <- iT$p$edge[which(iT$v$ID%in%nAdj),1]
+    
+    data.frame(ID=nAdj, Parent=parent, dist=min(eRet))
 
-      return(data.frame(ID=ids[nTip], node=parent, dist=dist)) 
-    }
-    
-    else{
-      return(data.frame(ID=ids[nTip], node=nAdj, dist=dist))
-    }
   }))
   
   return(iT)
@@ -205,7 +212,7 @@ STClu <- function(iT, maxD) {
 GAICRun <- function(iT, cutoffs) {
   
   #Clustering Test
-  res <- lapply(cutoffs, function(maxD){
+  runRes <- lapply(cutoffs, function(maxD){
     print(maxD)
     subT <- STClu(iT, maxD)
     
@@ -228,43 +235,83 @@ GAICRun <- function(iT, cutoffs) {
     fit1 <- glm(Growth ~ Pred, data = df1, family = "poisson")
     fit2 <- glm(Growth ~ Pred, data = df2, family = "poisson")
     
-    subT$a <- list()
+    res <- list()
     
     #Save, gaic, model and age data as part of the output
-    subT$a$gaic <- fit1$aic-fit2$aic
-    subT$a$propFit <- fit1
-    subT$a$nullFit <- fit2
-    subT$a$mod <- mod
-    subT$a$ageD <- ageD
+    res$gaic <- fit1$aic-fit2$aic
+    res$propFit <- fit1
+    res$nullFit <- fit2
+    res$mod <- mod
+    res$ageD <- ageD
 
-    return(subT)
+    return(res)
   })
   
-  return(res)
+  return(runRes)
   
+}
+
+#Subsample a tree with given information 
+subSample <- function(iT, ssize=1200) {
+  
+  i <- sample(1:length(iT$v$ID), ssize)
+  
+  iT$v <- iT$v[i,]
+  iT$p <- keep.tip(iT$p, i)
+  iT$e$dist <- dist.nodes(iT$p)
+  iT$e$tDiff <- iT$e$tDiff[i,i]
+  iT$e$el <- subset(iT$e$el, (ID1%in%i)&(ID2%in%i))
+  iT$e$tdTab <- table(iT$e$el$tDiff)
+  
+  return(iT)
 }
 
 ###############Testing
 
-tFile <- "~/Data/Seattle/SeattleB_RAxML/RAxML_result.Tree" 
-gFile <- "~/Data/Seattle/SeattleB_pplacer/st.tre"
+#tFile <- "~/Data/Seattle/SeattleB_PRO_iq_pplacer/st.refpkg/SeattleB_PRO_Filt.fasta.tree"
+#gFile <- "~/Data/Seattle/SeattleB_PRO_iq_pplacer/st.tre"
 
-#tFile <- "~/Data/Tennessee/TennesseeB_Diag_RAxML/RAxML_result.Tree" 
-#gFile <- "~/Data/Tennessee/TennesseeB_Diag_pplacer/tn.tre"
+
+tFile <- "~/Data/Tennessee/TennesseeB_Trim_Diag_IqTree_nm/TennesseeB_Trim_Diag_Filt.fasta.treefile" 
+gFile <- "~/Data/Tennessee/TennesseeB_Trim_Diag_pplacer/tn.tre"
 
 oT <- impTree(tFile) 
+
+resList <- lapply(1:50, function(x) {
+  print(x/50)
+  
+  sT <- subSample(oT)
+  sT <- nodeInfo(sT)
+  sT <- growthSim(sT, gFile)
+  cutoffs <- seq(0,0.12,0.005)
+  res <- GAICRun(sT, cutoffs)
+  
+  return(res)
+})
+
+saveRDS(resList, "~/Data/Tennessee/subTnsubB_RD.rds")
+
+oT <- nodeInfo(oT)
 oT <- growthSim(oT, gFile)
 
-cutoffs <- seq(0,0.25,0.005)
+gaics <- lapply(resList, function(res){
+  gaics <- sapply(res, function(x){x$a$gaic})
+})
+
+plot(oT$p, show.tip.label = F)
+add.scale.bar(x=0, y=-40)
+mean(oT$p$edge.length[which(oT$p$edge[,2]%in%1:nrow(oT$v))])
+
+cutoffs <- seq(0,0.20,0.005)
 res <- GAICRun(oT, cutoffs)
 
 gaics <- sapply(res, function(x){x$a$gaic})
 plot(cutoffs, gaics, xlab = "Mean Cutoff", ylab="GAIC")
-lines(gaics)
+lines(cutoffs, gaics)
 modAIC <- sapply(res, function(x){x$a$propFit$aic})
 nullAIC <- modAIC-gaics
 
 ageDs <- sapply(res, function(x){x$ageD})
 
 
-#saveRDS(res, "~/Data/Tennessee/STtnsubB_GD.rds")
+saveRDS(res, "~/Data/Tennessee/STtnsubB_GD_nm.rds")
