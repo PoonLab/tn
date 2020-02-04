@@ -28,7 +28,7 @@ impTree <-function(tFile){
     t1 <- t$v$Time[i]
     sapply(tips, function(j){ t1 - t$v$Time[j] })
   })
-  t$e$tdTab <- table(t$e$el$tDiff)
+
   
   #Create a pairwise edgelist similair to tn93 output. 
   ##TO-DO: Currently acts as an alternative data structure for the storedge of edge info. Possibly redundant
@@ -39,8 +39,9 @@ impTree <-function(tFile){
     tDiff <- t$e$tDiff[i, inc]
     return(data.frame(ID1=tip, ID2=inc, Distance=dist, tDiff=abs(tDiff)))
   }))
+  t$e$tdTab <- table(t$e$el$tDiff)
   
-  #The minimum retrospective edge to each tip (except those at the earliest time point)
+  #The minimum retrospective edge to each tip (except those at the earliest time point) is saved to each vertex
   t$v <- cbind(t$v, bind_rows(lapply(tips, function(i){
     
     if(t$v$Time[i]==min(t$v$Time)){
@@ -64,11 +65,16 @@ impTree <-function(tFile){
   return(t)
 }
 
-#Summarize information by node, representing the potential to cluster by subtree
+#Summarize information by node, this is used to cluster by subtree and add this to the tree file
 #Obtain the mean branch length under each node
 ##TO-DO: Add bootstrap here. Requires bootstrap to be added in tree creation.
 nodeInfo <- function(iT) {
+  #@param iT: The input tree file, annotated with vertex and edge information
+  #@return: The tree annotated with 2 Objects. The list of descendant tips under each given node  
+  #         and a dataframe which summarizes information relevant to clustering
   
+  #Obtain the tip and node names (as numbers)
+  #Obtain the list of descendants
   tips <- 1:nrow(iT$v)
   nodes <- (max(tips)+2):(max(tips)*2-2) 
   des <- lapply(nodes, function(x){Descendants(iT$p,x,"all")})
@@ -97,36 +103,49 @@ nodeInfo <- function(iT) {
 
 #After simulating the growth of trees by placing recent sequences as tips on a fixed ML tree
 growthSim <- function(iT, gFile) {
+  #@param iT: The input tree file, annotated with vertex and edge information
+  #@param gFile: The growth file from a pplacer run for all new cases
+  #@return: The tree annotated with growth information (ie. their closest neighbour and the distance)
   
-  #Obtain a set of trees with tips added
+  #Obtain a set of trees with new tips added
+  #This is one tree for each new case
   ts <- read.tree(gFile)
   
   #The nodes in iT associated with new cases in t
   iT$g<- bind_rows(lapply(ts, function(t) {
     
-    #Find the terminal branch length of the new tip and the node it is adjacent to
+    #Find the new tip in t
     temp <- sapply(t$tip.label, function(x) strsplit(x, '_')[[1]])
     times <- as.numeric(temp[2,])
     ids <- temp[1,]
     sharedIds <- which(ids%in%iT$v$ID)
     nTip <- which(times==max(times))
     
+    #Find the id of the closest tip to the new tip in t
+    #This id should be retained in iT
     tips <- 1:length(t$tip.label)
     dists <- dist.nodes(t)[tips, sharedIds]
     eRet <- dists[nTip,-nTip]
     minRet <- which(eRet==min(eRet))[[1]]
     nAdj <- ids[[as.numeric(names(eRet)[minRet])]]
+    
+    #Find the parent node of the closest tip in iT
     parent <- iT$p$edge[which(iT$v$ID%in%nAdj),1]
     
-    data.frame(ID=nAdj, Parent=parent, dist=min(eRet))
-
+    #return a data frame with the tip most adjacent to the new tip, the distance to that tip
+    return(data.frame(ID=nAdj, Parent=parent, dist=min(eRet)))
   }))
   
   return(iT)
 }
 
 #Cluster using a modified subtree-based method
+#Clusters are defined as subtrees with a mean tip-to tip distance under some maximum
 STClu <- function(iT, maxD) {
+  #@param iT: The input tree file, annotated with vertex and edge information
+  #@param maxD: The maximum distance criterion defining clusters
+  #@return: The tree annotated with cluster size, growth and membership
+  #         Growth is summarized as a matrix of old cases, new cases and predictor values
 
   #Identify potential clusters by some criterion as well as tips within those potential clusters
   cluNames <- as.character(subset(iT$n$agg, mDist<maxD)$ID)
@@ -136,6 +155,8 @@ STClu <- function(iT, maxD) {
   #A loop to remove any clusters which are subclusters of a larger cluster
   temp <- vector()
   
+  #Cycle through all clustered and assure that no cluster is simply part of a larger cluster
+  #Only the clusters which are not parts of a larger cluster are reasssigned to temp
   while(length(cluTips)>0) {
     
     tip <- cluTips[1]
@@ -147,10 +168,9 @@ STClu <- function(iT, maxD) {
     
   }
   
-  #Mark down clusters in the trees 'n' list item
+  #Track clusters in the trees 'n' list item
   iT$n$agg$Clustered <- rep(FALSE, nrow(iT$n$agg))
   iT$n$agg$Clustered[which(iT$n$agg$ID%in%cluNames)] <- TRUE
-  
   cluNames <- temp
 
   #Remove internal nodes for summary. Only cases are of interest
@@ -165,8 +185,10 @@ STClu <- function(iT, maxD) {
     #New cases associated with an internal node within the potential cluster
     gTips <- subset(iT$g, iT$g$node%in%c(iDes,as.numeric(i)))
     
+    #To Find any new tips that need to be added to membership
+    #These tips will not be added to a cluster if they would increase the mean distance above the max
     if(nrow(gTips)>0) {
-      #Obtaining only new cases satisfying distance requirement
+      
       breakCon <- sapply(1:nrow(gTips), function(j) {
         gTip <- gTips[j,]
         gDist <- iT$e$dist[gTip$node, iDes[which(iDes<length(iT$v$ID))]] + gTip$dist
@@ -178,6 +200,7 @@ STClu <- function(iT, maxD) {
       gTips <- gTips[!breakCon,]
     }
     
+    #To catch the event that no new tips are added
     if(nrow(gTips)==0) {
       gTips <- NULL
     }
@@ -191,6 +214,7 @@ STClu <- function(iT, maxD) {
   sing <- as.list(setdiff(c(iT$v$ID, iT$g$ID), unlist(clu)))
   iT$c$membership <- c(clu,sing)
   
+  #Return a matrix of old cases, new cases and mean case recency for each cluster
   temp <- sapply(1:length(iT$c$membership), function(i){
     
     x <- iT$c$membership[[i]]
@@ -210,10 +234,15 @@ STClu <- function(iT, maxD) {
 
 #Obtain GAIC at several different cutoffs
 GAICRun <- function(iT, cutoffs) {
+  #@param iT: The input tree file, annotated with vertex and edge information
+  #@param cutoffs: A set of maximum distance criterion defining clusters
+  #@return: A list of analysis based on a fitting actual new data to predicted cluster growth
+  #         This most importantly includes GAIC
   
-  #Clustering Test
+  #Obtain the subtree and a list of analysis 
   runRes <- lapply(cutoffs, function(maxD){
-    print(maxD)
+   
+    #Create subTree
     subT <- STClu(iT, maxD)
     
     #Obtain successes (retrospective growth) and attempts (possible retrospective growths)
@@ -253,9 +282,13 @@ GAICRun <- function(iT, cutoffs) {
 
 #Subsample a tree with given information 
 subSample <- function(iT, ssize=1200) {
+  #@param iT: The input tree file, annotated with vertex and edge information
+  #@param ssize: How many cases to take 
+  #@return: The subsample of sample size "ssize"
   
   i <- sample(1:length(iT$v$ID), ssize)
   
+  #Insure that the tips sampled are represented in v,p and e.
   iT$v <- iT$v[i,]
   iT$p <- keep.tip(iT$p, i)
   iT$e$dist <- dist.nodes(iT$p)
@@ -267,51 +300,53 @@ subSample <- function(iT, ssize=1200) {
 }
 
 ###############Testing
-
-#tFile <- "~/Data/Seattle/SeattleB_PRO_iq_pplacer/st.refpkg/SeattleB_PRO_Filt.fasta.tree"
-#gFile <- "~/Data/Seattle/SeattleB_PRO_iq_pplacer/st.tre"
-
-
-tFile <- "~/Data/Tennessee/TennesseeB_Trim_Diag_IqTree_nm/TennesseeB_Trim_Diag_Filt.fasta.treefile" 
-gFile <- "~/Data/Tennessee/TennesseeB_Trim_Diag_pplacer/tn.tre"
-
-oT <- impTree(tFile) 
-
-resList <- lapply(1:50, function(x) {
-  print(x/50)
+if (FALSE){
+  #tFile <- "~/Data/Seattle/SeattleB_PRO_iq_pplacer/st.refpkg/SeattleB_PRO_Filt.fasta.tree"
+  #gFile <- "~/Data/Seattle/SeattleB_PRO_iq_pplacer/st.tre"
   
-  sT <- subSample(oT)
-  sT <- nodeInfo(sT)
-  sT <- growthSim(sT, gFile)
-  cutoffs <- seq(0,0.12,0.005)
-  res <- GAICRun(sT, cutoffs)
   
-  return(res)
-})
-
-saveRDS(resList, "~/Data/Tennessee/subTnsubB_RD.rds")
-
-oT <- nodeInfo(oT)
-oT <- growthSim(oT, gFile)
-
-gaics <- lapply(resList, function(res){
+  tFile <- "~/Data/Tennessee/TennesseeB_Trim_Diag_IqTree_nm/TennesseeB_Trim_Diag_Filt.fasta.treefile" 
+  gFile <- "~/Data/Tennessee/TennesseeB_Trim_Diag_pplacer/tn.tre"
+  
+  oT <- impTree(tFile) 
+  
+  resList <- lapply(1:50, function(x) {
+    print(x/50)
+    
+    sT <- subSample(oT)
+    sT <- nodeInfo(sT)
+    sT <- growthSim(sT, gFile)
+    cutoffs <- seq(0,0.12,0.005)
+    res <- GAICRun(sT, cutoffs)
+    
+    return(res)
+  })
+  
+  saveRDS(resList, "~/Data/Tennessee/subTnsubB_RD.rds")
+  
+  oT <- nodeInfo(oT)
+  oT <- growthSim(oT, gFile)
+  
+  gaics <- lapply(resList, function(res){
+    gaics <- sapply(res, function(x){x$a$gaic})
+  })
+  
+  plot(oT$p, show.tip.label = F)
+  add.scale.bar(x=0, y=-40)
+  mean(oT$p$edge.length[which(oT$p$edge[,2]%in%1:nrow(oT$v))])
+  
+  cutoffs <- seq(0,0.20,0.005)
+  res <- GAICRun(oT, cutoffs)
+  
   gaics <- sapply(res, function(x){x$a$gaic})
-})
+  plot(cutoffs, gaics, xlab = "Mean Cutoff", ylab="GAIC")
+  lines(cutoffs, gaics)
+  modAIC <- sapply(res, function(x){x$a$propFit$aic})
+  nullAIC <- modAIC-gaics
+  
+  ageDs <- sapply(res, function(x){x$ageD})
+  
+  
+  saveRDS(res, "~/Data/Tennessee/STtnsubB_GD_nm.rds")
+}
 
-plot(oT$p, show.tip.label = F)
-add.scale.bar(x=0, y=-40)
-mean(oT$p$edge.length[which(oT$p$edge[,2]%in%1:nrow(oT$v))])
-
-cutoffs <- seq(0,0.20,0.005)
-res <- GAICRun(oT, cutoffs)
-
-gaics <- sapply(res, function(x){x$a$gaic})
-plot(cutoffs, gaics, xlab = "Mean Cutoff", ylab="GAIC")
-lines(cutoffs, gaics)
-modAIC <- sapply(res, function(x){x$a$propFit$aic})
-nullAIC <- modAIC-gaics
-
-ageDs <- sapply(res, function(x){x$ageD})
-
-
-saveRDS(res, "~/Data/Tennessee/STtnsubB_GD_nm.rds")

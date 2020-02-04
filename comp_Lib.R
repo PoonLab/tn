@@ -53,6 +53,7 @@ impTN93 <- function(iFile, minNS=63){
   }))
   
   #Only closest retrospective edges are kept for edges from new cases. 
+  ##TO-DO: Potentially save this as part of the vertex? Simpler and more intuitive organization.
   g$e <- subset(g$e, tMax!=max(tMax))
   g$e <- rbind(g$e, subset(minE, tMax==max(tMax)))
   g$f <- subset(minE, tMax < max(tMax))
@@ -221,16 +222,16 @@ compAnalyze <- function(subG) {
   fit2 <- glm(Growth ~ Pred, data = df2, family = "poisson")
   
   #For the analysis
-  subG$a <- list()
+  a <- list()
   
   #Save, gaic, model and age data as part of the output
-  subG$a$gaic <- fit1$aic-fit2$aic
-  subG$a$ageMod <- mod
-  subG$a$ageFit <- fit1
-  subG$a$nullFit <- fit2
-  subG$f <- ageD
+  a$gaic <- fit1$aic-fit2$aic
+  a$mod <- mod
+  a$propFit <- fit1
+  a$nullFit <- fit2
+  a$f <- ageD
 
-  return(subG)
+  return(a)
 }
 
 #Run across a set of several subGraphs created at various filters, analyzing GAIC at each with clusterAnalyze

@@ -1,41 +1,56 @@
-source("~/git/tn/comp_Lib.R")
+source("~/git/tn/subT_Lib.R")
 require(R.utils)
 
 ## Generating Analysis
 #____________________________________________________________________________________________________________________________#
 
-#Expecting the output from a tn93 run formatted to a csv file.
+#iFile <- "~/Data/Seattle/SeattleB_PRO_iq_pplacer/st.refpkg/SeattleB_PRO_Filt.fasta.tree"
+#gFile <- "~/Data/Seattle/SeattleB_PRO_iq_pplacer/st.tre"
+
+#iFile <- "~/Data/Tennessee/TennesseeB_Trim_Diag_IqTree_nm/TennesseeB_Trim_Diag_Filt.fasta.treefile" 
+#gFile <- "~/Data/Tennessee/TennesseeB_Trim_Diag_pplacer/tn.tre"
+
+
+#Expecting a newick file and a guppy run (set of trees)
 #Expecting patient information in the format ID_Date
 #The name/path of the output file, will both a pdf summary, a set of all clustering data, and a complete version of the graph in question 
-runArgs <- commandArgs(trailingOnly=T, asValues=T, defaults = list(f="stdin",o=NA,t=1,g=""))
+runArgs <- commandArgs(trailingOnly=T, asValues=T, defaults = list(f="stdin",o=NA,g=NA,t=""))
 iFile <- runArgs$f
 oFile <- ifelse(is.na(runArgs$o), gsub(".txt$", "", iFile), runArgs$o)
 gFile <- runArgs$g
+tFile <- runArgs$t
 
-#Load or create a graph, saving a newly created graph in an accessible file for later use
-if ((!is.na(gFile))&file.exists(gFile)) {
-    g <- readRDS(gFile)
-} else {
-  g <- impTN93(iFile)
-  saveRDS(g, file = paste0(oFile, "_G.rds"))
+#Checking for growth file
+if(is.na(gFile)) {
+ simpleError("No Growth File entered") 
 }
 
-print(gFile)
+#Load or create the annotated tree, saving a newly created tree in an accessible file for later use
+if ((!is.na(tFile))&file.exists(tFile)) {
+  t <- readRDS(tFile)
+} else {
+  t <- impTree(iFile)
+  
+  #Annotate the tree with node and growth info
+  t <- nodeInfo(t)
+  t <- growthSim(t, gFile)
+  saveRDS(t, file = paste0(oFile, "_T.rds"))
+}
 
 #Obtain cluster info for all subgraphs
-res <- gaicRun(g)
+cutoffs <- seq(0,0.10,0.002)
+res <- GAICRun(t, cutoffs)
 
-#Save all growth data in accessable files
-#saveRDS(res, file = paste0(oFile, "_GD.rds"))
-cutoffs <- as.numeric(names(res))
+#Save this analysis
+saveRDS(res, file = paste0(oFile, "_TD.rds"))
 
 ## Generate Pictures and output summary
 #__________________________________________________________________________________________________________________________#
 
 #Extract GAICs, AICs and cutoffs for graphing purposes
-gaics <- sapply(res, function(x) {a$gaic})
-modAIC <- sapply(res, function(x) {a$ageFit$aic})
-nullAIC <- sapply(res, function(x) {a$nullFit$aic})
+gaics <- sapply(res, function(x) {x$gaic})
+modAIC <- sapply(res, function(x) {x$propFit$aic})
+nullAIC <- sapply(res, function(x) {x$nullFit$aic})
 
 pdf(paste0(oFile,".pdf"))
 
