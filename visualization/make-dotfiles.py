@@ -3,7 +3,7 @@ import math
 # settings for Seattle Example
 cutoff = 0.0160
 newyear = 2012
-code = 'tn93StsubB'
+code = 'sttn93'
 nodecolor = 'dodgerblue'
 boldcolor = '#0051a5'
 origin = 1999

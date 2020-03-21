@@ -31,6 +31,9 @@ impTree <-function(tFile){
     sapply(tips, function(j){ t1 - t$v$Time[j] })
   })
   
+  #Unnused
+  #t$e$tdTab <- table(abs(t$e$tDiff))
+
   return(t)
 }
 
@@ -51,7 +54,8 @@ nodeInfo <- function(iT) {
   iT$n$des <- lapply(nodes, function(x){Descendants(iT$p,x,"all")})
   names(iT$n$des) <- as.character(nodes)
   
-  #Obtain the mean distance and recency for each node from f
+  #Obtain information for each node
+  #This includes information around the subtree defined by each node
   iT$n$agg <- bind_rows(lapply(iT$n$des, function(x){
     tips <- x[which(x<=length(iT$v$ID))]
     
@@ -66,51 +70,63 @@ nodeInfo <- function(iT) {
   iT$n$agg$ID <- as.character(nodes)
   iT$n$agg$BootStrap <- as.numeric(iT$p$node.label)/100
   
+  ##TO-DO: Confirm, this is statistaically valid.
+  iT$n$agg$BootStrap[is.na(iT$n$agg$BootStrap)] <- 1 # A comprimise for the root.
+  
   #Based on Cherry nodes, obtain some frequency info
-  ##TO-DO: Currently Unnused
-  if(F) {
+  if(T) {
     #Obtain Cherry nodes for the sake of frequency function analysis
     tEs <- which(iT$p$edge[,2]%in%tips)
-    cNs <- unique((iT$p$edge[,1])[tEs])
     
-    iT$f <- bind_rows(lapply(cNs, function(cN){
-      bs <- iT$n$agg$BootStrap[which(as.numeric(iT$n$agg$ID)==cN)]
-      mDist <- iT$n$agg$mDist[which(as.numeric(iT$n$agg$ID)==cN)]
+    #Analyze things about each cherry node
+    iT$f <- bind_rows(lapply(tEs, function(tE){
+      cN <- (iT$p$edge[,1])[tE]
+      cT <- (iT$p$edge[,2])[tE]
+      cA <- (iT$p$edge[,2])[setdiff(which(iT$p$edge[,1]==cN), tE)]
       
-      chN <- (iT$p$edge[,2])[which(iT$p$edge[,1]==cN)]
+      #The length of the edge of interest (without the node that cT makes)
+      eL <- (iT$p$edge.length[which(iT$p$edge[,2]==cA)] +
+               iT$p$edge.length[which(iT$p$edge[,2]==cN)])
       
-      if(sum(chN%in%nodes)>0){
-        nN <- chN[which(chN%in%nodes)]
-        nNmRec <- iT$n$agg$mTime[which(as.numeric(iT$n$agg$ID)==nN)]
-        tDiff <- abs(nNmRec-iT$v$Time[chN[-which(chN%in%nodes)]])
+      #If adjacent 'cA' is a node
+      if(cA>length(tips)){
+        nNmRec <- iT$n$agg$mTime[which(as.numeric(iT$n$agg$ID)==cA)]
+        tDiff <- abs(nNmRec-iT$v$Time[cT])
       } 
+      #If adjacent 'cA' is a tip
       else {
-        tDiff <- abs(iT$e$tDiff[chN[1],chN[2]])
+        tDiff <- abs(iT$e$tDiff[cT,cA])
       }
       
-      return(data.frame(mDist=mDist, BootStrap=bs, tDiff=tDiff))            
+      
+      infoR <- subset(iT$n$agg, ID%in%as.character(cN))
+      
+      return(data.frame(Node=cN, Tip=cT, tDiff=tDiff, BootStrap=infoR$BootStrap, mDist=infoR$mDist, branchL=eL))            
     }))
   }
   
-  #Frequencey information model, placement weighting
-  iT$f <- bind_rows(lapply(tips, function(tip){
-    print(tip)
-    
-    pth <- as.character(nodepath(iT$p, tip, nodes[[1]])[-1])
-    invpth <- as.character(setdiff(nodes, pth))
-    
-    mem <- subset(iT$n$agg, ID%in%pth) %>% select(mDist, mTime, BootStrap, totEdge, totTips, ID)
-    invmem <- subset(iT$n$agg, ID%in%invpth) %>% select(mDist, mTime, BootStrap, totEdge, totTips, ID)
-    
-    mem$tDiff <- abs((mem$mTime*mem$totTips-iT$v$Time[tip])/(mem$totTips-1)-iT$v$Time[tip])
-    invmem$tDiff <- abs(invmem$mTime-iT$v$Time[tip])
-    
-    mem$mem <- 1
-    invmem$mem <- 0
-    
-    return(rbind(mem,invmem))
-  }))
-  
+  #Alternate - Placement based analysis
+  if(F) {
+    #Frequencey information model, placement weighting
+    iT$f <- bind_rows(lapply(tips, function(tip){
+      print(tip)
+      
+      pth <- as.character(nodepath(iT$p, tip, nodes[[1]])[-1])
+      invpth <- as.character(setdiff(nodes, pth))
+      
+      mem <- subset(iT$n$agg, ID%in%pth) %>% select(mDist, mTime, BootStrap, totEdge, totTips, ID)
+      invmem <- subset(iT$n$agg, ID%in%invpth) %>% select(mDist, mTime, BootStrap, totEdge, totTips, ID)
+      
+      mem$tDiff <- abs((mem$mTime*mem$totTips-iT$v$Time[tip])/(mem$totTips-1)-iT$v$Time[tip])
+      invmem$tDiff <- abs(invmem$mTime-iT$v$Time[tip])
+      
+      mem$mem <- 1
+      invmem$mem <- 0
+      
+      return(rbind(mem,invmem))
+    }))
+  }
+
   return(iT)
 }
 
@@ -177,6 +193,7 @@ growthSim <- function(iT, gFile) {
 
 #Cluster using a modified subtree-based method
 #Clusters are defined as subtrees with a mean tip-to tip distance under some maximum
+##TO-DO: Simplify. Currently the Root of Speed issues.
 STClu <- function(iT, maxD, minB=0.90) {
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param maxD: The maximum distance criterion defining clusters
@@ -184,7 +201,7 @@ STClu <- function(iT, maxD, minB=0.90) {
   #         Growth is summarized as a matrix of old cases, new cases and predictor values
   
   #Identify potential clusters by some criterion as well as tips within those potential clusters
-  cluNames <- as.character(subset(iT$n$agg, (mDist<maxD)&(BootStrap>minB))$ID)
+  cluNames <- as.character(subset(iT$n$agg, (mDist<=maxD)&(BootStrap>=minB))$ID)
   cluTips <- unlist(iT$n$des[cluNames]) 
   cluTips <- unique(as.numeric(cluTips[cluTips<length(iT$v$ID)]))
   
@@ -207,17 +224,18 @@ STClu <- function(iT, maxD, minB=0.90) {
   iT$n$agg$Clustered[which(iT$n$agg$ID%in%cluNames)] <- TRUE
   cluNames <- temp
   
+  iT$c$cluNames <- cluNames
+  
   #Obtain clusters in the form of membership lists, including new cases
   clu <- lapply(cluNames, function(i){
     
     #Obtain Tips, ids and edges already in Cluster 
     iDes <- iT$n$des[[i]]
     iDesTs <- iDes[which(iDes<length(iT$v$ID))]
-    iDesTids <- iT$v$ID[iDesTs]
     iDesEs <- which(iT$p$edge[,2]%in%iDes)
     
     #New cases associated with an internal node within the potential cluster
-    gTips <- subset(iT$g, (oE%in%iDesEs)&(Bootstrap>minB))
+    gTips <- subset(iT$g, (oE%in%iDesEs)&(Bootstrap>=minB))
     
     #To catch the event that no new tips are added
     if(nrow(gTips)>0) {
@@ -225,7 +243,7 @@ STClu <- function(iT, maxD, minB=0.90) {
       #To Find any new tips that need to be added to membership
       #These tips will not be added to a cluster if they would increase the mean distance above dMax
       ##TO-DO: Test function, this currently catches no breaks in real data (they could be rare)
-      breakCon <- sapply(1:nrow(gTips), function(j) {
+      gTips$breakCon <- sapply(1:nrow(gTips), function(j) {
         gTip <- gTips[j,]
         mDist <- subset(iT$n$agg, ID==as.numeric(i))$mDist
         adj <- iT$p$edge[gTip$oE,2]
@@ -234,11 +252,10 @@ STClu <- function(iT, maxD, minB=0.90) {
         oDists <- rep(mDist, choose(length(iDesTs),2))
         nDists <- iT$e$dist[adj, setdiff(iDesTs, adj)]-gTip$pendLength+gTip$distLength
         nmDist <- mean(c(oDists,nDists, gTip$pendLength+gTip$distLength))
-        
-        return(nmDist>maxD)
+ 
+        return(nmDist>=maxD)
       })
-      
-      gTips <- gTips[!breakCon,]
+      gTips <- subset(gTips, !breakCon)
     }
     
     #To catch the event that no new tips are added
@@ -246,7 +263,7 @@ STClu <- function(iT, maxD, minB=0.90) {
       gTips <- NULL
     }
     
-    return(c(iDesTids, gTips$nID))
+    return(c(iT$v$ID[iDesTs], gTips$nID))
   })
   
   #Obtain old and new singletons.
@@ -258,10 +275,10 @@ STClu <- function(iT, maxD, minB=0.90) {
     
     #New cases associated with an internal node within the potential cluster
     iE <- which(iT$p$edge[,2]==which(iT$v$ID%in%i))
-    gTips <- subset(iT$g, (iT$g$oE==iE)&(Bootstrap>minB))
+    gTips <- subset(iT$g, (iT$g$oE==iE)&(Bootstrap>=minB))
     
     if(nrow(gTips)>0){
-      gTips <- subset(gTips, (distLength+pendLength)<maxD)
+      gTips <- subset(gTips, (distLength+pendLength)<=maxD)
     }
     return(c(i, gTips$nID))
   }))
@@ -270,33 +287,35 @@ STClu <- function(iT, maxD, minB=0.90) {
   oSing <- as.list(setdiff(iT$v$ID, unlist(clu)))
   nSing <- as.list(setdiff(iT$g$nID, unlist(clu)))
   
-  iT$c$membership <- c(clu,oSing, nSing)
+  iT$c$membership <- c(clu,oSing,nSing)
   
   #Return a Data frame of important cluster growth information
   temp <- bind_rows(lapply(1:length(iT$c$membership), function(i){
     
     x <- iT$c$membership[[i]]
-    newCases <- length(which(x%in%iT$g$nID))
-    oldCases <- length(x) - newCases
-    meanRec <- max(iT$v$Time)+1-mean(subset(iT$v, ID%in%x)$Time)
+    oldCases <- length(which(x%in%iT$v$ID))
     
     #For growth, record the number of old and new cases in the clusters which contain old cases
     if(oldCases==0) {
       return(data.frame(Old=NULL,New=NULL,mRec=NULL,cSize=NULL, mDist=NULL))
+    }
+    else {
+      newCases <- length(x) - oldCases
+      mRec <- max(iT$v$Time)+1-mean(subset(iT$v, ID%in%x)$Time)
       
-    }else{
       #Calculate the total length in branches that is taken up by a given subtree
       if(i<=length(cluNames)){
-        iDes <- iT$n$des[[cluNames[i]]]
-        totLength <- sum(iT$p$edge.length[which(iT$p$edge[,2]%in%iDes)])
+        totLength <- subset(iT$n$agg, ID%in%cluNames[i])$mDist
         mDist <- subset(iT$n$agg, ID%in%cluNames[i])$mDist
-        
-      }else {
+      }
+      
+      #For singletons
+      else {
         totLength <- iT$p$edge.length[which(iT$p$edge[,2]%in%which(iT$v$ID%in%x))]
         mDist <- 0
       }
       
-      return(data.frame(Old=oldCases,New=newCases,mRec=meanRec,totLength=totLength, mDist=mDist))
+      return(data.frame(Old=oldCases,New=newCases,mRec=mRec,totLength=totLength, mDist=mDist))
     }
   }))
   
@@ -313,28 +332,41 @@ GAICRun <- function(iT, maxDs, minBs=0.90, rand=F) {
   
   #Obtain the subtree and a list of analysis 
   runRes <- lapply(maxDs, function(maxD){
-    lapply(minBs, function(minB){
+    x <- lapply(minBs, function(minB){
       
       #Create subTree
       subT <- STClu(iT, maxD, minB)
       
-      #Obtain the rate of cluster joining
-      subT$f$Positive <- F
-      i <- intersect(which(subT$f$mem==1),
-                     intersect(which(subT$f$mDist<maxD), 
-                               which(subT$f$BootStrap>minB)))
-      subT$f$Positive[i] <- T
+      #Check positives now that we have params
+      subT$f$Positive <- (subT$f$BootStrap>=minB)&(subT$f$mDist<=maxD)
       
-      subT$f$tDiff <- round(subT$f$tDiff)
-      tDiffs <- unique(subT$v$Time)- min(unique(subT$v$Time))
-      ageD <- bind_rows(lapply(tDiffs, function(td) {
-        df <- subset(subT$f, tDiff==td)
-        data.frame(tDiff=td, Total=nrow(df), Positives=sum(df$Positive))
-      }))
+      #Layout of Time and time lag information
+      tTab <- table(iT$v$Time)
+      tDiffs <- sort(unique(abs(as.vector(iT$e$tDiff))))
+      tdTab <- rep(nrow(iT$v)-1, length(tDiffs))
+      names(tdTab) <- tDiffs
+      largeTD <- tDiffs[which(tDiffs>(ceiling(max(tDiffs/2))))]
+      leftOut <- sapply(1:length(largeTD), function(i){
+        td <- largeTD[[i]]
+        ts <- as.numeric(names(tTab))[between(as.numeric(names(tTab)), (max(iT$v$Time)-td+1), (min(iT$v$Time)+td-1))]
+        sum(tTab[as.character(unique(ts))]) 
+      })
+
+      tdTab[as.character(largeTD)] <- tdTab[as.character(largeTD)]-leftOut
+      
+      
+      tSpan <- (seq(min(iT$v$Time), max(iT$v$Time), 1))
+      
+      #Obtains the frequency of how many tips find a given tDiff possible
+      #For example, it may be impossible for central time points to see the largest time difference in the set
+      names(tdTab) <- tDiffs
+      posTab <- table(round(subset(subT$f, Positive)$tDiff))
+      
+      ageD <- 
       
       #Weighting whole clusters based on their size and mean recency
       mod <- glm(cbind(Positives,Total)~tDiff, data=ageD, family='binomial')
-      
+
       #Random Weight Tests
       if(rand){ subT$v$Weight <- sample(1:20, nrow(subT$v), replace=T)}
       
@@ -357,12 +389,11 @@ GAICRun <- function(iT, maxDs, minBs=0.90, rand=F) {
         fit2 <- glm(Growth ~ Pred, data = df2, family = "poisson")
       }
       
-      
-      fit1 <- glm(New ~ mRec*totLength, data = subT$c$growth, family = "poisson")
-      fit2 <- glm(New ~ totLength, data = subT$c$growth, family = "poisson")
-      res <- list()
+      fit1 <- glm(New ~ mRec+Old, data = subT$c$growth, family = "poisson")
+      fit2 <- glm(New ~ Old, data = subT$c$growth, family = "poisson")
       
       #Save, gaic, model and age data as part of the output
+      res <- list()
       res$gaic <- fit1$aic-fit2$aic
       res$propFit <- fit1
       res$nullFit <- fit2
@@ -371,10 +402,10 @@ GAICRun <- function(iT, maxDs, minBs=0.90, rand=F) {
       
       print(res$par)
       print(res$gaic)
+      print(length(subT$c$cluNames))
       
-      return(res)
+      return(res$gaic)
     })
-    
   })
   
   return(runRes)
@@ -405,14 +436,21 @@ if(T){
   oT <- impTree(tFile) 
   oT <- nodeInfo(oT)
   oT <- growthSim(oT, gFile)
-  cutoffs <- seq(0.13,0.20,0.01)
-  res <- GAICRun(oT, cutoffs)
   
-  gaics <- sapply(res, function(x){x[[1]]$gaic})
-  plot(cutoffs, gaics, xlab = "Mean Cutoff", ylab="GAIC")
-  lines(cutoffs, gaics)
+  iT <- oT
+  minB <- 0.9
+  maxD <- 0.04
+  #cutoffs <- seq(0,0.13,0.002)
+  #cutB <- seq(1,0,-0.02)
+  #res <- GAICRun(oT, cutoffs, cutB)
   
-  res <- GAICRun(oT, cutoffs,rand=F)
-  modAIC <- sapply(res, function(x){x$propFit$aic})
-  nullAIC <- modAIC-gaics
+  #saveRDS(res, "resST")
+  
+  #gaics <- sapply(res, function(x){x})
+  #plot(cutoffs, gaics, xlab = "Mean Cutoff", ylab="GAIC")
+  #lines(cutoffs, gaics)
+  
+  #res <- GAICRun(oT, cutoffs,rand=F)
+  #modAIC <- sapply(res, function(x){x[[1]]$propFit$aic})
+  #nullAIC <- modAIC-gaics
 }
