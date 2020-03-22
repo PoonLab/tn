@@ -39,7 +39,8 @@ impTree <-function(tFile){
 
 #Summarize information by node, this is used to cluster by subtree and add this to the tree file
 #Obtain the mean branch length under each node
-##TO-DO: Reassess any of this that could be moved to initial tree creation. ##
+##TO-DO: Reassess any of this that could be moved to initial tree creation. Or sub-sampling ##
+##TO-DO: Simplify. Needs to be re-run for robust tests. ##
 nodeInfo <- function(iT) {
   #@param iT: The input tree file, annotated with vertex and edge information
   #@return: The tree annotated with 2 Objects. The list of descendant tips under each given node  
@@ -193,7 +194,7 @@ growthSim <- function(iT, gFile) {
 
 #Cluster using a modified subtree-based method
 #Clusters are defined as subtrees with a mean tip-to tip distance under some maximum
-##TO-DO: Simplify. Currently the Root of Speed issues.
+##TO-DO: Simplify. Currently the Root of Speed issues. ##
 STClu <- function(iT, maxD, minB=0.90) {
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param maxD: The maximum distance criterion defining clusters
@@ -351,47 +352,55 @@ GAICRun <- function(iT, maxDs, minBs=0.90, rand=F) {
         ts <- as.numeric(names(tTab))[between(as.numeric(names(tTab)), (max(iT$v$Time)-td+1), (min(iT$v$Time)+td-1))]
         sum(tTab[as.character(unique(ts))]) 
       })
-
+      
+      #Obtains the "attempts". Or how many tips find a given tDiff possible
+      #For example, it may be impossible for central time points to see the largest time difference in the set
       tdTab[as.character(largeTD)] <- tdTab[as.character(largeTD)]-leftOut
       
-      
-      tSpan <- (seq(min(iT$v$Time), max(iT$v$Time), 1))
-      
-      #Obtains the frequency of how many tips find a given tDiff possible
-      #For example, it may be impossible for central time points to see the largest time difference in the set
+      #Sort Data into Age Data
       names(tdTab) <- tDiffs
-      posTab <- table(round(subset(subT$f, Positive)$tDiff))
-      
-      ageD <- 
+      posTab <- rep(0,length(tDiffs))
+      names(posTab) <- tDiffs
+      tempTab <- table(round(subset(subT$f, Positive)$tDiff))
+      posTab[names(tempTab)] <- as.numeric(tempTab)
+      ageD <- data.frame(tDiff=tDiffs, Positives=as.numeric(posTab), 
+                         Total=as.numeric(tdTab))
       
       #Weighting whole clusters based on their size and mean recency
       mod <- glm(cbind(Positives,Total)~tDiff, data=ageD, family='binomial')
-
-      #Random Weight Tests
-      if(rand){ subT$v$Weight <- sample(1:20, nrow(subT$v), replace=T)}
       
       #Individual node weighting
-      ##TO-DO: Possibly not Approp
-      if(F){
-        subT$v$Weight <- predict(mod, type='response', data.frame(tDiff=max(subT$v$Time)-subT$v$Time+1))
-        #Create two data frames from two predictive models, one based on absolute size (NULL) and our date-informed model
-        df1 <- data.frame(Growth = subT$c$growth$New, Pred = sapply(subT$c$membership[which(subT$c$growth$Old>0)], function(x){
-          members <- subset(subT$v, ID%in%x)
-          sum(members$Weight)
-        })) 
-        df2 <- data.frame(Growth = subT$c$growth$New, Pred = sapply(subT$c$membership[which(subT$c$growth$Old>0)], function(x){
-          members <- subset(subT$v, ID%in%x)
-          length(members)
-        })) 
-        
-        
-        fit1 <- glm(Growth ~ Pred, data = df1, family = "poisson")
-        fit2 <- glm(Growth ~ Pred, data = df2, family = "poisson")
+      if(rand){ 
+        #Random Weight Tests
+        subT$v$Weight <- sample(1:20, nrow(subT$v), replace=T)
       }
+      else {
+        #Tips are weighted based on recency
+        subT$v$Weight <- predict(mod, type='response', data.frame(tDiff=max(subT$v$Time)-subT$v$Time+1))
+      }
+        
+      #Create two data frames from two predictive models, one based on absolute size (NULL) and our date-informed model
+      df1 <- data.frame(Growth = subT$c$growth$New, Pred = sapply(subT$c$membership[which(subT$c$growth$Old>0)], function(x){
+        members <- subset(subT$v, ID%in%x)
+        sum(members$Weight*members$termDist)
+      })) 
+      df2 <- data.frame(Growth = subT$c$growth$New, Pred = sapply(subT$c$membership[which(subT$c$growth$Old>0)], function(x){
+        members <- subset(subT$v, ID%in%x)
+        sum(members$termDist)
+      }))
+        
+      #Cluster growht prediction model
+      fit1 <- glm(Growth ~ Pred, data = df1, family = "poisson")
+      fit2 <- glm(Growth ~ Pred, data = df2, family = "poisson")
       
-      fit1 <- glm(New ~ mRec+Old, data = subT$c$growth, family = "poisson")
-      fit2 <- glm(New ~ Old, data = subT$c$growth, family = "poisson")
       
+      #Whole Cluster Weighting 
+      ##Possibly Not approp.
+      if(F){
+        fit1 <- glm(New ~ mRec+Old, data = subT$c$growth, family = "poisson")
+        fit2 <- glm(New ~ Old, data = subT$c$growth, family = "poisson")
+      }
+
       #Save, gaic, model and age data as part of the output
       res <- list()
       res$gaic <- fit1$aic-fit2$aic
@@ -426,7 +435,6 @@ subSample <- function(iT, ssize=1200) {
   #iT$e$dist <- dist.nodes(iT$p)
   #iT$e$tDiff <- iT$e$tDiff[i,i]
   
-  
   return(iT)
 }
 
@@ -440,9 +448,9 @@ if(T){
   iT <- oT
   minB <- 0.9
   maxD <- 0.04
-  #cutoffs <- seq(0,0.13,0.002)
-  #cutB <- seq(1,0,-0.02)
-  #res <- GAICRun(oT, cutoffs, cutB)
+  cutoffs <- seq(0,0.13,0.002)
+  cutB <- seq(1,0,-0.02)
+  res <- GAICRun(oT, cutoffs, cutB)
   
   #saveRDS(res, "resST")
   
