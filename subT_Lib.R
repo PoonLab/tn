@@ -31,6 +31,9 @@ impTree <-function(tFile){
     sapply(tips, function(j){ t1 - t$v$Time[j] })
   })
   
+  el <- t$e$dist[1:nrow(t$v),1:nrow(t$v)]
+  t$el <- as.numeric(unlist(lapply(1:nrow(t$v), function(x){el[x,x:nrow(t$v)]})))
+  
   #Unnused
   #t$e$tdTab <- table(abs(t$e$tDiff))
 
@@ -81,28 +84,33 @@ nodeInfo <- function(iT) {
     
     #Analyze things about each cherry node
     iT$f <- bind_rows(lapply(tEs, function(tE){
+      
       cN <- (iT$p$edge[,1])[tE]
       cT <- (iT$p$edge[,2])[tE]
       cA <- (iT$p$edge[,2])[setdiff(which(iT$p$edge[,1]==cN), tE)]
       
-      #The length of the edge of interest (without the node that cT makes)
-      eL <- (iT$p$edge.length[which(iT$p$edge[,2]==cA)] +
-               iT$p$edge.length[which(iT$p$edge[,2]==cN)])
+      if(cN!=(nrow(iT$v)+1)){
+        #The length of the edge of interest (without the node that cT makes)
+        eL <- (iT$p$edge.length[which(iT$p$edge[,2]==cA)] +
+                 iT$p$edge.length[which(iT$p$edge[,2]==cN)])
+      }
       
       #If adjacent 'cA' is a node
       if(cA>length(tips)){
         nNmRec <- iT$n$agg$mTime[which(as.numeric(iT$n$agg$ID)==cA)]
         tDiff <- abs(nNmRec-iT$v$Time[cT])
-      } 
-      #If adjacent 'cA' is a tip
-      else {
+      } else {
         tDiff <- abs(iT$e$tDiff[cT,cA])
       }
       
       
       infoR <- subset(iT$n$agg, ID%in%as.character(cN))
       
-      return(data.frame(Node=cN, Tip=cT, tDiff=tDiff, BootStrap=infoR$BootStrap, mDist=infoR$mDist, branchL=eL))            
+      if(cN==(nrow(iT$v)+1)) {
+        return(data.frame(Node=NULL, Tip=NULL, tDiff=NULL, BootStrap=NULL, mDist=NULL, branchL=NULL))
+      } else{
+        return(data.frame(Node=cN, Tip=cT, tDiff=tDiff, BootStrap=infoR$BootStrap, mDist=infoR$mDist, branchL=eL))             
+      }
     }))
   }
   
@@ -409,9 +417,9 @@ GAICRun <- function(iT, maxDs, minBs=0.90, rand=F) {
       res$mod <- mod
       res$par <- c(maxD, minB)
       
-      print(res$par)
-      print(res$gaic)
-      print(length(subT$c$cluNames))
+      #print(res$par)
+      #print(res$gaic)
+      #print(length(subT$c$cluNames))
       
       return(res$gaic)
     })
@@ -438,27 +446,3 @@ subSample <- function(iT, ssize=1200) {
   return(iT)
 }
 
-if(T){
-  tFile <- "~/Data/Seattle/IqTree_Bootstrap/st.refpkg/SeattleB_PRO_Filt.fasta.treefile"
-  gFile <- "~/Data/Seattle/IqTree_Bootstrap/st.tre"
-  oT <- impTree(tFile) 
-  oT <- nodeInfo(oT)
-  oT <- growthSim(oT, gFile)
-  
-  iT <- oT
-  minB <- 0.9
-  maxD <- 0.04
-  cutoffs <- seq(0,0.13,0.002)
-  cutB <- seq(1,0,-0.02)
-  res <- GAICRun(oT, cutoffs, cutB)
-  
-  #saveRDS(res, "resST")
-  
-  #gaics <- sapply(res, function(x){x})
-  #plot(cutoffs, gaics, xlab = "Mean Cutoff", ylab="GAIC")
-  #lines(cutoffs, gaics)
-  
-  #res <- GAICRun(oT, cutoffs,rand=F)
-  #modAIC <- sapply(res, function(x){x[[1]]$propFit$aic})
-  #nullAIC <- modAIC-gaics
-}
