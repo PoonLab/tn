@@ -1,5 +1,10 @@
 source("~/git/tn/comp_Lib.R")
-require(R.utils)
+require("R.utils")
+
+iFile <- "~/Data/NAlberta/naB.txt"
+oFile <-  gsub(".txt$", "", iFile)
+gFile <- ""
+
 
 ## Generating Analysis
 #____________________________________________________________________________________________________________________________#
@@ -33,9 +38,9 @@ cutoffs <- as.numeric(names(res))
 #__________________________________________________________________________________________________________________________#
 
 #Extract GAICs, AICs and cutoffs for graphing purposes
-gaics <- sapply(res, function(x) {a$gaic})
-modAIC <- sapply(res, function(x) {a$ageFit$aic})
-nullAIC <- sapply(res, function(x) {a$nullFit$aic})
+gaics <- sapply(res, function(x) {x$gaic})
+modAIC <- sapply(res, function(x) {x$propFit$aic})
+nullAIC <- sapply(res, function(x) {x$nullFit$aic})
 
 pdf(paste0(oFile,".pdf"))
 
@@ -66,7 +71,7 @@ legend("topright", bg="white",
 
 
 #Plot GAIC
-plot(cutoffs, gaics, type = "n", ylim=c(min(gaics),max(gaics)), xlab="Cutoffs", ylab = "Difference (GAIC)")
+plot(cutoffs, gaics, type = "n", ylim=c(-56*1.1,max(gaics)), xlab="Cutoffs", ylab = "Difference (GAIC)")
 
 #Background
 bg <- par('usr')
@@ -85,7 +90,7 @@ abline(h=0)
 #Locate minimum and annotate Graph
 abline(v=cutoffs[which(gaics==min(gaics))[[1]]], lty=3,lwd=2)
 text(cutoffs[which(gaics==min(gaics))[[1]]+2.0], min(gaics), labels= round(min(gaics)))
-text(cutoffs[which(gaics==min(gaics))[[1]]+2.0], max(gaics)-0.10*(max(gaics)), labels=cutoffs[which(gaics==min(gaics))[[1]]])
+text(cutoffs[which(gaics==min(gaics))[[1]]+3.0], max(gaics)-0.10*(max(gaics)), labels=cutoffs[which(gaics==min(gaics))[[1]]])
 
 #Title
 par(xpd=NA)
