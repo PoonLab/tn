@@ -63,10 +63,11 @@ nodeInfo <- function(iT) {
     mTime <- mean(iT$v$Time[tips])
     mRec <- max(iT$v$Time)+1 - mTime
     mDist <- mean(unlist(lapply(tips, function(tip){iT$e$dist[tip,tips[tips>tip]]})))
+    xDist <- max(unlist(lapply(tips, function(tip){iT$e$dist[tip,tips[tips>tip]]})))
     mtDiff <- mean(unlist(lapply(tips, function(tip){abs(iT$e$tDiff[tip,tips[tips>tip]])})))
     totEdge <- sum(iT$p$edge.length[which(iT$p$edge[,2]%in%x)])
     
-    data.frame(mDist=mDist, mtDiff=mtDiff, totEdge=totEdge, mRec=mRec, mTime=mTime, totTips=length(tips))
+    data.frame(mDist=mDist, mtDiff=mtDiff, totEdge=totEdge, mRec=mRec, mTime=mTime, totTips=length(tips), xDist=xDist)
   }))
   iT$n$agg$ID <- as.character(nodes)
   iT$n$agg$BootStrap <- as.numeric(iT$p$node.label)/100
@@ -102,7 +103,7 @@ nodeInfo <- function(iT) {
       
       infoR <- subset(iT$n$agg, ID%in%as.character(cN))
       
-      return(data.frame(Node=cN, Tip=cT, tDiff=tDiff, BootStrap=infoR$BootStrap, mDist=infoR$mDist, branchL=eL))            
+      return(data.frame(Node=cN, Tip=cT, tDiff=tDiff, BootStrap=infoR$BootStrap, mDist=infoR$mDist, xDist=infoR$xDist, branchL=eL))            
     }))
   }
   
@@ -195,14 +196,20 @@ growthSim <- function(iT, gFile) {
 #Cluster using a modified subtree-based method
 #Clusters are defined as subtrees with a mean tip-to tip distance under some maximum
 ##TO-DO: Simplify. Currently the Root of Speed issues. ##
-STClu <- function(iT, maxD, minB=0.90) {
+STClu <- function(iT, maxD, minB=0, meanD=F) {
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param maxD: The maximum distance criterion defining clusters
   #@return: The tree annotated with cluster size, growth and membership
   #         Growth is summarized as a matrix of old cases, new cases and predictor values
   
   #Identify potential clusters by some criterion as well as tips within those potential clusters
-  cluNames <- as.character(subset(iT$n$agg, (mDist<=maxD)&(BootStrap>=minB))$ID)
+  if(meanD){
+    cluNames <- as.character(subset(iT$n$agg, (mDist<=maxD)&(BootStrap>=minB))$ID)
+  }else {
+    cluNames <- as.character(subset(iT$n$agg, (xDist<=maxD)&(BootStrap>=minB))$ID)
+  }
+
+  
   cluTips <- unlist(iT$n$des[cluNames]) 
   cluTips <- unique(as.numeric(cluTips[cluTips<length(iT$v$ID)]))
   
@@ -214,7 +221,7 @@ STClu <- function(iT, maxD, minB=0.90) {
   while(length(cluTips)>0) {
     tip <- cluTips[1]
     tClu <- cluNames[sapply(iT$n$des[cluNames], function(iClu) {tip%in%iClu})]
-    tCluS <- sapply(tClu, function(cluName) {length(iT$n$des[[cluName]])})
+    tCluS <- as.numeric(sapply(tClu, function(cluName) {length(iT$n$des[[cluName]])}))
     tClu <- tClu[which(tCluS==max(tCluS))[[1]]]
     temp <- c(temp,tClu)
     cluTips <- cluTips[-which(cluTips%in%iT$n$des[[tClu]])]
@@ -226,7 +233,7 @@ STClu <- function(iT, maxD, minB=0.90) {
   cluNames <- temp
   
   iT$c$cluNames <- cluNames
-  
+
   #Obtain clusters in the form of membership lists, including new cases
   clu <- lapply(cluNames, function(i){
     
@@ -236,11 +243,10 @@ STClu <- function(iT, maxD, minB=0.90) {
     iDesEs <- which(iT$p$edge[,2]%in%iDes)
     
     #New cases associated with an internal node within the potential cluster
-    gTips <- subset(iT$g, (oE%in%iDesEs)&(Bootstrap>=minB))
+    gTips <- subset(iT$g, (oE%in%iDesEs)) #&(Bootstrap>=minB))
     
     #To catch the event that no new tips are added
     if(nrow(gTips)>0) {
-      
       #To Find any new tips that need to be added to membership
       #These tips will not be added to a cluster if they would increase the mean distance above dMax
       ##TO-DO: Test function, this currently catches no breaks in real data (they could be rare)
@@ -256,7 +262,13 @@ STClu <- function(iT, maxD, minB=0.90) {
  
         return(nmDist>=maxD)
       })
-      gTips <- subset(gTips, !breakCon)
+    
+      
+      if(meanD) {
+        gTips <- subset(gTips, !breakCon) 
+      }else {
+        gTips <- subset(gTips, (distLength+pendLength)<=maxD)
+      }
     }
     
     #To catch the event that no new tips are added
@@ -276,7 +288,7 @@ STClu <- function(iT, maxD, minB=0.90) {
     
     #New cases associated with an internal node within the potential cluster
     iE <- which(iT$p$edge[,2]==which(iT$v$ID%in%i))
-    gTips <- subset(iT$g, (iT$g$oE==iE)&(Bootstrap>=minB))
+    gTips <- subset(iT$g, (iT$g$oE==iE)) #&(Bootstrap>=minB))
     
     if(nrow(gTips)>0){
       gTips <- subset(gTips, (distLength+pendLength)<=maxD)
@@ -325,7 +337,7 @@ STClu <- function(iT, maxD, minB=0.90) {
 }
 
 #Obtain GAIC at several different cutoffs
-GAICRun <- function(iT, maxDs, minBs=0.90, rand=F) {
+GAICRun <- function(iT, maxDs, minBs=0, rand=F) {
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param cutoffs: A set of maximum distance criterion defining clusters
   #@return: A list of analysis based on a fitting actual new data to predicted cluster growth
@@ -339,7 +351,7 @@ GAICRun <- function(iT, maxDs, minBs=0.90, rand=F) {
       subT <- STClu(iT, maxD, minB)
       
       #Check positives now that we have params
-      subT$f$Positive <- (subT$f$BootStrap>=minB)&(subT$f$mDist<=maxD)
+      subT$f$Positive <- (subT$f$xDist<=maxD) #&(subT$f$BootStrap>=minB)
       
       #Layout of Time and time lag information
       tTab <- table(iT$v$Time)
@@ -373,8 +385,7 @@ GAICRun <- function(iT, maxDs, minBs=0.90, rand=F) {
       if(rand){ 
         #Random Weight Tests
         subT$v$Weight <- sample(1:20, nrow(subT$v), replace=T)
-      }
-      else {
+      } else {
         #Tips are weighted based on recency
         subT$v$Weight <- predict(mod, type='response', data.frame(tDiff=max(subT$v$Time)-subT$v$Time+1))
       }
@@ -382,11 +393,11 @@ GAICRun <- function(iT, maxDs, minBs=0.90, rand=F) {
       #Create two data frames from two predictive models, one based on absolute size (NULL) and our date-informed model
       df1 <- data.frame(Growth = subT$c$growth$New, Pred = sapply(subT$c$membership[which(subT$c$growth$Old>0)], function(x){
         members <- subset(subT$v, ID%in%x)
-        sum(members$Weight*members$termDist)
+        sum(members$Weight)
       })) 
       df2 <- data.frame(Growth = subT$c$growth$New, Pred = sapply(subT$c$membership[which(subT$c$growth$Old>0)], function(x){
         members <- subset(subT$v, ID%in%x)
-        sum(members$termDist)
+        nrow(members)
       }))
         
       #Cluster growht prediction model
@@ -408,12 +419,13 @@ GAICRun <- function(iT, maxDs, minBs=0.90, rand=F) {
       res$nullFit <- fit2
       res$mod <- mod
       res$par <- c(maxD, minB)
+      res$ageD <- ageD
+      res$growth <- subT$c$growth
       
       print(res$par)
       print(res$gaic)
-      print(length(subT$c$cluNames))
       
-      return(res$gaic)
+      return(res)
     })
   })
   
@@ -446,17 +458,34 @@ if(T){
   oT <- growthSim(oT, gFile)
   
   iT <- oT
-  minB <- 0.9
-  maxD <- 0.04
-  cutoffs <- seq(0,0.13,0.002)
-  cutB <- seq(1,0,-0.02)
-  res <- GAICRun(oT, cutoffs, cutB)
+  minB <- 1.0
+  maxD <- 0.02
+  meanD <- F
+  rand <- F
+  
+  cutoffs <- seq(0,0.2,0.002)
+  #cutB <- seq(1,0,-0.02)
+  res <- GAICRun(oT, cutoffs)
   
   #saveRDS(res, "resST")
   
-  #gaics <- sapply(res, function(x){x})
-  #plot(cutoffs, gaics, xlab = "Mean Cutoff", ylab="GAIC")
-  #lines(cutoffs, gaics)
+  gaics <- sapply(res, function(x){x[[1]]$gaic})
+  plot(cutoffs, gaics, xlab = "Mean Cutoff", ylab="GAIC")
+  lines(cutoffs, gaics, col="red")
+  
+  
+  blahs <- sapply(res, function(x){nrow(x[[1]]$growth)})
+  plot(cutoffs, blahs, xlab = "Mean Cutoff", ylab="GAIC")
+  lines(cutoffs, blahs)
+
+  
+  
+  blahs <- sapply(res, function(x){(x[[1]]$nullFit$aic)})
+  plot(cutoffs, blahs, xlab = "Mean Cutoff", ylab="GAIC")
+  lines(cutoffs, blahs)
+  blahs <- sapply(res, function(x){(x[[1]]$propFit$aic)})
+  lines(cutoffs, blahs)
+  
   
   #res <- GAICRun(oT, cutoffs,rand=F)
   #modAIC <- sapply(res, function(x){x[[1]]$propFit$aic})
