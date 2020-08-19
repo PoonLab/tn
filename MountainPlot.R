@@ -38,9 +38,9 @@ cutoffs <- as.numeric(names(res))
 #__________________________________________________________________________________________________________________________#
 
 #Extract GAICs, AICs and cutoffs for graphing purposes
-gaics <- sapply(res, function(x) {x$gaic})
-modAIC <- sapply(res, function(x) {x$propFit$aic})
-nullAIC <- sapply(res, function(x) {x$nullFit$aic})
+gaics <- sapply(res, function(x) {x$a$gaic})
+modAIC <- sapply(res, function(x) {x$a$propFit$aic})
+nullAIC <- sapply(res, function(x) {x$a$nullFit$aic})
 
 pdf(paste0(oFile,".pdf"))
 

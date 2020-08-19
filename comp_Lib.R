@@ -3,7 +3,7 @@ library(dplyr,verbose = FALSE)
 
 #Creates a set of data-frames representing a graph of sequences, with the edges between those sequences representing the TN93 Distance.
 #Sequences must be dated with the date separated from the id by '_'. 
-impTN93 <- function(iFile, minNS=63){
+impTN93 <- function(iFile, minNS=63, dates=F){
   #@param iFile: The name/path of the input file (expecting tn93 output csv)
   #@param minNS: The minimum number of acceptible new Sequences. By default we keep this high.
   #@return: A list of 3 Data frames. An edge list (weighted by TN93 genetic distance), a vertex list, 
@@ -17,9 +17,17 @@ impTN93 <- function(iFile, minNS=63){
   temp4 <- sapply(idf$ID2, function(x) (strsplit(x,'_')[[1]])[[2]])
   
   #Create a data frame from the imported edge list. 
-  el <- data.frame(ID1=as.character(temp1), t1=as.numeric(temp2), 
-                   ID2=as.character(temp3), t2=as.numeric(temp4), 
-                   Distance = as.numeric(idf$Distance), stringsAsFactors= F)
+  if(dates){
+    el <- data.frame(ID1=as.character(temp1), t1=as.Date(temp2), 
+                     ID2=as.character(temp3), t2=as.Date(temp4), 
+                     Distance = as.numeric(idf$Distance), stringsAsFactors= F)
+  } else {
+    
+    el <- data.frame(ID1=as.character(temp1), t1=as.numeric(temp2), 
+                     ID2=as.character(temp3), t2=as.numeric(temp4), 
+                     Distance = as.numeric(idf$Distance), stringsAsFactors= F)
+    
+  }
   
   #Obtain the maximum time and time difference between the head and tail of each edge
   el$tMax <- pmax(el$t1,el$t2)
@@ -30,10 +38,13 @@ impTN93 <- function(iFile, minNS=63){
   
   #Order edges and vertices by time point and sort them into a single, larger list
   #If the newest timepoint contains a small number of sequences, we remove the newest year from consideration
+  #TO-DO, currently does not work with date resolution
   g <- list(v=vl[order(vl$Time),], e=el[order(el$tMax),], f=el[order(el$tMax),])
-  while(nrow(subset(g$v,Time==max(Time)))<=minNS) {
-    keepT <- head(as.numeric(names(table(g$v$Time))),-1)
-    g <- tFilt(g, keepT)
+  if(!dates) {
+    while(nrow(subset(g$v,Time==max(Time)))<=minNS) {
+      keepT <- head(as.numeric(names(table(g$v$Time))),-1)
+      g <- tFilt(g, keepT)
+    }
   }
   
   #Permanently remove edges from the new year such that only the closest edge between new vertices and old vertices remains
@@ -203,7 +214,7 @@ compAnalyze <- function(subG) {
   ageD <- bind_rows(lapply(tDiffs[tDiffs>0] , function(x){
     data.frame(tDiff=x, 
                Positive=nrow(subset(subG$f, tDiff==x & Distance<=maxD)), 
-               vTotal=sum(tail(tTab),-x) )
+               vTotal=sum(tail(tTab,-x)) )
   }))
   
   #Obtain a model of case connection frequency to new cases as predicted by individual case age
@@ -225,13 +236,13 @@ compAnalyze <- function(subG) {
   a <- list()
   
   #Save, gaic, model and age data as part of the output
-  a$gaic <- fit1$aic-fit2$aic
-  a$mod <- mod
-  a$propFit <- fit1
-  a$nullFit <- fit2
-  a$f <- ageD
+  subG$a$gaic <- fit1$aic-fit2$aic
+  subG$a$mod <- mod
+  subG$a$propFit <- fit1
+  subG$a$nullFit <- fit2
+  subG$a$f <- ageD
 
-  return(a)
+  return(subG)
 }
 
 #Run across a set of several subGraphs created at various filters, analyzing GAIC at each with clusterAnalyze

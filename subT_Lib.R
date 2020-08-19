@@ -43,8 +43,7 @@ impTree <-function(tFile){
 #Summarize information by node, this is used to cluster by subtree and add this to the tree file
 #Obtain the mean branch length under each node
 ##TO-DO: Reassess any of this that could be moved to initial tree creation. Or sub-sampling ##
-##TO-DO: Simplify. Needs to be re-run for robust tests. ##
-nodeInfo <- function(iT) {
+nodeInfo <- function(iT, light=F) {
   #@param iT: The input tree file, annotated with vertex and edge information
   #@return: The tree annotated with 2 Objects. The list of descendant tips under each given node  
   #         and a dataframe which summarizes information relevant to clustering
@@ -57,21 +56,31 @@ nodeInfo <- function(iT) {
   iT$n <- list()
   iT$n$des <- lapply(nodes, function(x){Descendants(iT$p,x,"all")})
   names(iT$n$des) <- as.character(nodes)
-  
+
   #Obtain information for each node
   #This includes information around the subtree defined by each node
-  iT$n$agg <- bind_rows(lapply(iT$n$des, function(x){
-    tips <- x[which(x<=length(iT$v$ID))]
-    
-    mTime <- mean(iT$v$Time[tips])
-    mRec <- max(iT$v$Time)+1 - mTime
-    mDist <- mean(unlist(lapply(tips, function(tip){iT$e$dist[tip,tips[tips>tip]]})))
-    xDist <- max(unlist(lapply(tips, function(tip){iT$e$dist[tip,tips[tips>tip]]})))
-    mtDiff <- mean(unlist(lapply(tips, function(tip){abs(iT$e$tDiff[tip,tips[tips>tip]])})))
-    totEdge <- sum(iT$p$edge.length[which(iT$p$edge[,2]%in%x)])
-    
-    data.frame(mDist=mDist, mtDiff=mtDiff, totEdge=totEdge, mRec=mRec, mTime=mTime, totTips=length(tips), xDist=xDist)
-  }))
+  if(light) {
+    iT$n$agg <- bind_rows(lapply(iT$n$des, function(x){
+      tips <- x[which(x<=length(iT$v$ID))]
+      mTime <- mean(iT$v$Time[tips])
+      mRec <- max(iT$v$Time)+1 - mTime
+      xDist <- max(unlist(lapply(tips, function(tip){iT$e$dist[tip,tips[tips>tip]]})))
+      data.frame(mRec=mRec, mTime=mTime, totTips=length(tips), xDist=xDist)
+    }))
+  } else {
+    iT$n$agg <- bind_rows(lapply(iT$n$des, function(x){
+      tips <- x[which(x<=length(iT$v$ID))]
+      
+      mTime <- mean(iT$v$Time[tips])
+      mRec <- max(iT$v$Time)+1 - mTime
+      mDist <- mean(unlist(lapply(tips, function(tip){iT$e$dist[tip,tips[tips>tip]]})))
+      xDist <- max(unlist(lapply(tips, function(tip){iT$e$dist[tip,tips[tips>tip]]})))
+      mtDiff <- mean(unlist(lapply(tips, function(tip){abs(iT$e$tDiff[tip,tips[tips>tip]])})))
+      totEdge <- sum(iT$p$edge.length[which(iT$p$edge[,2]%in%x)])
+      
+      data.frame(mDist=mDist, mtDiff=mtDiff, totEdge=totEdge, mRec=mRec, mTime=mTime, totTips=length(tips), xDist=xDist)
+    }))
+  }
   iT$n$agg$ID <- as.character(nodes)
   iT$n$agg$BootStrap <- as.numeric(iT$p$node.label)/100
   
@@ -108,9 +117,9 @@ nodeInfo <- function(iT) {
       infoR <- subset(iT$n$agg, ID%in%as.character(cN))
       
       if(cN==(nrow(iT$v)+1)) {
-        return(data.frame(Node=NULL, Tip=NULL, tDiff=NULL, BootStrap=NULL, mDist=NULL, xDist=NULL,  branchL=NULL))
+        return(data.frame(Node=NULL, Tip=NULL, tDiff=NULL, BootStrap=NULL, xDist=NULL,  branchL=NULL))
       } else{
-        return(data.frame(Node=cN, Tip=cT, tDiff=tDiff, BootStrap=infoR$BootStrap, mDist=infoR$mDist, xDist=infoR$xDist, branchL=eL))          
+        return(data.frame(Node=cN, Tip=cT, tDiff=tDiff, BootStrap=infoR$BootStrap, xDist=infoR$xDist, branchL=eL))          
       }
             
     }))
@@ -424,9 +433,9 @@ GAICRun <- function(iT, maxDs, minBs=0, rand=F) {
       #Save, gaic, model and age data as part of the output
       res <- list()
       res$gaic <- fit1$aic-fit2$aic
-      res$propFit <- fit1
-      res$nullFit <- fit2
-      res$mod <- mod
+      res$propFit <- fit1$aic
+      #res$nullFit <- fit2
+      #res$mod <- mod
       res$par <- c(maxD, minB)
       res$ageD <- ageD
       res$growth <- subT$c$growth
@@ -450,19 +459,42 @@ subSample <- function(iT, ssize=1200) {
   #@param ssize: How many cases to take 
   #@return: The subsample of sample size "ssize"
   
-  i <- sample(1:length(iT$v$ID), ssize)
+  i <- sample(1:length(iT$v$ID), ssize, replace=F)
+  temp <- iT$p$node.label
+  temp2 <- (nrow(iT$v)+1):(nrow(iT$v)+iT$p$Nnode)
+  
+  iT$p$node.label <- temp2
+  rmEs <- which(iT$p$edge[,2]%in% setdiff(1:nrow(iT$v),i )) #Which edges connect to removed tips
+  iT$g <- subset(iT$g, !(oE%in%rmEs))
+  iT$g$oE <- sapply(iT$g$oE, function(x){
+    x <- iT$p$edge[x,2]
+  })
+  
   
   #Insure that the tips sampled are represented in v,p and e.
   iT$v <- iT$v[i,]
-  iT$e$f <- iT$e$f[i,]
-  iT$p <- keep.tip(iT$p, i)
+  iT$p <- drop.tip(iT$p, setdiff(1:length(iT$v$ID), i))
+  
+  tKey <- c(sort(i),iT$p$node.label)
+  iT$g$oE <- sapply(iT$g$oE, function(x){
+    x <- which(tKey==x)
+    if(is.null(x)){
+      return(0)
+    } else{
+      return(x)
+    }
+  })
+  
+  iT$g <- subset(iT$g, oE>0)
+  iT$p$node.label <- temp[which(temp2%in%iT$p$node.label)]
+
   #iT$e$dist <- dist.nodes(iT$p)
   #iT$e$tDiff <- iT$e$tDiff[i,i]
   
   return(iT)
 }
 
-if(T){
+if(F){
   tFile <- "~/Data/Seattle/IqTree_Bootstrap/st.refpkg/SeattleB_PRO_Filt.fasta.treefile"
   gFile <- "~/Data/Seattle/IqTree_Bootstrap/st.tre"
   oT <- impTree(tFile) 
