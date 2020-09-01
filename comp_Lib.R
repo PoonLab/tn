@@ -34,7 +34,8 @@ impTN93 <- function(iFile, minNS=63, dates=F){
   el$tDiff <- abs(el$t1-el$t2)
   
   #Create a list of vertices based on the edge list. Original sequences with no edges will not be considered.
-  vl <- unique(data.frame(ID = c(el$ID1, el$ID2), Time = c(el$t1, el$t2), stringsAsFactors=F))
+  df <- data.frame(ID = c(el$ID1, el$ID2), Time = c(el$t1, el$t2), Location = c(el$l1, el$l2), stringsAsFactors=F)
+  vl <- df[match(unique(df$ID), df$ID),]
   
   #Order edges and vertices by time point and sort them into a single, larger list
   #If the newest timepoint contains a small number of sequences, we remove the newest year from consideration
@@ -50,7 +51,7 @@ impTN93 <- function(iFile, minNS=63, dates=F){
   #Permanently remove edges from the new year such that only the closest edge between new vertices and old vertices remains
   #Obtain new vertices and remove any internal edges within the new vertices 
   #We are not interested in completely new clustering
-  nV <- subset(g$v, Time==max(Time))
+  nV <- subset(g$v, Time==max(years(Time)))
   
   #The subset of vertices excluding those at the oldest year
   subV <- subset(g$v, Time>min(Time))
