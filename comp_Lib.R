@@ -3,6 +3,7 @@ library(dplyr,verbose = FALSE)
 
 #Creates a set of data-frames representing a graph of sequences, with the edges between those sequences representing the TN93 Distance.
 #Sequences must be dated with the date separated from the id by '_'. 
+#NOW BEING REFACTORED FOR COVID DATA
 impTN93 <- function(iFile, minNS=63, dates=F){
   #@param iFile: The name/path of the input file (expecting tn93 output csv)
   #@param minNS: The minimum number of acceptible new Sequences. By default we keep this high.
