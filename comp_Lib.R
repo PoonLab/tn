@@ -1,76 +1,79 @@
-# A library of functions 
+# Functions necessary for efficient data storage and processing
 library(dplyr,verbose = FALSE)
+library(data.table)
 
 #Creates a set of data-frames representing a graph of sequences, with the edges between those sequences representing the TN93 Distance.
 #Sequences must be dated with the date separated from the id by '_'. 
-#NOW BEING REFACTORED FOR COVID DATA
-impTN93 <- function(iFile, minNS=63, dates=F){
+impTN93 <- function(iFile, reVars='/|\\|', varInd=c(5,6,2), varMan=NA, dateFormat="%y-%m-%d"){
   #@param iFile: The name/path of the input file (expecting tn93 output csv)
-  #@param minNS: The minimum number of acceptible new Sequences. By default we keep this high.
+  #@param reVars: The regular expression used to extract variables from column headers. This is passed to strsplit, creating a vertex of values from the column header
+  #@param varInd: A vector of numbers describing the order of variables in the split string. This should describe the index of the unique ID, the Timepoint and the location.
+  #-------------  ex. If the header would be split such that the 4th index is the Unique ID, then 4 should be the first number in this list
+  #-------------  ID and timepoint are currently required. If the location information is not available, it should be set as "0".
+  #@param varMan: Variables can be assigned manually with a csv containing columns of ID, Time point, and Location, in that order. Again, location is not mandatory. 
+  #-------------  If this option is used, reVars and varInd, need not be provided.
   #@return: A list of 3 Data frames. An edge list (weighted by TN93 genetic distance), a vertex list, 
   #         and a list of minimum edges, for the future establishment of a timepoint-based model
   
-  #Reading input file as a data frame. This will essentially act as an edgelist
-  idf <- read.csv(iFile, stringsAsFactors = F)
-  temp1 <- sapply(idf$ID1, function(x) (strsplit(x,'_')[[1]])[[1]])
-  temp2 <- sapply(idf$ID1, function(x) (strsplit(x,'_')[[1]])[[2]])
-  temp3 <- sapply(idf$ID2, function(x) (strsplit(x,'_')[[1]])[[1]])
-  temp4 <- sapply(idf$ID2, function(x) (strsplit(x,'_')[[1]])[[2]])
+  #Obtain tn93 edge list from file
+  idt <- fread(iFile)
   
-  #Create a data frame from the imported edge list. 
-  if(dates){
-    el <- data.frame(ID1=as.character(temp1), t1=as.Date(temp2), 
-                     ID2=as.character(temp3), t2=as.Date(temp4), 
-                     Distance = as.numeric(idf$Distance), stringsAsFactors= F)
-  } else {
-    
-    el <- data.frame(ID1=as.character(temp1), t1=as.numeric(temp2), 
-                     ID2=as.character(temp3), t2=as.numeric(temp4), 
-                     Distance = as.numeric(idf$Distance), stringsAsFactors= F)
-    
-  }
+  #Reformat edge list as data table object with predictors extracted from sequence header
+  temp1 <- sapply(idt$ID1, function(x) (strsplit(x,reVars)[[1]]))
+  temp2 <- sapply(idt$ID2, function(x) (strsplit(x,reVars)[[1]])) 
+  
+  
+  el <- data.table(ID1=as.character(temp1[varInd[[1]],]), t1=as.Date(temp1[varInd[[2]],], format=dateFormat),
+                   ID2=as.character(temp2[varInd[[1]],]), t2=as.Date(temp2[varInd[[2]],], format=dateFormat),
+                   Distance = as.numeric(idt$Distance), stringsAsFactors= F)
+  
   
   #Obtain the maximum time and time difference between the head and tail of each edge
-  el$tMax <- pmax(el$t1,el$t2)
-  el$tDiff <- abs(el$t1-el$t2)
+  el[,"tMax" := pmax(t1,t2)] 
+  el[,"tDiff" := (t1-t2)]
   
-  #Create a list of vertices based on the edge list. Original sequences with no edges will not be considered.
-  df <- data.frame(ID = c(el$ID1, el$ID2), Time = c(el$t1, el$t2), Location = c(el$l1, el$l2), stringsAsFactors=F)
-  vl <- df[match(unique(df$ID), df$ID),]
-  
-  #Order edges and vertices by time point and sort them into a single, larger list
-  #If the newest timepoint contains a small number of sequences, we remove the newest year from consideration
-  #TO-DO, currently does not work with date resolution
-  g <- list(v=vl[order(vl$Time),], e=el[order(el$tMax),], f=el[order(el$tMax),])
-  if(!dates) {
-    while(nrow(subset(g$v,Time==max(Time)))<=minNS) {
-      keepT <- head(as.numeric(names(table(g$v$Time))),-1)
-      g <- tFilt(g, keepT)
-    }
+  if((length(varInd)>2) | !is.na(varInd[[3]]) | !is.na(varInd[[3]])==0) {
+    el[,"l1" := temp1[varInd[[3]],]]
+    el[,"l2" := temp2[varInd[[3]],]]
+    el[,"lMatch" := .SD$l1 %in%.SD$l2, .(ID1, ID2)]
   }
   
-  #Permanently remove edges from the new year such that only the closest edge between new vertices and old vertices remains
-  #Obtain new vertices and remove any internal edges within the new vertices 
-  #We are not interested in completely new clustering
-  nV <- subset(g$v, Time==max(years(Time)))
+  #Obtain list of unique sequences (also data table)
+  vl <- data.table(ID = c(el$ID1, el$ID2), Time = c(el$t1, el$t2), Location = c(el$l1, el$l2), stringsAsFactors=F)
+  vl <- vl[match(unique(vl$ID), vl$ID),]
   
-  #The subset of vertices excluding those at the oldest year
-  subV <- subset(g$v, Time>min(Time))
+  #Vertices and edges lists together start a graph object
+  g <- list(v=vl[order(vl$Time),], e=el[order(el$tMax),])
   
-  #Obtain the closest retrospective edge of every vertex beyond the oldest year
-  minE <- bind_rows(lapply(1:nrow(subV), function(i){
-    v <- subV[i,]
-    incE <- subset(g$e, (ID1%in%v$ID)|(ID2%in%v$ID))
-    retE <- subset(incE, (tMax==v$Time)&(tDiff>0))
-    retE[which(retE$Distance==min(retE$Distance))[[1]],]
-  }))
+  #Get time info on the scale of months
+  g$v[, "Month" := as.numeric(round(julian(g$v$Time, origin = min(g$v$Time))/30))]
   
-  #Only closest retrospective edges are kept for edges from new cases. 
-  ##TO-DO: Potentially save this as part of the vertex? Simpler and more intuitive organization.
-  g$e <- subset(g$e, tMax!=max(tMax))
-  g$e <- rbind(g$e, subset(minE, tMax==max(tMax)))
-  g$f <- subset(minE, tMax < max(tMax))
-
+  #Split into testing and training partitions
+  nV <- g$v[Month>=7]
+  subV <- g$v[Month<7]
+  
+  #Remove edges from edge list if they are between two new vertices
+  g$e <- g$e[!((ID1%in%nV$ID) & (ID2%in%nV$ID))]
+  
+  #Minimum retrospective edges (saved as "f" component of graph object)
+  temp <- g$e
+  temp[,1:3] <- g$e[,4:6]
+  temp[,4:6] <- g$e[,1:3]
+  temp$tDiff <- -(g$e$tDiff)
+  dt <- rbindlist(list(g$e,temp))
+  
+  g$f <- dt[, list(ID2=.SD$ID2[which.min(.SD[tDiff<0]$Distance)],
+                   Distance=min(.SD[tDiff<0]$Distance), 
+                   tDiff=.SD$tDiff[which.min(.SD[tDiff<0]$Distance)],
+                   lMatch=ifelse(((length(varInd)>2) | !is.na(varInd[[3]]) | !is.na(varInd[[3]])==0),
+                                 .SD$lMatch[which.min(.SD[tDiff<0]$Distance)], NA)), .(ID1)]
+  
+  #Exclude any edges that were excluded from initial analysis (ie. TN93 calculation threshold)
+  #If locations were not present, lMatch is excluded as well
+  g$f <- g$f[!is.na(ID2)]
+  if(is.na(g$f$lMatch[[1]])) { g$f <- g$f[, 1:4] }
+  
+  
   return(g)
 }
 
