@@ -2,16 +2,18 @@
 library(dplyr,verbose = FALSE)
 library(data.table)
 
-#Creates a set of data-frames representing a graph of sequences, with the edges between those sequences representing the TN93 Distance.
-#Sequences must be dated with the date separated from the id by '_'. 
-impTN93 <- function(iFile, reVars='/|\\|', varInd=c(5,6,2), varMan=NA, dateFormat="%y-%m-%d"){
+#Creates a set of data-tables representing a graph of sequences, with the edges between those sequences representing the TN93 Distance.
+#The time and location associated with the sequence can be taken either directly from the sequence header, or provided separately in a .csv file
+#This set of data tables also includes the set of minimum retrospective edges from sequences at the newest time point.
+impTN93 <- function(iFile, reVars='/|\\|', varInd=c(5,6,2), varMan=NA, dateFormat="%Y-%m-%d", partQ=0.95){
   #@param iFile: The name/path of the input file (expecting tn93 output csv)
   #@param reVars: The regular expression used to extract variables from column headers. This is passed to strsplit, creating a vertex of values from the column header
   #@param varInd: A vector of numbers describing the order of variables in the split string. This should describe the index of the unique ID, the Timepoint and the location.
   #-------------  ex. If the header would be split such that the 4th index is the Unique ID, then 4 should be the first number in this list
   #-------------  ID and timepoint are currently required. If the location information is not available, it should be set as "0".
   #@param varMan: Variables can be assigned manually with a csv containing columns of ID, Time point, and Location, in that order. Again, location is not mandatory. 
-  #-------------  If this option is used, reVars and varInd, need not be provided.
+  #-------------  If this option is used, reVars and varInd, need not be provided. --CURRENTLY UNNUSED--
+  #@param partQ: The proportion of the set that is to define "known" cases for the purposes of cluster growth. The remaining quantile is marked as new cases.
   #@return: A list of 3 Data frames. An edge list (weighted by TN93 genetic distance), a vertex list, 
   #         and a list of minimum edges, for the future establishment of a timepoint-based model
   
@@ -22,11 +24,9 @@ impTN93 <- function(iFile, reVars='/|\\|', varInd=c(5,6,2), varMan=NA, dateForma
   temp1 <- sapply(idt$ID1, function(x) (strsplit(x,reVars)[[1]]))
   temp2 <- sapply(idt$ID2, function(x) (strsplit(x,reVars)[[1]])) 
   
-  
   el <- data.table(ID1=as.character(temp1[varInd[[1]],]), t1=as.Date(temp1[varInd[[2]],], format=dateFormat),
                    ID2=as.character(temp2[varInd[[1]],]), t2=as.Date(temp2[varInd[[2]],], format=dateFormat),
                    Distance = as.numeric(idt$Distance), stringsAsFactors= F)
-  
   
   #Obtain the maximum time and time difference between the head and tail of each edge
   el[,"tMax" := pmax(t1,t2)] 
@@ -45,20 +45,23 @@ impTN93 <- function(iFile, reVars='/|\\|', varInd=c(5,6,2), varMan=NA, dateForma
   #Vertices and edges lists together start a graph object
   g <- list(v=vl[order(vl$Time),], e=el[order(el$tMax),])
   
-  #Get time info on the scale of months
-  g$v[, "Month" := as.numeric(round(julian(g$v$Time, origin = min(g$v$Time))/30))]
+  #Set a "New Point", such that cases after this point are considered new for the purposes of growth
+  newPoint <- quantile(as.numeric(g$v$Time), partQ)
   
   #Split into testing and training partitions
-  nV <- g$v[Month>=7]
-  subV <- g$v[Month<7]
+  #Label new vertices as inherently New
+  g$v[, "New" := F]
+  g$v[as.numeric(Time)>=newPoint]$New <- T 
   
   #Remove edges from edge list if they are between two new vertices
-  g$e <- g$e[!((ID1%in%nV$ID) & (ID2%in%nV$ID))]
+  g$e <- g$e[!((ID1%in%g$v$ID[(New)]) & (ID2%in%g$v$ID[(New)]))]
   
   #Minimum retrospective edges (saved as "f" component of graph object)
   temp <- g$e
-  temp[,1:3] <- g$e[,4:6]
-  temp[,4:6] <- g$e[,1:3]
+  
+  ##--CURRENTLY ASSUMES LOCATION DATA --- ##
+  temp[,c("ID1", "t1", "l1")] <- g$e[,c("ID2", "t2", "l2")]
+  temp[,c("ID2", "t2", "l2")] <- g$e[,c("ID1", "t1", "l1")]
   temp$tDiff <- -(g$e$tDiff)
   dt <- rbindlist(list(g$e,temp))
   
@@ -71,19 +74,22 @@ impTN93 <- function(iFile, reVars='/|\\|', varInd=c(5,6,2), varMan=NA, dateForma
   #Exclude any edges that were excluded from initial analysis (ie. TN93 calculation threshold)
   #If locations were not present, lMatch is excluded as well
   g$f <- g$f[!is.na(ID2)]
-  if(is.na(g$f$lMatch[[1]])) { g$f <- g$f[, 1:4] }
   
+  if(is.na(g$f$lMatch[[1]])) { 
+    g$f <- g$f[, 1:4] 
+  }
   
   return(g)
 }
 
 #Create clusters based on component clustering by some measure of genetic distance
+###-- CURRENTLY SLOW. Data tables, are fast for a small number of searches into large data sets, not a large number of searches --###
 compClu <- function(iG) {
   #@param iG: The inputted graph. Expecting all vertices, but some edges filtered by distance.
   #@return: The inputted graph, annotated with a cluster size summary and case membership in the vertices section
   
   #Simplify the list of unsorted vertices (just id's) and edges (just head and tail id's)
-  vid <- iG$v[,"ID"]
+  vid <- iG$v$ID
   adj <- iG$e[,c("ID1","ID2")]
   
   #Initialize the first cluster name and a column for cluster membership. c0 will be reserved for all singletons if sing=T
@@ -91,27 +97,27 @@ compClu <- function(iG) {
   
   #The search vertex becomes the first member of the first cluster and is removed from the searchable set of cluster names
   i <- 1
-  srchV <- vid[1]
+  srchV <- vid[i]
   memV <- srchV
   vid <- setdiff(vid, memV)
-  
+
   #Assigning Cluster Membership
   repeat {
     
     #Remove edges internal to search query and list outgoing edges
     adj <- subset(adj, !(ID1%in%srchV & ID2%in%srchV))
-    exE <- subset(adj, ID1%in%srchV | ID2%in%srchV)
-
-    #Find all neighbouring vertices to the search vertex (or search vertices) through external edges
+    exE <- subset(adj,(ID1%in%srchV | ID2%in%srchV))
+    
+    #Find all neighboring vertices to the search vertex (or search vertices) through external edges
     #These are then added to the list of member vertices and removed from the list of searchable vertices
     nbV <- setdiff(c(exE$ID1,exE$ID2), srchV)
     memV <- c(memV, nbV) 
     vid <- setdiff(vid, nbV)
-
+    
     #If there are no more neigbours to the search vertices, the cluster is completed and we reset the search parameters
     if (length(nbV)==0) {
       
-      iG$v$Cluster[iG$v$ID%in%memV] <- i
+      iG$v$Cluster[iG$v$ID%in%memV] <- i  
       
       #The end condition, catching the event that there are no vertices to assign to clusters
       if (length(vid)==0) {break}
@@ -121,31 +127,32 @@ compClu <- function(iG) {
       srchV <- vid[1]
       memV <- srchV
       vid <- setdiff(vid, memV)
-
+      
       next
     }
     
     #Remove all edges within the current cluster from the adjacency list
     adj <- subset(adj, !(ID1%in%srchV | ID2%in%srchV))
     srchV <- nbV
+    
   }
-
+  
   #Add some summary information regarding clusters
   iG$c <- table(iG$v$Cluster)
   
   return(iG)
 }
-
-#A simple function, removing edges that sit above a maximum reporting distance (@param:maxD).
+    
+#A simple function, removing edges that sit above a maximum reporting distance.
 dFilt <- function(iG, maxD) {
-  iG$e <- subset(iG$e, Distance<=maxD)
+  iG$e <- iG$e[Distance<=maxD]
   return(iG)
 }
 
-#A simple function, removing vertices that sit above a maximum time point (@param: maxT)
+#A simple function, removing vertices that do not exist in the range of keepT
 tFilt <- function(iG, keepT) {
-  iG$v <- subset(iG$v, Time%in%keepT)
-  iG$e <- subset(iG$e, tMax%in%keepT)
+  iG$v <- iG$v[Time%in%keepT]
+  iG$e <- iG$e[tMax%in%keepT]
   return(iG)
 }
 
@@ -155,25 +162,20 @@ simGrow <- function(iG) {
   #@param: The inputted graph. Expecting all vertices, but some edges filtered by distance.
   #@return: The same cluster annotated with the actual growth and cluster information
   
-  #Obtain clusters at the new time point, after removing singletons
+  #Obtain clusters at the new time point
   nG <- iG
-  nSing <- subset(nG$v, (!ID%in%c(nG$e$ID1,nG$e$ID2) & Time==max(Time)))
-  nG$v <- subset(nG$v, !(!ID%in%c(nG$e$ID1,nG$e$ID2) & Time==max(Time)))
+  nSing <- nG$v[!((ID%chin%nG$e$ID1)|(ID%chin%nG$e$ID2))&(New)]
+  nG$v <- fsetdiff(nG$v, nSing)
   nG <- compClu(nG)
   
   #obtain clusters at an old time point
-  keepT <- head(as.numeric(names(table(iG$v$Time))),-1)
+  keepT <- min(iG$v$Time):max(iG$v[!(New)]$Time)
   oG <- compClu(tFilt(iG, keepT))
   
   #Define growth as the difference in cluster size between new and old graphs 
   #After clsFilter(), nG will have the same number of clusters as oG, and similar membership
   iG$g <- nG$c-oG$c
   iG$c <- oG$c
-  
-  #Re-Add the singletons, citing new singletons as members of the cluster 0
-  if (nrow(nSing)>0){
-    nSing$Cluster <- 0
-  }
   iG$v <- rbind(nG$v, nSing)
   
   return(iG)

@@ -3,6 +3,13 @@ library(data.table)
 
 #Obtain tn93 edge list from file
 iFile <- "Data/gisaid/sc2tn93.csv"
+reVars='/|\\|'
+varInd=c(5,6,2)
+varMan=NA
+dateFormat="%Y-%m-%d"
+partQ=0.95
+
+
 idt <- fread(iFile)
 
 #Reformat edge list as data table object with predictors extracted from sequence header
@@ -48,4 +55,7 @@ g$f <- dt[, list(Distance=min(.SD[tDiff<0]$Distance),
 Sys.time()-start
 
 g$f
+
+
+
 
