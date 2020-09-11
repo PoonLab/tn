@@ -1,11 +1,12 @@
 # Functions necessary for efficient data storage and processing
 library(dplyr,verbose = FALSE)
 library(data.table)
+library(parallel)
 
 #Creates a set of data-tables representing a graph of sequences, with the edges between those sequences representing the TN93 Distance.
 #The time and location associated with the sequence can be taken either directly from the sequence header, or provided separately in a .csv file
 #This set of data tables also includes the set of minimum retrospective edges from sequences at the newest time point.
-impTN93 <- function(iFile, reVars='/|\\|', varInd=c(5,6,2), varMan=NA, dateFormat="%Y-%m-%d", partQ=0.95){
+impTN93 <- function(iFile, reVars='/|\\|', varInd=c(5,6,2), varMan=NA, dateFormat="%Y-%m-%d", partQ=0.95, nCores=detectCores()){
   #@param iFile: The name/path of the input file (expecting tn93 output csv)
   #@param reVars: The regular expression used to extract variables from column headers. This is passed to strsplit, creating a vertex of values from the column header
   #@param varInd: A vector of numbers describing the order of variables in the split string. This should describe the index of the unique ID, the Timepoint and the location.
@@ -22,8 +23,8 @@ impTN93 <- function(iFile, reVars='/|\\|', varInd=c(5,6,2), varMan=NA, dateForma
   
   #Reformat edge list as data table object with predictors extracted from sequence header
   temp1 <- sapply(idt$ID1, function(x) (strsplit(x,reVars)[[1]]))
-  temp2 <- sapply(idt$ID2, function(x) (strsplit(x,reVars)[[1]])) 
-  
+  temp2 <- sapply(idt$ID2, function(x) (strsplit(x,reVars)[[1]]))
+
   el <- data.table(ID1=as.character(temp1[varInd[[1]],]), t1=as.Date(temp1[varInd[[2]],], format=dateFormat),
                    ID2=as.character(temp2[varInd[[1]],]), t2=as.Date(temp2[varInd[[2]],], format=dateFormat),
                    Distance = as.numeric(idt$Distance), stringsAsFactors= F)
@@ -32,7 +33,7 @@ impTN93 <- function(iFile, reVars='/|\\|', varInd=c(5,6,2), varMan=NA, dateForma
   el[,"tMax" := pmax(t1,t2)] 
   el[,"tDiff" := (t1-t2)]
   
-  if((length(varInd)>2) | !is.na(varInd[[3]]) | !is.na(varInd[[3]])==0) {
+  if(length(varInd)>2) {
     el[,"l1" := temp1[varInd[[3]],]]
     el[,"l2" := temp2[varInd[[3]],]]
     el[,"lMatch" := .SD$l1 %in%.SD$l2, .(ID1, ID2)]
@@ -54,29 +55,32 @@ impTN93 <- function(iFile, reVars='/|\\|', varInd=c(5,6,2), varMan=NA, dateForma
   g$v[as.numeric(Time)>=newPoint]$New <- T 
   
   #Remove edges from edge list if they are between two new vertices
-  g$e <- g$e[!((ID1%in%g$v$ID[(New)]) & (ID2%in%g$v$ID[(New)]))]
+  g$e <- g$e[!((as.character(ID1)%chin%g$v[(New)]$ID) & (as.character(ID2)%chin%g$v[(New)]$ID))]
   
   #Minimum retrospective edges (saved as "f" component of graph object)
   temp <- g$e
   
-  ##--CURRENTLY ASSUMES LOCATION DATA --- ##
-  temp[,c("ID1", "t1", "l1")] <- g$e[,c("ID2", "t2", "l2")]
-  temp[,c("ID2", "t2", "l2")] <- g$e[,c("ID1", "t1", "l1")]
+  #Append reversed edges for the use of a search by first edge
+  temp[,c("ID1", "t1")] <- g$e[,c("ID2", "t2")]
+  temp[,c("ID2", "t2")] <- g$e[,c("ID1", "t1")]
+  if(length(varInd)>2) {
+    temp[,c("l1")] <- g$e[,c("l2")]
+    temp[,c("l2")] <- g$e[,c("l1")]
+  }
   temp$tDiff <- -(g$e$tDiff)
   dt <- rbindlist(list(g$e,temp))
   
   g$f <- dt[, list(ID2=.SD$ID2[which.min(.SD[tDiff<0]$Distance)],
                    Distance=min(.SD[tDiff<0]$Distance), 
                    tDiff=.SD$tDiff[which.min(.SD[tDiff<0]$Distance)],
-                   lMatch=ifelse(((length(varInd)>2) | !is.na(varInd[[3]]) | !is.na(varInd[[3]])==0),
-                                 .SD$lMatch[which.min(.SD[tDiff<0]$Distance)], NA)), .(ID1)]
+                   lMatch=ifelse((length(varInd)>2), .SD$lMatch[which.min(.SD[tDiff<0]$Distance)], NA)), .(ID1)]
   
   #Exclude any edges that were excluded from initial analysis (ie. TN93 calculation threshold)
   #If locations were not present, lMatch is excluded as well
   g$f <- g$f[!is.na(ID2)]
   
   if(is.na(g$f$lMatch[[1]])) { 
-    g$f <- g$f[, 1:4] 
+    g$f <- g$e[,c("ID1","ID2", "Distance", "tDiff")]
   }
   
   return(g)
@@ -173,10 +177,9 @@ simGrow <- function(iG) {
   oG <- compClu(tFilt(iG, keepT))
   
   #Define growth as the difference in cluster size between new and old graphs 
-  #After clsFilter(), nG will have the same number of clusters as oG, and similar membership
   iG$g <- nG$c-oG$c
   iG$c <- oG$c
-  iG$v <- rbind(nG$v, nSing)
+  iG$v <- rbindlist(list(nG$v, nSing))
   
   return(iG)
 }

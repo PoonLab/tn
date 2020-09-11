@@ -9,6 +9,33 @@ varMan=NA
 dateFormat="%Y-%m-%d"
 partQ=0.95
 
+#Obtain tn93 edge list from file
+iFile <- "Data/tn93st.txt"
+reVars='_'
+varInd=c(1,2)
+varMan=NA
+dateFormat="%Y"
+partQ=1-0.06819591
+
+start <- Sys.time()
+g$e <- dt[, list(ID2=.SD$ID2[which.min(.SD[tDiff<0]$Distance)],
+                 Distance=min(.SD[tDiff<0]$Distance), 
+                 tDiff=.SD$tDiff[which.min(.SD[tDiff<0]$Distance)],
+                 lMatch=ifelse((length(varInd)>2), .SD$lMatch[which.min(.SD[tDiff<0]$Distance)], NA)), .(ID1)]
+Sys.time() - start
+
+start <- Sys.time()
+temp1 <- sapply(idt$ID1, function(x) (strsplit(x,reVars)[[1]]))
+temp2 <- sapply(idt$ID2, function(x) (strsplit(x,reVars)[[1]]))
+Sys.time() - start
+
+
+temp[, print(ID1), by = .I]
+
+start <- Sys.time()
+temp <- temp[, ("temp") := lapply(.SD$ID1, function(x){strsplit(x,reVars)[[1]]})]
+Sys.time() - start
+
 
 idt <- fread(iFile)
 
