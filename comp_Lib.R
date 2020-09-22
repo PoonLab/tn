@@ -165,6 +165,8 @@ simGrow <- function(iG) {
   #Obtain clusters at the new time point
   nG <- iG
   nSing <- nG$v[!((ID%chin%nG$e$ID1)|(ID%chin%nG$e$ID2))&(New)]
+  
+  nSing <- nG$v[ID%chin%nG$e$ID1]
   nG$v <- fsetdiff(nG$v, nSing)
   nG <- compClu(nG)
   
