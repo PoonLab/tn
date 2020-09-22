@@ -17,6 +17,8 @@ varMan=NA
 dateFormat="%Y"
 partQ=1-0.06819591
 
+impTN93()
+
 start <- Sys.time()
 g$e <- dt[, list(ID2=.SD$ID2[which.min(.SD[tDiff<0]$Distance)],
                  Distance=min(.SD[tDiff<0]$Distance), 
