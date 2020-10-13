@@ -1,15 +1,14 @@
-require("ape") # Possibly Unneeded
+require("ape")
 require("phangorn")
 library("dplyr",verbose = FALSE)
 
-#Import Tree Data and annotate with sequence ID and Time
-#Sequences must be dated with the date separated from the id by '_'. 
-##TO-DO: Currently only accepts year dates. Work to allow more specific dates. 
+#Import Tree Data and output an annotated list 
+#@item 
 impTree <-function(tFile){
   #@param iFile: The name/path of the input file (expecting a newick file)
   #@return: A list of 3 Objects. The ape phylo object, a vertex list, and a list of edge information
   
-  #Obtaining and midpioint rooting an ape phylogeny object from the newick file, store in a greater list "t" as "p" for phylogeny
+  #Obtaining and midpioint rooting an ape phylogeny object from the tree file, store in a greater list "t" as "p" for phylogeny
   t <- list()
   t$p <- midpoint(read.tree(tFile))
   
@@ -495,8 +494,8 @@ subSample <- function(iT, ssize=1200) {
 }
 
 if(F){
-  tFile <- "~/Data/Seattle/IqTree_Bootstrap/st.refpkg/SeattleB_PRO_Filt.fasta.treefile"
-  gFile <- "~/Data/Seattle/IqTree_Bootstrap/st.tre"
+  tFile <- "~/Data/Seattle/strefpackages/st1.refpkg/sttree1.nwk"
+  gFile <- "~/Data/Seattle/strefpackages/growthFiles/growthFile1.tree"
   oT <- impTree(tFile) 
   oT <- nodeInfo(oT)
   oT <- growthSim(oT, gFile)

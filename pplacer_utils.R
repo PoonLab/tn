@@ -127,23 +127,18 @@ multiTaxit <- function(sampsDir, n, short="", nSeqs, oDir) {
 }
 
 #Runs pplacer on all files in a directory to obtain placement files
-multiPplacer <- function(refDir, oDir) {
-  fs <- list.files(refDir)
-  
-  for (i in 1:length(fs)) {
-    f <- paste0(refDir, "/", fs[[i]])
-    system(paste0("pplacer -c ", f, " -o ", oDir, "/jplaceFile", i, " ", f, "/fullAlign.fasta"))
+multiPplacer <- function(refDir, oDir, short, n=100) {
+  for (i in 1:n) {
+    f <- paste0(refDir, "/", short, i, ".refpkg")
+    system(paste0("pplacer -c ", f, " -o ", oDir, "/jplaceFile.jplace", i, " ", f, "/fullAlign.fasta"))
     
   }
 }
 
 #Runs guppy on all files in a directory to obtain growth files (inputs for tree growth method)
-multiGuppy <- function(refDir, oDir) {
-  fs <- list.files(refDir)
-  
-  for (i in 1:length(fs)) {
-    f <- paste0(refDir, "/", fs[[i]])
+multiGuppy <- function(refDir, oDir, n=100) {
+  for (i in 1:n) {
+    f <- paste0(refDir, "/jplaceFile", i, ".jplace")
     system(paste0("guppy sing --point-mass ", f, " -o ", oDir, "/growthFile", i, ".tree"))
-    
   }
 }
