@@ -1,26 +1,24 @@
 require("ape")
 require("phangorn")
-library("dplyr",verbose = FALSE)
+require("dplyr")
+require("parallel")
 
-#Import Tree Data and output an annotated list 
-#@item 
-impTree <-function(tFile){
+#Import Tree Data and output an annotated tree with additional information to assist clustering
+impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), varMan=NA, dateFormat="%Y-%m-%d", nCore=detectCores()){
   #@param iFile: The name/path of the input file (expecting a newick file)
-  #@return: A list of 3 Objects. The ape phylo object, a vertex list, and a list of edge information
+  #@return: An ape phylo object annotated with a vertex list
   
-  #Obtaining and midpioint rooting an ape phylogeny object from the tree file, store in a greater list "t" as "p" for phylogeny
-  t <- list()
-  t$p <- midpoint(read.tree(tFile))
+  #Obtaining and midpioint rooting an ape phylogeny object from the tree file, store in a greater list "t"
+  t <- midpoint(read.tree(tFile))
   
   #Obtain lists of sequence ID and Time
-  temp <- sapply(t$p$tip.label, function(x) strsplit(x, '_')[[1]])
-  ids <- unname(temp[1,])
-  times <- as.numeric(temp[2,])
-  tips <- 1:length(ids)
+  #Reformat edge list as data table object with predictors extracted from sequence header
+  tips <- 1:length(t$tip.label)
+  temp <- sapply(t$tip.label, function(x) strsplit(x, reVars)[[1]])
+  t$v <- data.table(ID=unname(temp[varInd[[1]],]),  
+                    Time=as.Date(temp1[varInd[[2]],], format=dateFormat), 
+                    stringsAsFactors = F)
   
-  tEs <- which(t$p$edge[,2]%in%tips)
-  t$v <- data.frame(ID=ids, Time=times, stringsAsFactors = F,
-                    termDist=t$p$edge.length[tEs])
   #Summarize internal branch length information 
   #Time differences, phenetic distance matrix, pairwise distances, and a table of time differences
   t$e <- list()
@@ -30,12 +28,6 @@ impTree <-function(tFile){
     sapply(tips, function(j){ t1 - t$v$Time[j] })
   })
   
-  el <- t$e$dist[1:nrow(t$v),1:nrow(t$v)]
-  t$el <- as.numeric(unlist(lapply(1:nrow(t$v), function(x){el[x,x:nrow(t$v)]})))
-  
-  #Unnused
-  #t$e$tdTab <- table(abs(t$e$tDiff))
-
   return(t)
 }
 
