@@ -4,142 +4,88 @@ require("dplyr")
 require("parallel")
 
 #Import Tree Data and output an annotated tree with additional information to assist clustering
-impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), varMan=NA, dateFormat="%Y-%m-%d", nCore=detectCores()){
+impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d", varMan=NA, nCore=detectCores()){
   #@param iFile: The name/path of the input file (expecting a newick file)
-  #@return: An ape phylo object annotated with a vertex list
+  #@param iFile: The name/path of the input file (expecting tn93 output csv)
+  #@param reVars: The regular expression used to extract variables from column headers. This is passed to strsplit, creating a vertex of values from the column header
+  #@param varInd: A vector of numbers describing the order of variables in the split string. This should describe the index of the unique ID, the Timepoint and the location.
+  #               ex. If the header would be split such that the 4th index is the Unique ID, then 4 should be the first number in this list
+  #               ID and timepoint are currently required. If the location information is not available, it should be set as "0".
+  #@param varMan: Variables can be assigned manually with a csv containing columns of ID, Time point, and Location, in that order. Again, location is not mandatory. 
+  #               If this option is used, reVars and varInd, need not be provided. --CURRENTLY UNNUSED--
+  #@return: An ape phylo object annotated with the additional data summarized below
+  #    $v: A data frame storing vertex information ($ID, $Time, and, if given $Location)
+  #    $e: A list of 2 matrices. $dist representing phenetic distance and $tDiff representing time difference.
+  #        Additionally, if location information is provided, shared location is a variable stored in $lMatch. 
+  #    $n: A list of each node's descendants ($Des), as well as information used to obtain clusters from nodes 
+  #        This additional data is stored in ($Info) as $xDist for the longest distance $Bootstrap for the support value.
+  #        also, $mTime for the mean date at which sequences were collected and $mtDiff
+  
   
   #Obtaining and midpioint rooting an ape phylogeny object from the tree file, store in a greater list "t"
   t <- midpoint(read.tree(tFile))
   
   #Obtain lists of sequence ID and Time
   #Reformat edge list as data table object with predictors extracted from sequence header
-  tips <- 1:length(t$tip.label)
   temp <- sapply(t$tip.label, function(x) strsplit(x, reVars)[[1]])
-  t$v <- data.table(ID=unname(temp[varInd[[1]],]),  
-                    Time=as.Date(temp1[varInd[[2]],], format=dateFormat), 
+  t$v <- data.table(ID=temp[varInd[[1]],],  
+                    Time=as.Date(temp[varInd[[2]],], format=dateFormat), 
                     stringsAsFactors = F)
   
-  #Summarize internal branch length information 
-  #Time differences, phenetic distance matrix, pairwise distances, and a table of time differences
+  #Summarize internal branch length information using a list of 2 matrices
   t$e <- list()
-  t$e$dist <- dist.nodes(t$p)
-  t$e$tDiff <- sapply(tips, function(i){
-    t1 <- t$v$Time[i]
-    sapply(tips, function(j){ t1 - t$v$Time[j] })
-  })
+  t$e$Dist <- cophenetic.phylo(t)
+  rownames(t$e$Dist) <- t$v$ID
+  colnames(t$e$Dist) <- t$v$ID
+  
+  t$e$tDiff <- sapply(t$v$Time, function(x) {t$v$Time-x})
+  rownames(t$e$tDiff) <- t$v$ID
+  colnames(t$e$tDiff) <- t$v$ID
+  
+  #In the event that location information is also available
+  if(length(varInd)>2) {
+    t$v$Location <- temp[varInd[[3]],]
+    
+    t$e$lMatch <- sapply(t$v$Location, function(x) {
+      matches <- rep(F, length(t$v$Location))
+      matches[grep(x, t$v$Location)] <- T
+      return(matches)
+    })
+    rownames(t$e$tDiff) <- t$v$ID
+    colnames(t$e$tDiff) <- t$v$ID
+  }
+  
+  #Obtain the tip and node names (as numbers)
+  #Obtain the list of descendants
+  tips <- 1:nrow(t$v)
+  nodes <- (max(tips)+1):(max(tips)*2-1) 
+  
+  #Obtain the full set of descendants at each node
+  t$n <- list()
+  t$n$Des <- lapply(nodes, function(x){Descendants(t,x,"all")})
+  names(t$n$Des) <- as.character(nodes)
+  
+  #Obtain information which can be used to build clusters and organize the data
+  t$n$Info <- as.data.table(bind_rows(lapply(t$n$Des, function(x){
+    des <- x[which(x%in%tips)]
+    mTime <- mean(t$v$Time[des])
+    mtDiff <- mean(abs(t$e$tDiff[des,des]))
+    xDist <- max(t$e$Dist[des,des])
+    data.frame(mTime=mTime, totTips=length(des), xDist=xDist)
+  })))
+  
+  #Additional information regarding the label of each node, as well as the bootstrap support
+  ##- TO-DO: Bootstrap support values are noted differently depending on software used. -## 
+  t$n$Info$ID <- as.character(nodes)
+  t$n$Info$BootStrap <- as.numeric(t$node.label)
+  
+  #A comprimise for the root
+  t$n$Info$BootStrap[is.na(t$n$Info$BootStrap)]
   
   return(t)
 }
 
-#Summarize information by node, this is used to cluster by subtree and add this to the tree file
-#Obtain the mean branch length under each node
-##TO-DO: Reassess any of this that could be moved to initial tree creation. Or sub-sampling ##
-nodeInfo <- function(iT, light=F) {
-  #@param iT: The input tree file, annotated with vertex and edge information
-  #@return: The tree annotated with 2 Objects. The list of descendant tips under each given node  
-  #         and a dataframe which summarizes information relevant to clustering
-  
-  #Obtain the tip and node names (as numbers)
-  #Obtain the list of descendants
-  tips <- 1:nrow(iT$v)
-  nodes <- (max(tips)+1):(max(tips)*2-1) 
-  
-  iT$n <- list()
-  iT$n$des <- lapply(nodes, function(x){Descendants(iT$p,x,"all")})
-  names(iT$n$des) <- as.character(nodes)
-
-  #Obtain information for each node
-  #This includes information around the subtree defined by each node
-  if(light) {
-    iT$n$agg <- bind_rows(lapply(iT$n$des, function(x){
-      tips <- x[which(x<=length(iT$v$ID))]
-      mTime <- mean(iT$v$Time[tips])
-      mRec <- max(iT$v$Time)+1 - mTime
-      xDist <- max(unlist(lapply(tips, function(tip){iT$e$dist[tip,tips[tips>tip]]})))
-      data.frame(mRec=mRec, mTime=mTime, totTips=length(tips), xDist=xDist)
-    }))
-  } else {
-    iT$n$agg <- bind_rows(lapply(iT$n$des, function(x){
-      tips <- x[which(x<=length(iT$v$ID))]
-      
-      mTime <- mean(iT$v$Time[tips])
-      mRec <- max(iT$v$Time)+1 - mTime
-      mDist <- mean(unlist(lapply(tips, function(tip){iT$e$dist[tip,tips[tips>tip]]})))
-      xDist <- max(unlist(lapply(tips, function(tip){iT$e$dist[tip,tips[tips>tip]]})))
-      mtDiff <- mean(unlist(lapply(tips, function(tip){abs(iT$e$tDiff[tip,tips[tips>tip]])})))
-      totEdge <- sum(iT$p$edge.length[which(iT$p$edge[,2]%in%x)])
-      
-      data.frame(mDist=mDist, mtDiff=mtDiff, totEdge=totEdge, mRec=mRec, mTime=mTime, totTips=length(tips), xDist=xDist)
-    }))
-  }
-  iT$n$agg$ID <- as.character(nodes)
-  iT$n$agg$BootStrap <- as.numeric(iT$p$node.label)/100
-  
-  ##TO-DO: Confirm, this is statistaically valid.
-  iT$n$agg$BootStrap[is.na(iT$n$agg$BootStrap)] <- 1 # A comprimise for the root.
-  
-  #Based on Cherry nodes, obtain some frequency info
-  if(T) {
-    #Obtain Cherry nodes for the sake of frequency function analysis
-    tEs <- which(iT$p$edge[,2]%in%tips)
-    
-    #Analyze things about each cherry node
-    iT$f <- bind_rows(lapply(tEs, function(tE){
-      
-      cN <- (iT$p$edge[,1])[tE]
-      cT <- (iT$p$edge[,2])[tE]
-      cA <- (iT$p$edge[,2])[setdiff(which(iT$p$edge[,1]==cN), tE)]
-      
-      if(cN!=(nrow(iT$v)+1)){
-        #The length of the edge of interest (without the node that cT makes)
-        eL <- (iT$p$edge.length[which(iT$p$edge[,2]==cA)] +
-                 iT$p$edge.length[which(iT$p$edge[,2]==cN)])
-      }
-      
-      #If adjacent 'cA' is a node
-      if(cA>length(tips)){
-        nNmRec <- iT$n$agg$mTime[which(as.numeric(iT$n$agg$ID)==cA)]
-        tDiff <- abs(nNmRec-iT$v$Time[cT])
-      } else {
-        tDiff <- abs(iT$e$tDiff[cT,cA])
-      }
-      
-      
-      infoR <- subset(iT$n$agg, ID%in%as.character(cN))
-      
-      if(cN==(nrow(iT$v)+1)) {
-        return(data.frame(Node=NULL, Tip=NULL, tDiff=NULL, BootStrap=NULL, xDist=NULL,  branchL=NULL))
-      } else{
-        return(data.frame(Node=cN, Tip=cT, tDiff=tDiff, BootStrap=infoR$BootStrap, xDist=infoR$xDist, branchL=eL))          
-      }
-            
-    }))
-  }
-  
-  #Alternate - Placement based analysis
-  if(F) {
-    #Frequencey information model, placement weighting
-    iT$f <- bind_rows(lapply(tips, function(tip){
-      print(tip)
-      
-      pth <- as.character(nodepath(iT$p, tip, nodes[[1]])[-1])
-      invpth <- as.character(setdiff(nodes, pth))
-      
-      mem <- subset(iT$n$agg, ID%in%pth) %>% select(mDist, mTime, BootStrap, totEdge, totTips, ID)
-      invmem <- subset(iT$n$agg, ID%in%invpth) %>% select(mDist, mTime, BootStrap, totEdge, totTips, ID)
-      
-      mem$tDiff <- abs((mem$mTime*mem$totTips-iT$v$Time[tip])/(mem$totTips-1)-iT$v$Time[tip])
-      invmem$tDiff <- abs(invmem$mTime-iT$v$Time[tip])
-      
-      mem$mem <- 1
-      invmem$mem <- 0
-      
-      return(rbind(mem,invmem))
-    }))
-  }
-
-  return(iT)
-}
+##- POINT OF REVIEW -##
 
 #After simulating the growth of trees by placing recent sequences as tips on a fixed ML tree
 growthSim <- function(iT, gFile) {
@@ -204,7 +150,6 @@ growthSim <- function(iT, gFile) {
 
 #Cluster using a modified subtree-based method
 #Clusters are defined as subtrees with a mean tip-to tip distance under some maximum
-##TO-DO: Simplify. Currently the Root of Speed issues. ##
 STClu <- function(iT, maxD, minB=0, meanD=F) {
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param maxD: The maximum distance criterion defining clusters
@@ -444,52 +389,10 @@ GAICRun <- function(iT, maxDs, minBs=0, rand=F) {
   return(runRes)
 }
 
-#Subsample a tree with given information 
-subSample <- function(iT, ssize=1200) {
-  #@param iT: The input tree file, annotated with vertex and edge information
-  #@param ssize: How many cases to take 
-  #@return: The subsample of sample size "ssize"
-  
-  i <- sample(1:length(iT$v$ID), ssize, replace=F)
-  temp <- iT$p$node.label
-  temp2 <- (nrow(iT$v)+1):(nrow(iT$v)+iT$p$Nnode)
-  
-  iT$p$node.label <- temp2
-  rmEs <- which(iT$p$edge[,2]%in% setdiff(1:nrow(iT$v),i )) #Which edges connect to removed tips
-  iT$g <- subset(iT$g, !(oE%in%rmEs))
-  iT$g$oE <- sapply(iT$g$oE, function(x){
-    x <- iT$p$edge[x,2]
-  })
-  
-  
-  #Insure that the tips sampled are represented in v,p and e.
-  iT$v <- iT$v[i,]
-  iT$p <- drop.tip(iT$p, setdiff(1:length(iT$v$ID), i))
-  
-  tKey <- c(sort(i),iT$p$node.label)
-  iT$g$oE <- sapply(iT$g$oE, function(x){
-    x <- which(tKey==x)
-    if(is.null(x)){
-      return(0)
-    } else{
-      return(x)
-    }
-  })
-  
-  iT$g <- subset(iT$g, oE>0)
-  iT$p$node.label <- temp[which(temp2%in%iT$p$node.label)]
-
-  #iT$e$dist <- dist.nodes(iT$p)
-  #iT$e$tDiff <- iT$e$tDiff[i,i]
-  
-  return(iT)
-}
-
 if(F){
   tFile <- "~/Data/Seattle/strefpackages/st1.refpkg/sttree1.nwk"
   gFile <- "~/Data/Seattle/strefpackages/growthFiles/growthFile1.tree"
-  oT <- impTree(tFile) 
-  oT <- nodeInfo(oT)
+  oT <- impTree(tFile, reVars='_', varInd = c(1,2), dateFormat = "%Y") 
   oT <- growthSim(oT, gFile)
   
   iT <- oT

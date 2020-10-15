@@ -11,13 +11,13 @@ impTN93 <- function(iFile, reVars='/|\\|', varInd=c(5,6,2), varMan=NA, dateForma
   #@param iFile: The name/path of the input file (expecting tn93 output csv)
   #@param reVars: The regular expression used to extract variables from column headers. This is passed to strsplit, creating a vertex of values from the column header
   #@param varInd: A vector of numbers describing the order of variables in the split string. This should describe the index of the unique ID, the Timepoint and the location.
-  #-------------  ex. If the header would be split such that the 4th index is the Unique ID, then 4 should be the first number in this list
-  #-------------  ID and timepoint are currently required. If the location information is not available, it should be set as "0".
+  #               ex. If the header would be split such that the 4th index is the Unique ID, then 4 should be the first number in this list
+  #               ID and timepoint are currently required. If the location information is not available, it should be set as "0".
   #@param varMan: Variables can be assigned manually with a csv containing columns of ID, Time point, and Location, in that order. Again, location is not mandatory. 
-  #-------------  If this option is used, reVars and varInd, need not be provided. --CURRENTLY UNNUSED--
+  #               If this option is used, reVars and varInd, need not be provided. --CURRENTLY UNNUSED--
   #@param partQ: The proportion of the set that is to define "known" cases for the purposes of cluster growth. The remaining quantile is marked as new cases.
   #@return: A list of 3 Data frames. An edge list (weighted by TN93 genetic distance), a vertex list, 
-  #-------- and a list of minimum edges, for the future establishment of a timepoint-based model
+  #         and a list of minimum edges, for the future establishment of a timepoint-based model
   
   #Obtain tn93 edge list from file
   idt <- fread(iFile)
@@ -29,7 +29,6 @@ impTN93 <- function(iFile, reVars='/|\\|', varInd=c(5,6,2), varMan=NA, dateForma
   el <- data.table(ID1=as.character(temp1[varInd[[1]],]), t1=as.Date(temp1[varInd[[2]],], format=dateFormat),
                    ID2=as.character(temp2[varInd[[1]],]), t2=as.Date(temp2[varInd[[2]],], format=dateFormat),
                    Distance = as.numeric(idt$Distance), stringsAsFactors= F)
-
   
   #Obtain the maximum time and time difference between the head and tail of each edge
   el[,"tMax" := pmax(t1,t2)] 
