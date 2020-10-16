@@ -31,6 +31,7 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   t$v <- data.table(ID=temp[varInd[[1]],],  
                     Time=as.Date(temp[varInd[[2]],], format=dateFormat), 
                     stringsAsFactors = F)
+  t$v <- t$v[order(t$v$Time)]
   
   #Summarize internal branch length information using a list of 2 matrices
   t$e <- list()
@@ -85,65 +86,43 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   return(t)
 }
 
-##- POINT OF REVIEW -##
-
 #After simulating the growth of trees by placing recent sequences as tips on a fixed ML tree
 growthSim <- function(iT, gFile) {
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param gFile: The growth file from a pplacer run for all new cases
-  #@return: The tree annotated with growth information (ie. their closest neighbour and the distance)
+  #@return: The input tree annotated with growth information stored as $g.
+  #    $nID: The ID if the new node. This will be a full tip label
+  #    $xDist: The distance between this node and it's the most distant tip in the tree that is formed
+  #    $oNode: The index corresponding to the neighbour of the newly added tip.
+  #            If this is "NA", the new tip was added to a terminal branch.
   
   #Obtain a set of trees with new tips added
   #This is one tree for each new case
   ts <- read.tree(gFile)
-  
-  #Summarize a table of information for new tips placed on the tree
   df <- bind_rows(lapply(ts, function(t){
     
-    #Obtain potential placements
-    nIDs <- setdiff(t$tip.label, iT$p$tip.label)
-    bss <- sapply(nIDs, function(s){
-      sl <-  strsplit(s, '_')[[1]]
-      s <- sl[[length(sl)]]
-      bs <- as.numeric(substr(s, 3, nchar(s)))
-    })
-    nIDi <- which.max(bss)
+    #Extract the subtree which contains the 
+    nID <- setdiff(t$tip.label, iT$tip.label)
+    nTip <- which(t$tip.label%in%nID)
+    p <- t$edge[which(t$edge[,2]%in%nTip), 1]
+    t <- extract.clade(t, p)
     
-    #Find most certain placement by bootstrap value
-    bs <- bss[[nIDi]]
-    nID <- nIDs[[nIDi]]
-    nT <- which(t$tip.label%in%nID)
-    sT <- unlist(Siblings(t, nT))
+    #Obtain the node corresponding to old nodes within this subtree
+    #This index is named based on that nodes number in the old tree
+    oIDs <- setdiff(t$tip.label, nID)
+    oTips <- which(iT$tip.label%in%oIDs)
+    oNode <- mrca.phylo(iT, oTips)
     
-    #Find the edges of interest on the old Tree 
-    oE <- sapply(sT, function(x){
-      
-      #If our new tip is adjacent to another tip, use that tips tip label
-      if(x<=length(t$tip.label)){
-        sID <- t$tip.label[x]
-        oT <- which(iT$p$tip.label%in%sID)
-        return(which(iT$p$edge[,2]%in%oT))  
-      }
-      
-      #If our new tip is adjacent to an internal node, 
-      #We must consider the node's position in a node list list without new nodes
-      else{
-        nN <- which(t$node.label%in%"")+length(t$tip.label)
-        noN <- setdiff((length(t$tip.label)+1):(length(t$node.label)+length(t$tip.label)), nN)
-        oN <- which(noN%in%x)+length(t$tip.label)
-        return(which(iT$p$edge[,2]%in%oN))
-      }
-    })
-    
-    #Obtain edge lengths of the new tip and it's neighbour leading to the created parent node
-    distLength <- t$edge.length[which(t$edge[,2]%in%sT)]
-    pendLength <- t$edge.length[which(t$edge[,2]%in%nT)]
-    nID <- (strsplit(nIDs[[nIDi]], '_')[[1]])[[1]]
-    
-    return(data.frame(nID=nID, oE=oE, Bootstrap=bs, distLength=distLength, pendLength=pendLength))
-  }))
+    #To catch a singleton connecting to a new tip
+    if(is.null(oNode)){
+      oNode <- NA
+    }
   
-  iT$g <- df
+    data.frame(nID=nID, xDist=max(dist.nodes(t)), oNode=oNode)
+  }))  
+  
+  #Add this information as a data table under g.
+  iT$g <- as.data.table(df)
   
   return(iT)
 }
