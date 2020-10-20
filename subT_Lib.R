@@ -81,7 +81,7 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   t$n$Info$BootStrap <- as.numeric(t$node.label)
   
   #A comprimise for the root
-  t$n$Info$BootStrap[is.na(t$n$Info$BootStrap)]
+  t$n$Info$BootStrap[is.na(t$n$Info$BootStrap)] <- 1
   
   return(t)
 }
@@ -93,8 +93,7 @@ growthSim <- function(iT, gFile) {
   #@return: The input tree annotated with growth information stored as $g.
   #    $nID: The ID if the new node. This will be a full tip label
   #    $xDist: The distance between this node and it's the most distant tip in the tree that is formed
-  #    $oNode: The index corresponding to the neighbour of the newly added tip.
-  #            If this is "NA", the new tip was added to a terminal branch.
+  #    $oConn: The index corresponding to the neighbour of the newly added tip. This can be an internal node or a tip.
   
   #Obtain a set of trees with new tips added
   #This is one tree for each new case
@@ -115,10 +114,10 @@ growthSim <- function(iT, gFile) {
     
     #To catch a singleton connecting to a new tip
     if(is.null(oNode)){
-      oNode <- NA
+      oNode <- which(iT$tip.label%in%oIDs)
     }
   
-    data.frame(nID=nID, xDist=max(dist.nodes(t)), oNode=oNode)
+    data.frame(nID=nID, xDist=max(dist.nodes(t)), oConn=oNode)
   }))  
   
   #Add this information as a data table under g.
@@ -128,146 +127,80 @@ growthSim <- function(iT, gFile) {
 }
 
 #Cluster using a modified subtree-based method
-#Clusters are defined as subtrees with a mean tip-to tip distance under some maximum
-STClu <- function(iT, maxD, minB=0, meanD=F) {
+#Clusters are defined as subtrees with all tip-to tip distances under some maximum
+#A bootstrap criterion can also be applied to these subtrees (ie. confidence in the parent node)
+STClu <- function(iT, maxD, minB=0) {
   #@param iT: The input tree file, annotated with vertex and edge information
+  #@param minBL The minimum bootstrap criterion for clusters
   #@param maxD: The maximum distance criterion defining clusters
-  #@return: The tree annotated with cluster size, growth and membership
-  #         Growth is summarized as a matrix of old cases, new cases and predictor values
+  #@return: The tree annotated with $c, which contains cluster membership information ($Membership).
+  #         This also contains additional information stored in the data frame $c$Info...
+  #    $ID: The ID of either the parent node representing the cluster, or the tip (if orig was a singleton)
+  #    $Old: The number of cases (not new) in the original cluster
+  #    $New: The number of new cases added to the cluster. This represents cluster growth
+  #    $mTime: The mean time of the old cases in the cluster 
   
-  #Identify potential clusters by some criterion as well as tips within those potential clusters
-  if(meanD){
-    cluNames <- as.character(subset(iT$n$agg, (mDist<=maxD)&(BootStrap>=minB))$ID)
-  }else {
-    cluNames <- as.character(subset(iT$n$agg, (xDist<=maxD)&(BootStrap>=minB))$ID)
-  }
-
+  #Identify potential clusters by a maximum internal distance criterion and bootstrap criterion
+  #These are tracked in the info data table 
+  cluNodes <- iT$n$Info[(BootStrap>=minB) & (xDist<=maxD)]
+  cluIDs <- cluNodes[order(totTips, decreasing = T), (ID)]
+  iT$n$Info$Clustered <- F
+  iT$n$Info[ID%in%cluIDs, "Clustered" := T]
   
-  cluTips <- unlist(iT$n$des[cluNames]) 
-  cluTips <- unique(as.numeric(cluTips[cluTips<length(iT$v$ID)]))
-  
-  #A loop to remove any clusters which are subclusters of a larger cluster
+  #This loop populates temp with only clusters that are not part of a larger cluster
   temp <- vector()
-  
-  #Cycle through all clustered and assure that no cluster is simply part of a larger cluster
-  #Only the clusters which are not parts of a larger cluster are reasssigned to temp
-  while(length(cluTips)>0) {
-    tip <- cluTips[1]
-    tClu <- cluNames[sapply(iT$n$des[cluNames], function(iClu) {tip%in%iClu})]
-    tCluS <- as.numeric(sapply(tClu, function(cluName) {length(iT$n$des[[cluName]])}))
-    tClu <- tClu[which(tCluS==max(tCluS))[[1]]]
-    temp <- c(temp,tClu)
-    cluTips <- cluTips[-which(cluTips%in%iT$n$des[[tClu]])]
+  while(length(cluIDs)>0) {
+    cluID <- cluIDs[1]
+    cluDes <- as.character(iT$n$Des[[cluID]])
+    cluIDs <- setdiff(cluIDs, c(cluDes,cluID))
+    temp <- c(temp, cluID)
   }
   
-  #Track clusters in the trees 'n' list item
-  iT$n$agg$Clustered <- rep(FALSE, nrow(iT$n$agg))
-  iT$n$agg$Clustered[which(iT$n$agg$ID%in%cluNames)] <- TRUE
-  cluNames <- temp
+  #Obtain clusters, with internal nodes now removed
+  clus <- iT$n$Des[sort(temp)]
+  clus <- lapply(clus, function(c) {c[which(c)<length(iT$tip.label)]})
   
-  iT$c$cluNames <- cluNames
-
-  #Obtain clusters in the form of membership lists, including new cases
-  clu <- lapply(cluNames, function(i){
-    
-    #Obtain Tips, ids and edges already in Cluster 
-    iDes <- iT$n$des[[i]]
-    iDesTs <- iDes[which(iDes<length(iT$v$ID))]
-    iDesEs <- which(iT$p$edge[,2]%in%iDes)
-    
-    #New cases associated with an internal node within the potential cluster
-    gTips <- subset(iT$g, (oE%in%iDesEs)) #&(Bootstrap>=minB))
-    
-    #To catch the event that no new tips are added
-    if(nrow(gTips)>0) {
-      #To Find any new tips that need to be added to membership
-      #These tips will not be added to a cluster if they would increase the mean distance above dMax
-      ##TO-DO: Test function, this currently catches no breaks in real data (they could be rare)
-      gTips$breakCon <- sapply(1:nrow(gTips), function(j) {
-        gTip <- gTips[j,]
-        mDist <- subset(iT$n$agg, ID==as.numeric(i))$mDist
-        adj <- iT$p$edge[gTip$oE,2]
-        
-        #Recalculate mean edge distance
-        oDists <- rep(mDist, choose(length(iDesTs),2))
-        nDists <- iT$e$dist[adj, setdiff(iDesTs, adj)]-gTip$pendLength+gTip$distLength
-        nmDist <- mean(c(oDists,nDists, gTip$pendLength+gTip$distLength))
- 
-        return(nmDist>=maxD)
-      })
-    
-      
-      if(meanD) {
-        gTips <- subset(gTips, !breakCon) 
-      }else {
-        gTips <- subset(gTips, (distLength+pendLength)<=maxD)
-      }
-    }
-    
-    #To catch the event that no new tips are added
-    if(nrow(gTips)==0) {
-      gTips <- NULL
-    }
-    
-    return(c(iT$v$ID[iDesTs], gTips$nID))
+  #Obtain old singletons. These are added as clusters of size 1
+  oSing <- as.list(setdiff(1:length(iT$tip.label), unlist(clus)))
+  names(oSing) <- unlist(oSing)
+  clus <- c(oSing, clus)
+  
+  #The cluster that each new tip joins is saved as a column in $g
+  iT$g$Clu <- sapply(iT$g[,(oConn)], function(x){
+    hostClu <- names(clus[sapply(clus, function(clu){x%in%clu})])
+    ifelse(length(hostClu)==0, NA, hostClu)
   })
   
-  #Obtain old and new singletons.
-  oSing <- as.list(setdiff(iT$v$ID, unlist(clu)))
-  nSing <- as.list(setdiff(iT$g$nID, unlist(clu)))
+  #Correcting for new tips which would create a distance over the maximum clustering distance allowed
+  iT$g[(xDist)>maxD, Clu := NA]
   
-  #If an old singleton would form a cluster with an unclustered new singleton we capture that too
-  clu <- c(clu, lapply(oSing, function(i){
-    
-    #New cases associated with an internal node within the potential cluster
-    iE <- which(iT$p$edge[,2]==which(iT$v$ID%in%i))
-    gTips <- subset(iT$g, (iT$g$oE==iE)) #&(Bootstrap>=minB))
-    
-    if(nrow(gTips)>0){
-      gTips <- subset(gTips, (distLength+pendLength)<=maxD)
-    }
-    return(c(i, gTips$nID))
-  }))
+  #Summarizes growth information as a data table
+  cInfo <- data.table()
+  cInfo$ID <- names(clus)
+  cInfo$Old <- sapply(clus, function(x) {length(x)})
+  cInfo$mTime <- c(iT$v[unlist(oSing), (Time)], iT$n$Info[ID%in%temp, (mTime)])
   
-  #Add old and new singletons to updated clusters
-  oSing <- as.list(setdiff(iT$v$ID, unlist(clu)))
-  nSing <- as.list(setdiff(iT$g$nID, unlist(clu)))
+  #Sort cluster membership. Showing the lists of tip labels for each cluster
+  #This is sorted with growth info to be appended onto the final tree
+  iT$c <- list()
   
-  iT$c$membership <- c(clu,oSing,nSing)
+  #This function ensures members are listed by their tip labels.
+  #New members are also added here
+  iT$c$Membership <- lapply(names(clus), function(cluName){
+    clu <- clus[[cluName]]
+    oMem <- iT$tip.label[clu]
+    nMem <- iT$g[Clu%in%cluName, (nID)]
+    return(c(oMem, nMem))
+  })
+
+  #Cluster information is finalized and added to $c
+  cInfo$New <- sapply(iT$c$Membership, function(x){length(x)}) - cInfo$Old
+  iT$c$Info <- cInfo
   
-  #Return a Data frame of important cluster growth information
-  temp <- bind_rows(lapply(1:length(iT$c$membership), function(i){
-    
-    x <- iT$c$membership[[i]]
-    oldCases <- length(which(x%in%iT$v$ID))
-    
-    #For growth, record the number of old and new cases in the clusters which contain old cases
-    if(oldCases==0) {
-      return(data.frame(Old=NULL,New=NULL,mRec=NULL,cSize=NULL, mDist=NULL))
-    }
-    else {
-      newCases <- length(x) - oldCases
-      mRec <- max(iT$v$Time)+1-mean(subset(iT$v, ID%in%x)$Time)
-      
-      #Calculate the total length in branches that is taken up by a given subtree
-      if(i<=length(cluNames)){
-        totLength <- subset(iT$n$agg, ID%in%cluNames[i])$mDist
-        mDist <- subset(iT$n$agg, ID%in%cluNames[i])$mDist
-      }
-      
-      #For singletons
-      else {
-        totLength <- iT$p$edge.length[which(iT$p$edge[,2]%in%which(iT$v$ID%in%x))]
-        mDist <- 0
-      }
-      
-      return(data.frame(Old=oldCases,New=newCases,mRec=mRec,totLength=totLength, mDist=mDist))
-    }
-  }))
-  
-  iT$c$growth <- temp
   return(iT)
 }
+
+##- POINT OF REVIEW -##
 
 #Obtain GAIC at several different cutoffs
 GAICRun <- function(iT, maxDs, minBs=0, rand=F) {
