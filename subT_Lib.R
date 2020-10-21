@@ -5,6 +5,7 @@ require("parallel")
 
 #Import Tree Data and output an annotated tree with additional information to assist clustering
 impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d", varMan=NA, nCore=detectCores()){
+  #####
   #@param iFile: The name/path of the input file (expecting a newick file)
   #@param iFile: The name/path of the input file (expecting tn93 output csv)
   #@param reVars: The regular expression used to extract variables from column headers. This is passed to strsplit, creating a vertex of values from the column header
@@ -13,6 +14,7 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   #               ID and timepoint are currently required. If the location information is not available, it should be set as "0".
   #@param varMan: Variables can be assigned manually with a csv containing columns of ID, Time point, and Location, in that order. Again, location is not mandatory. 
   #               If this option is used, reVars and varInd, need not be provided. --CURRENTLY UNNUSED--
+  #@param nCore: The number of cores used for multi-threading. --CURRENTLY UNNUSED--
   #@return: An ape phylo object annotated with the additional data summarized below
   #    $v: A data frame storing vertex information ($ID, $Time, and, if given $Location)
   #    $e: A list of 2 matrices. $dist representing phenetic distance and $tDiff representing time difference.
@@ -20,7 +22,9 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   #    $n: A list of each node's descendants ($Des), as well as information used to obtain clusters from nodes 
   #        This additional data is stored in ($Info) as $xDist for the longest distance $Bootstrap for the support value.
   #        also, $mTime for the mean date at which sequences were collected and $mtDiff
-  
+  #    $f: A list of data used to train a predictive model. This focuses on instances of terminal branches joining the tree
+  ....
+  #####
   
   #Obtaining and midpioint rooting an ape phylogeny object from the tree file, store in a greater list "t"
   t <- midpoint(read.tree(tFile))
@@ -80,20 +84,49 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   t$n$Info$ID <- as.character(nodes)
   t$n$Info$BootStrap <- as.numeric(t$node.label)
   
-  #A comprimise for the root
+  #A compromise for the root
   t$n$Info$BootStrap[is.na(t$n$Info$BootStrap)] <- 1
+
+  #Obtain the direct parent node of each tip 
+  #This information is stored in $f
+  termE <- t$edge[which(t$edge[,2]<length(t$tip.label)),]
+  t$f <- data.table(Tip = termE[,2], tNode = termE[,1])
+  
+  #Obtain the neighbour node to each tip (this could be an internal node or another tip)
+  #This also stores the time difference and maximum distance given this neighbour node
+  temp <- sapply(1:nrow(t$f), function(i){
+    tNode <- t$f[i, (tNode)]
+    cTips <- t$edge[which(t$edge[,1]%in%tNode),2]
+    neighbour <- setdiff(cTips, t$f[i,(Tip)])
+    
+    #Obtain the largest distance and the time difference
+    #There are 2 cases for time difference calculation
+    xDist <- t$n$Info[ID %in% as.character(tNode), (xDist)]
+    tDiff <- ifelse(neighbour>length(t$tip.label),
+                    t$v$Time[i] - t$n$Info[ID %in% as.character(tNode), (mTime)],
+                    t$e$tDiff[i, neighbour])
+    
+    return(c(neighbour, xDist, tDiff))
+  })
+  
+  t$f[,"Neighbour" := temp[1,]]
+  t$f[,"xDist" := temp[2,]]
+  t$f[,"tDiff" := temp[3,]]
   
   return(t)
 }
 
 #After simulating the growth of trees by placing recent sequences as tips on a fixed ML tree
 growthSim <- function(iT, gFile) {
+  #####
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param gFile: The growth file from a pplacer run for all new cases
   #@return: The input tree annotated with growth information stored as $g.
   #    $nID: The ID if the new node. This will be a full tip label
   #    $xDist: The distance between this node and it's the most distant tip in the tree that is formed
   #    $oConn: The index corresponding to the neighbour of the newly added tip. This can be an internal node or a tip.
+  .....
+  #####
   
   #Obtain a set of trees with new tips added
   #This is one tree for each new case
@@ -130,6 +163,7 @@ growthSim <- function(iT, gFile) {
 #Clusters are defined as subtrees with all tip-to tip distances under some maximum
 #A bootstrap criterion can also be applied to these subtrees (ie. confidence in the parent node)
 STClu <- function(iT, maxD, minB=0) {
+  #####
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param minBL The minimum bootstrap criterion for clusters
   #@param maxD: The maximum distance criterion defining clusters
@@ -139,6 +173,8 @@ STClu <- function(iT, maxD, minB=0) {
   #    $Old: The number of cases (not new) in the original cluster
   #    $New: The number of new cases added to the cluster. This represents cluster growth
   #    $mTime: The mean time of the old cases in the cluster 
+  ....
+  #####
   
   #Identify potential clusters by a maximum internal distance criterion and bootstrap criterion
   #These are tracked in the info data table 
@@ -174,16 +210,15 @@ STClu <- function(iT, maxD, minB=0) {
   #Correcting for new tips which would create a distance over the maximum clustering distance allowed
   iT$g[(xDist)>maxD, Clu := NA]
   
-  #Summarizes growth information as a data table
-  cInfo <- data.table()
-  cInfo$ID <- names(clus)
-  cInfo$Old <- sapply(clus, function(x) {length(x)})
-  cInfo$mTime <- c(iT$v[unlist(oSing), (Time)], iT$n$Info[ID%in%temp, (mTime)])
-  
   #Sort cluster membership. Showing the lists of tip labels for each cluster
   #This is sorted with growth info to be appended onto the final tree
   iT$c <- list()
   
+  #Summarizes growth information as a data table
+  iT$c$Info <- data.table(ID = names(clus), Old = sapply(clus, function(x) {length(x)}),
+                      mTime = c(iT$v[unlist(oSing), (Time)], iT$n$Info[ID%in%temp, (mTime)]))
+  
+
   #This function ensures members are listed by their tip labels.
   #New members are also added here
   iT$c$Membership <- lapply(names(clus), function(cluName){
@@ -195,12 +230,9 @@ STClu <- function(iT, maxD, minB=0) {
 
   #Cluster information is finalized and added to $c
   cInfo$New <- sapply(iT$c$Membership, function(x){length(x)}) - cInfo$Old
-  iT$c$Info <- cInfo
   
   return(iT)
 }
-
-##- POINT OF REVIEW -##
 
 #Obtain GAIC at several different cutoffs
 GAICRun <- function(iT, maxDs, minBs=0, rand=F) {
@@ -302,8 +334,14 @@ GAICRun <- function(iT, maxDs, minBs=0, rand=F) {
 }
 
 if(F){
+  
+  #Set inputs for test
+  reVars <- '_'
+  varInd <- c(1,2)
+  dateFormat <- '%Y'
   tFile <- "~/Data/Seattle/strefpackages/st1.refpkg/sttree1.nwk"
   gFile <- "~/Data/Seattle/strefpackages/growthFiles/growthFile1.tree"
+  
   oT <- impTree(tFile, reVars='_', varInd = c(1,2), dateFormat = "%Y") 
   oT <- growthSim(oT, gFile)
   
