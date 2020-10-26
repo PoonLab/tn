@@ -5,7 +5,6 @@ require("parallel")
 
 #Import Tree Data and output an annotated tree with additional information to assist clustering
 impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d", varMan=NA, nCore=detectCores()){
-  #####
   #@param iFile: The name/path of the input file (expecting a newick file)
   #@param iFile: The name/path of the input file (expecting tn93 output csv)
   #@param reVars: The regular expression used to extract variables from column headers. This is passed to strsplit, creating a vertex of values from the column header
@@ -23,8 +22,7 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   #        This additional data is stored in ($Info) as $xDist for the longest distance $Bootstrap for the support value.
   #        also, $mTime for the mean date at which sequences were collected and $mtDiff
   #    $f: A list of data used to train a predictive model. This focuses on instances of terminal branches joining the tree
-  ....
-  #####
+
   
   #Obtaining and midpioint rooting an ape phylogeny object from the tree file, store in a greater list "t"
   t <- midpoint(read.tree(tFile))
@@ -102,9 +100,9 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
     #Obtain the largest distance and the time difference
     #There are 2 cases for time difference calculation
     xDist <- t$n$Info[ID %in% as.character(tNode), (xDist)]
-    tDiff <- ifelse(neighbour>length(t$tip.label),
+    tDiff <- abs(ifelse(neighbour>length(t$tip.label),
                     t$v$Time[i] - t$n$Info[ID %in% as.character(tNode), (mTime)],
-                    t$e$tDiff[i, neighbour])
+                    t$e$tDiff[i, neighbour]))
     
     return(c(neighbour, xDist, tDiff))
   })
@@ -113,20 +111,29 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   t$f[,"xDist" := temp[2,]]
   t$f[,"tDiff" := temp[3,]]
   
+  
+  ## - UNDER DEV: - ##
+  if(F){
+    addNeg <- lapply(1:(length(oT$tip.label)-1), function(i){
+      oT$e$tDiff[(i+1):length(oT$tip.label),i]
+    })
+    
+    addNeg <- table(unname(unlist(addNeg)))
+    
+    plot(table(t$f$tDiff))
+  }
+  
   return(t)
 }
 
 #After simulating the growth of trees by placing recent sequences as tips on a fixed ML tree
 growthSim <- function(iT, gFile) {
-  #####
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param gFile: The growth file from a pplacer run for all new cases
   #@return: The input tree annotated with growth information stored as $g.
   #    $nID: The ID if the new node. This will be a full tip label
   #    $xDist: The distance between this node and it's the most distant tip in the tree that is formed
   #    $oConn: The index corresponding to the neighbour of the newly added tip. This can be an internal node or a tip.
-  .....
-  #####
   
   #Obtain a set of trees with new tips added
   #This is one tree for each new case
@@ -163,7 +170,6 @@ growthSim <- function(iT, gFile) {
 #Clusters are defined as subtrees with all tip-to tip distances under some maximum
 #A bootstrap criterion can also be applied to these subtrees (ie. confidence in the parent node)
 STClu <- function(iT, maxD, minB=0) {
-  #####
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param minBL The minimum bootstrap criterion for clusters
   #@param maxD: The maximum distance criterion defining clusters
@@ -173,8 +179,6 @@ STClu <- function(iT, maxD, minB=0) {
   #    $Old: The number of cases (not new) in the original cluster
   #    $New: The number of new cases added to the cluster. This represents cluster growth
   #    $mTime: The mean time of the old cases in the cluster 
-  ....
-  #####
   
   #Identify potential clusters by a maximum internal distance criterion and bootstrap criterion
   #These are tracked in the info data table 
@@ -194,7 +198,7 @@ STClu <- function(iT, maxD, minB=0) {
   
   #Obtain clusters, with internal nodes now removed
   clus <- iT$n$Des[sort(temp)]
-  clus <- lapply(clus, function(c) {c[which(c)<length(iT$tip.label)]})
+  clus <- lapply(clus, function(clu) {clu[which(clu<length(iT$tip.label))]})
   
   #Obtain old singletons. These are added as clusters of size 1
   oSing <- as.list(setdiff(1:length(iT$tip.label), unlist(clus)))
@@ -229,7 +233,7 @@ STClu <- function(iT, maxD, minB=0) {
   })
 
   #Cluster information is finalized and added to $c
-  cInfo$New <- sapply(iT$c$Membership, function(x){length(x)}) - cInfo$Old
+  iT$c$Info$New <- sapply(iT$c$Membership, function(x){length(x)}) - iT$c$Info$Old
   
   return(iT)
 }
@@ -241,15 +245,19 @@ GAICRun <- function(iT, maxDs, minBs=0, rand=F) {
   #@return: A list of analysis based on a fitting actual new data to predicted cluster growth
   #         This most importantly includes GAIC
   
-  #Obtain the subtree and a list of analysis 
-  runRes <- lapply(maxDs, function(maxD){
-    x <- lapply(minBs, function(minB){
+  #There are multiple GAIC calculations at different maximum distances. 
+  distRun <- lapply(maxDs, function(maxD){
+    
+    #A calculation at a given maximum distance is made up of several runs at different minimum bootstraps
+    bootRun <- lapply(minBs, function(minB){
       
-      #Create subTree
+      #Obtain clusters stored in $c 
       subT <- STClu(iT, maxD, minB)
       
       #Check positives now that we have params
-      subT$f$Positive <- (subT$f$xDist<=maxD) #&(subT$f$BootStrap>=minB)
+      subT$f$Positive <- (subT$f$xDist<=maxD) 
+      
+      times <- 
       
       #Layout of Time and time lag information
       tTab <- table(iT$v$Time)
