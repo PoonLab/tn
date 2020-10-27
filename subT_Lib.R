@@ -87,8 +87,15 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
 
   #Obtain the direct parent node of each tip 
   #This information is stored in $f
-  termE <- t$edge[which(t$edge[,2]<length(t$tip.label)),]
-  t$f <- data.table(Tip = termE[,2], tNode = termE[,1])
+  termi <- sapply(tips, function(tip){which(t$edge[,2]==tip)})
+  termDist <- t$edge.length[termi]
+  termE <- t$edge[termi,]
+  pNode <- termE[,1]
+  
+  t$v[,"TermDist" := termDist]
+  t$v[,"ParentNode" := pNode]
+  
+  t$f <- data.table(Tip = termE[,2], tNode = pNode)
   
   #Obtain the neighbour node to each tip (this could be an internal node or another tip)
   #This also stores the time difference and maximum distance given this neighbour node
@@ -143,7 +150,9 @@ growthSim <- function(iT, gFile) {
     #Extract the subtree which contains the 
     nID <- setdiff(t$tip.label, iT$tip.label)
     nTip <- which(t$tip.label%in%nID)
-    p <- t$edge[which(t$edge[,2]%in%nTip), 1]
+    nE <- which(t$edge[,2]%in%nTip)
+    p <- t$edge[nE, 1]
+    termDist <- t$edge.length[nE]
     t <- extract.clade(t, p)
     
     #Obtain the node corresponding to old nodes within this subtree
@@ -157,7 +166,7 @@ growthSim <- function(iT, gFile) {
       oNode <- which(iT$tip.label%in%oIDs)
     }
   
-    data.frame(nID=nID, xDist=max(dist.nodes(t)), oConn=oNode)
+    data.frame(nID=nID, TermDist=termDist , xDist=max(dist.nodes(t)), oConn=oNode)
   }))  
   
   #Add this information as a data table under g.
@@ -180,30 +189,36 @@ STClu <- function(iT, maxD, minB=0) {
   #    $New: The number of new cases added to the cluster. This represents cluster growth
   #    $mTime: The mean time of the old cases in the cluster 
   
-  #Identify potential clusters by a maximum internal distance criterion and bootstrap criterion
-  #These are tracked in the info data table 
-  cluNodes <- iT$n$Info[(BootStrap>=minB) & (xDist<=maxD)]
-  cluIDs <- cluNodes[order(totTips, decreasing = T), (ID)]
-  iT$n$Info$Clustered <- F
-  iT$n$Info[ID%in%cluIDs, "Clustered" := T]
+  #Initiate the position of each tip
+  pathEdge <- sapply(1:length(iT$tip.label), function(x) {which(iT$edge[,2]==x)})
+  pathLens <- iT$edge.length[pathEdge]
+  pathSteps <- which(pathLens<=maxD)
   
-  #This loop populates temp with only clusters that are not part of a larger cluster
-  temp <- vector()
-  while(length(cluIDs)>0) {
-    cluID <- cluIDs[1]
-    cluDes <- as.character(iT$n$Des[[cluID]])
-    cluIDs <- setdiff(cluIDs, c(cluDes,cluID))
-    temp <- c(temp, cluID)
+  #Step up any indivual edges that are short enough 
+  #This loop terminates when either all tips have reached the root
+  while(length(pathSteps)>0){
+    
+    #PathEdge is updated with the parent edge of the parent node for any short original edges
+    pathEdge[pathSteps] <- sapply(pathEdge[pathSteps], function(x){
+      p <- iT$edge[x,1]
+      
+      #If statement checks if the parent of an edge is the root
+      if(p==(length(iT$tip.label)+1)) {
+        return(NA)
+      } else{
+        return(which(iT$edge[,2]==p))
+      }
+    })
+    
+    #These two are upated based on pathEdge
+    pathLens <- iT$edge.length[pathEdge]
+    pathSteps <- which(pathLens<=maxD)
   }
   
-  #Obtain clusters, with internal nodes now removed
-  clus <- iT$n$Des[sort(temp)]
-  clus <- lapply(clus, function(clu) {clu[which(clu<length(iT$tip.label))]})
-  
-  #Obtain old singletons. These are added as clusters of size 1
-  oSing <- as.list(setdiff(1:length(iT$tip.label), unlist(clus)))
-  names(oSing) <- unlist(oSing)
-  clus <- c(oSing, clus)
+  #Each tip finally has the cluster it joins (ie. the highest node reached in an uninterrupted path of short edges) 
+  pathEdge[is.na(pathEdge)] <- length(iT$tip.label)+1
+  clusIDs <- iT$edge[pathEdge,2]
+  iT$v$Cluster <- clusIDs
   
   #The cluster that each new tip joins is saved as a column in $g
   iT$g$Clu <- sapply(iT$g[,(oConn)], function(x){
