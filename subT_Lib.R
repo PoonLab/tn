@@ -95,7 +95,7 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   t$v[,"TermDist" := termDist]
   t$v[,"ParentNode" := pNode]
   
-  t$f <- data.table(Tip = termE[,2], tNode = pNode)
+  t$f <- data.table(Tip = termE[,2], tNode = pNode, termDist = termDist)
   
   #Obtain the neighbour node to each tip (this could be an internal node or another tip)
   #This also stores the time difference and maximum distance given this neighbour node
@@ -104,31 +104,19 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
     cTips <- t$edge[which(t$edge[,1]%in%tNode),2]
     neighbour <- setdiff(cTips, t$f[i,(Tip)])
     
-    #Obtain the largest distance and the time difference
+    #Obtain the pendant length (the length of the edge leading to the neighbour node) and the time difference
     #There are 2 cases for time difference calculation
-    xDist <- t$n$Info[ID %in% as.character(tNode), (xDist)]
+    penDist <- t$edge.length[which(t$edge[,2]==neighbour)]
     tDiff <- abs(ifelse(neighbour>length(t$tip.label),
                     t$v$Time[i] - t$n$Info[ID %in% as.character(tNode), (mTime)],
                     t$e$tDiff[i, neighbour]))
     
-    return(c(neighbour, xDist, tDiff))
+    return(c(penDist, neighbour, tDiff))
   })
   
-  t$f[,"Neighbour" := temp[1,]]
-  t$f[,"xDist" := temp[2,]]
+  t$f[,"penDist" := temp[1,]]
+  t$f[,"Neighbour" := temp[2,]]
   t$f[,"tDiff" := temp[3,]]
-  
-  
-  ## - UNDER DEV: - ##
-  if(F){
-    addNeg <- lapply(1:(length(oT$tip.label)-1), function(i){
-      oT$e$tDiff[(i+1):length(oT$tip.label),i]
-    })
-    
-    addNeg <- table(unname(unlist(addNeg)))
-    
-    plot(table(t$f$tDiff))
-  }
   
   return(t)
 }
@@ -141,22 +129,29 @@ growthSim <- function(iT, gFile) {
   #    $nID: The ID if the new node. This will be a full tip label
   #    $xDist: The distance between this node and it's the most distant tip in the tree that is formed
   #    $oConn: The index corresponding to the neighbour of the newly added tip. This can be an internal node or a tip.
+  #    $penDist: The length of the pendant branch (ie. from new node to neighbour)
   
   #Obtain a set of trees with new tips added
   #This is one tree for each new case
   ts <- read.tree(gFile)
   df <- bind_rows(lapply(ts, function(t){
     
-    #Extract the subtree which contains the 
+    #Obtain the newest tip and it's edge
     nID <- setdiff(t$tip.label, iT$tip.label)
     nTip <- which(t$tip.label%in%nID)
     nE <- which(t$edge[,2]%in%nTip)
+    
+    #Obtain the parent node created by the new tip
+    #As well as the branch length
     p <- t$edge[nE, 1]
+    penE <- setdiff(which(t$edge[,1]%in%p), nE)
     termDist <- t$edge.length[nE]
+    penDist <- t$edge.length[penE]
+    
+    #Extract the subtree which contains the newest tip
     t <- extract.clade(t, p)
     
-    #Obtain the node corresponding to old nodes within this subtree
-    #This index is named based on that nodes number in the old tree
+    #Obtain the node corresponding to the neighbour based on that node's number in the old tree
     oIDs <- setdiff(t$tip.label, nID)
     oTips <- which(iT$tip.label%in%oIDs)
     oNode <- mrca.phylo(iT, oTips)
@@ -166,7 +161,7 @@ growthSim <- function(iT, gFile) {
       oNode <- which(iT$tip.label%in%oIDs)
     }
   
-    data.frame(nID=nID, TermDist=termDist , xDist=max(dist.nodes(t)), oConn=oNode)
+    data.frame(nID=nID, TermDist=termDist, PenDist=penDist, oConn=oNode)
   }))  
   
   #Add this information as a data table under g.
@@ -175,22 +170,22 @@ growthSim <- function(iT, gFile) {
   return(iT)
 }
 
-#Cluster using a modified subtree-based method
-#Clusters are defined as subtrees with all tip-to tip distances under some maximum
-#A bootstrap criterion can also be applied to these subtrees (ie. confidence in the parent node)
-STClu <- function(iT, maxD, minB=0) {
+#Clusters are defined as a series of tips diverging from a series of quickly branching nodes
+STClu <- function(iT, maxD) {
   #@param iT: The input tree file, annotated with vertex and edge information
-  #@param minBL The minimum bootstrap criterion for clusters
   #@param maxD: The maximum distance criterion defining clusters
   #@return: The tree annotated with $c, which contains cluster membership information ($Membership).
   #         This also contains additional information stored in the data frame $c$Info...
   #    $ID: The ID of either the parent node representing the cluster, or the tip (if orig was a singleton)
   #    $Old: The number of cases (not new) in the original cluster
   #    $New: The number of new cases added to the cluster. This represents cluster growth
-  #    $mTime: The mean time of the old cases in the cluster 
   
-  #Initiate the position of each tip
-  pathEdge <- sapply(1:length(iT$tip.label), function(x) {which(iT$edge[,2]==x)})
+  #Initiate the position of each tip and node
+  #An if statement checks if the parent of an edge is the root
+  pathEdge <- sapply(1:(length(iT$tip.label)+iT$Nnode), function(x) {
+    ifelse(x==(length(iT$tip.label)+1), 
+           NA, which(iT$edge[,2]==x))
+  })
   pathLens <- iT$edge.length[pathEdge]
   pathSteps <- which(pathLens<=maxD)
   
@@ -201,13 +196,8 @@ STClu <- function(iT, maxD, minB=0) {
     #PathEdge is updated with the parent edge of the parent node for any short original edges
     pathEdge[pathSteps] <- sapply(pathEdge[pathSteps], function(x){
       p <- iT$edge[x,1]
-      
-      #If statement checks if the parent of an edge is the root
-      if(p==(length(iT$tip.label)+1)) {
-        return(NA)
-      } else{
-        return(which(iT$edge[,2]==p))
-      }
+      ifelse(p==(length(iT$tip.label)+1), 
+             NA, which(iT$edge[,2]==p))
     })
     
     #These two are upated based on pathEdge
@@ -215,40 +205,36 @@ STClu <- function(iT, maxD, minB=0) {
     pathSteps <- which(pathLens<=maxD)
   }
   
-  #Each tip finally has the cluster it joins (ie. the highest node reached in an uninterrupted path of short edges) 
-  pathEdge[is.na(pathEdge)] <- length(iT$tip.label)+1
+  #Each tip has the cluster it joins (ie. the highest node reached in an uninterrupted path of short edges) 
+  #The same is true for internal nodes, which travel by the same logic
+  pathEdge[is.na(pathEdge)] <- which(iT$edge[,1]==length(iT$tip.label)+1)
   clusIDs <- iT$edge[pathEdge,2]
-  iT$v$Cluster <- clusIDs
-  
+  iT$v$Cluster <- clusIDs[1:length(iT$tip.label)]
+  iT$n$Info$Cluster <- clusIDs[(length(iT$tip.label)+1):(length(iT$tip.label)+iT$Nnode)]
+
   #The cluster that each new tip joins is saved as a column in $g
-  iT$g$Clu <- sapply(iT$g[,(oConn)], function(x){
-    hostClu <- names(clus[sapply(clus, function(clu){x%in%clu})])
-    ifelse(length(hostClu)==0, NA, hostClu)
-  })
-  
-  #Correcting for new tips which would create a distance over the maximum clustering distance allowed
-  iT$g[(xDist)>maxD, Clu := NA]
-  
+  iT$g[,"Cluster" := c(iT$v$Cluster, iT$n$Info$Cluster)[(oConn)]]
+  iT$g[(TermDist>maxD)|(PenDist>maxD), Cluster := 0 ]
+
   #Sort cluster membership. Showing the lists of tip labels for each cluster
   #This is sorted with growth info to be appended onto the final tree
   iT$c <- list()
-  
+  old <- table(iT$v$Cluster)
+  temp <- table(iT$g$Cluster)
+  new <- old-old
+  new[names(new)%in%names(temp)] <- temp[names(temp)%in%names(new)]
+
   #Summarizes growth information as a data table
-  iT$c$Info <- data.table(ID = names(clus), Old = sapply(clus, function(x) {length(x)}),
-                      mTime = c(iT$v[unlist(oSing), (Time)], iT$n$Info[ID%in%temp, (mTime)]))
-  
+  #This excludes any clusters with 
+  iT$c$Info <- data.table(ID = as.numeric(names(old)), Old = as.numeric(old), New = as.numeric(new))
 
   #This function ensures members are listed by their tip labels.
   #New members are also added here
-  iT$c$Membership <- lapply(names(clus), function(cluName){
-    clu <- clus[[cluName]]
-    oMem <- iT$tip.label[clu]
-    nMem <- iT$g[Clu%in%cluName, (nID)]
+  iT$c$Membership <- lapply(iT$c$Info[,(ID)], function(x){
+    oMem <- iT$v[(Cluster)%in%x, (ID)]
+    nMem <- iT$g[(Cluster)%in%x, (nID)]
     return(c(oMem, nMem))
   })
-
-  #Cluster information is finalized and added to $c
-  iT$c$Info$New <- sapply(iT$c$Membership, function(x){length(x)}) - iT$c$Info$Old
   
   return(iT)
 }
@@ -367,6 +353,7 @@ if(F){
   
   oT <- impTree(tFile, reVars='_', varInd = c(1,2), dateFormat = "%Y") 
   oT <- growthSim(oT, gFile)
+  oT <- STClu(oT, maxD = 0.0)
   
   iT <- oT
   minB <- 1.0
