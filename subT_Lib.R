@@ -16,11 +16,9 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   #@param nCore: The number of cores used for multi-threading. --CURRENTLY UNNUSED--
   #@return: An ape phylo object annotated with the additional data summarized below
   #    $v: A data frame storing vertex information ($ID, $Time, and, if given $Location)
-  #    $e: A list of 2 matrices. $dist representing phenetic distance and $tDiff representing time difference.
-  #        Additionally, if location information is provided, shared location is a variable stored in $lMatch. 
   #    $n: A list of each node's descendants ($Des), as well as information used to obtain clusters from nodes 
-  #        This additional data is stored in ($Info) as $xDist for the longest distance $Bootstrap for the support value.
-  #        also, $mTime for the mean date at which sequences were collected and $mtDiff
+  #        This additional data is stored in ($Info) as $cDist for the longest branch length between the two child branches.
+  #        $cDist will later be correlated with variables such as $tDiff (time difference between nodes).  
   #    $f: A list of data used to train a predictive model. This focuses on instances of terminal branches joining the tree
 
   
@@ -35,29 +33,6 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
                     stringsAsFactors = F)
   t$v <- t$v[order(t$v$Time)]
   
-  #Summarize internal branch length information using a list of 2 matrices
-  t$e <- list()
-  t$e$Dist <- cophenetic.phylo(t)
-  rownames(t$e$Dist) <- t$v$ID
-  colnames(t$e$Dist) <- t$v$ID
-  
-  t$e$tDiff <- sapply(t$v$Time, function(x) {t$v$Time-x})
-  rownames(t$e$tDiff) <- t$v$ID
-  colnames(t$e$tDiff) <- t$v$ID
-  
-  #In the event that location information is also available
-  if(length(varInd)>2) {
-    t$v$Location <- temp[varInd[[3]],]
-    
-    t$e$lMatch <- sapply(t$v$Location, function(x) {
-      matches <- rep(F, length(t$v$Location))
-      matches[grep(x, t$v$Location)] <- T
-      return(matches)
-    })
-    rownames(t$e$tDiff) <- t$v$ID
-    colnames(t$e$tDiff) <- t$v$ID
-  }
-  
   #Obtain the tip and node names (as numbers)
   #Obtain the list of descendants
   tips <- 1:nrow(t$v)
@@ -68,56 +43,24 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   t$n$Des <- lapply(nodes, function(x){Descendants(t,x,"all")})
   names(t$n$Des) <- as.character(nodes)
   
-  #Obtain information which can be used to build clusters and organize the data
-  t$n$Info <- as.data.table(bind_rows(lapply(t$n$Des, function(x){
-    des <- x[which(x%in%tips)]
-    mTime <- mean(t$v$Time[des])
-    mtDiff <- mean(abs(t$e$tDiff[des,des]))
-    xDist <- max(t$e$Dist[des,des])
-    data.frame(mTime=mTime, totTips=length(des), xDist=xDist)
-  })))
+  #Information necessary for clustering each node and building a growth model is stored in an info data table
+  #See descriptions of the $n output above for more detail on each item
+  t$n$Info <- data.table()
+  t$n$Info[,"ID" := nodes] 
+  t$n$Info[,"TipCount" := sapply(t$n$Des, function(x){length(x[x%in%tips])})]
+  t$n$Info[,"mTime" := sapply(t$n$Des, function(x){mean(t$v$Time[(x[x%in%tips])])})]
   
-  #Additional information regarding the label of each node, as well as the bootstrap support
-  ##- TO-DO: Bootstrap support values are noted differently depending on software used. -## 
-  t$n$Info$ID <- as.character(nodes)
-  t$n$Info$BootStrap <- as.numeric(t$node.label)
-  
-  #A compromise for the root
-  t$n$Info$BootStrap[is.na(t$n$Info$BootStrap)] <- 1
-
-  #Obtain the direct parent node of each tip 
-  #This information is stored in $f
-  termi <- sapply(tips, function(tip){which(t$edge[,2]==tip)})
-  termDist <- t$edge.length[termi]
-  termE <- t$edge[termi,]
-  pNode <- termE[,1]
-  
-  t$v[,"TermDist" := termDist]
-  t$v[,"ParentNode" := pNode]
-  
-  t$f <- data.table(Tip = termE[,2], tNode = pNode, termDist = termDist)
-  
-  #Obtain the neighbour node to each tip (this could be an internal node or another tip)
-  #This also stores the time difference and maximum distance given this neighbour node
-  temp <- sapply(1:nrow(t$f), function(i){
-    tNode <- t$f[i, (tNode)]
-    cTips <- t$edge[which(t$edge[,1]%in%tNode),2]
-    neighbour <- setdiff(cTips, t$f[i,(Tip)])
-    
-    #Obtain the pendant length (the length of the edge leading to the neighbour node) and the time difference
-    #There are 2 cases for time difference calculation
-    penDist <- t$edge.length[which(t$edge[,2]==neighbour)]
-    tDiff <- abs(ifelse(neighbour>length(t$tip.label),
-                    t$v$Time[i] - t$n$Info[ID %in% as.character(tNode), (mTime)],
-                    t$e$tDiff[i, neighbour]))
-    
-    return(c(penDist, neighbour, tDiff))
+  #This block obtains the time difference between each child for each parent node
+  #As well as the largest branch length obtained by a specific child branch
+  temp <- sapply(t$n$Info[,(ID)], function(x){
+    cE <- which(t$edge[,1]==as.numeric(x))
+    c <- t$edge[cE,2]
+    times <- c(t$v$Time, t$n$Info$mTime)[c]
+    c(abs(times[1]-times[2]), max(t$edge.length[cE]))
   })
-  
-  t$f[,"penDist" := temp[1,]]
-  t$f[,"Neighbour" := temp[2,]]
-  t$f[,"tDiff" := temp[3,]]
-  
+  t$n$Info[,"tDiff" := temp[1,]]
+  t$n$Info[,"cDist" := temp[2,]]
+    
   return(t)
 }
 
@@ -231,117 +174,55 @@ STClu <- function(iT, maxD) {
   #This function ensures members are listed by their tip labels.
   #New members are also added here
   iT$c$Membership <- lapply(iT$c$Info[,(ID)], function(x){
+    iMem <- iT$n$Info[(Cluster)%in%x, ((ID))]
     oMem <- iT$v[(Cluster)%in%x, (ID)]
     nMem <- iT$g[(Cluster)%in%x, (nID)]
-    return(c(oMem, nMem))
+    return(c(iMem, oMem, nMem))
   })
   
   return(iT)
 }
 
 #Obtain GAIC at several different cutoffs
-GAICRun <- function(iT, maxDs, minBs=0, rand=F) {
+GAICRun <- function(iT, maxDs) {
   #@param iT: The input tree file, annotated with vertex and edge information
-  #@param cutoffs: A set of maximum distance criterion defining clusters
-  #@return: A list of analysis based on a fitting actual new data to predicted cluster growth
-  #         This most importantly includes GAIC
+  #@param maxD: The maximum distance criteria defining clusters
+  #@return: A vector of GAIC measurements obtained with different clustering criteria
   
-  #There are multiple GAIC calculations at different maximum distances. 
-  distRun <- lapply(maxDs, function(maxD){
+  #This function runs through severel comparisons of a model weighted by predictors, to a model without those variab;s
+  gaics <- sapply(maxDs, function(d) {
     
-    #A calculation at a given maximum distance is made up of several runs at different minimum bootstraps
-    bootRun <- lapply(minBs, function(minB){
-      
-      #Obtain clusters stored in $c 
-      subT <- STClu(iT, maxD, minB)
-      
-      #Check positives now that we have params
-      subT$f$Positive <- (subT$f$xDist<=maxD) 
-      
-      times <- 
-      
-      #Layout of Time and time lag information
-      tTab <- table(iT$v$Time)
-      tDiffs <- sort(unique(abs(as.vector(iT$e$tDiff))))
-      tdTab <- rep(nrow(iT$v)-1, length(tDiffs))
-      names(tdTab) <- tDiffs
-      largeTD <- tDiffs[which(tDiffs>(ceiling(max(tDiffs/2))))]
-      leftOut <- sapply(1:length(largeTD), function(i){
-        td <- largeTD[[i]]
-        ts <- as.numeric(names(tTab))[between(as.numeric(names(tTab)), (max(iT$v$Time)-td+1), (min(iT$v$Time)+td-1))]
-        sum(tTab[as.character(unique(ts))]) 
-      })
-      
-      #Obtains the "attempts". Or how many tips find a given tDiff possible
-      #For example, it may be impossible for central time points to see the largest time difference in the set
-      tdTab[as.character(largeTD)] <- tdTab[as.character(largeTD)]-leftOut
-      
-      #Sort Data into Age Data
-      names(tdTab) <- tDiffs
-      posTab <- rep(0,length(tDiffs))
-      names(posTab) <- tDiffs
-      tempTab <- table(round(subset(subT$f, Positive)$tDiff))
-      posTab[names(tempTab)] <- as.numeric(tempTab)
-      ageD <- data.frame(tDiff=tDiffs, Positives=as.numeric(posTab), 
-                         Total=as.numeric(tdTab))
-      
-      #Weighting whole clusters based on their size and mean recency
-      mod <- glm(cbind(Positives,Total)~tDiff, data=ageD, family='binomial')
-      
-      #Individual node weighting
-      if(rand){ 
-        #Random Weight Tests
-        subT$v$Weight <- sample(1:20, nrow(subT$v), replace=T)
-      } else {
-        #Tips are weighted based on recency
-        subT$v$Weight <- predict(mod, type='response', data.frame(tDiff=max(subT$v$Time)-subT$v$Time+1))
-      }
-        
-      #Create two data frames from two predictive models, one based on absolute size (NULL) and our date-informed model
-      df1 <- data.frame(Growth = subT$c$growth$New, Pred = sapply(subT$c$membership[which(subT$c$growth$Old>0)], function(x){
-        members <- subset(subT$v, ID%in%x)
-        sum(members$Weight)
-      })) 
-      df2 <- data.frame(Growth = subT$c$growth$New, Pred = sapply(subT$c$membership[which(subT$c$growth$Old>0)], function(x){
-        members <- subset(subT$v, ID%in%x)
-        nrow(members)
-      }))
-        
-      #Cluster growht prediction model
-      fit1 <- glm(Growth ~ Pred, data = df1, family = "poisson")
-      fit2 <- glm(Growth ~ Pred, data = df2, family = "poisson")
-      
-      
-      #Whole Cluster Weighting 
-      ##Possibly Not approp.
-      if(F){
-        fit1 <- glm(New ~ mRec+Old, data = subT$c$growth, family = "poisson")
-        fit2 <- glm(New ~ Old, data = subT$c$growth, family = "poisson")
-      }
-
-      #Save, gaic, model and age data as part of the output
-      res <- list()
-      res$gaic <- fit1$aic-fit2$aic
-      res$propFit <- fit1$aic
-      #res$nullFit <- fit2
-      #res$mod <- mod
-      res$par <- c(maxD, minB)
-      res$ageD <- ageD
-      res$growth <- subT$c$growth
-      
-      #print(res$par)
-      #print(res$gaic)
-      #print(length(subT$c$cluNames))
-      print(res$par)
-      print(res$gaic)
-      
-      return(res)
-    })
+    #Obtain clusters
+    t <- STClu(iT, d)
+    
+    #Obtain data used to weight individual tips within a given cluster
+    ##TO-DO: Allow for generalization with other predictors -##
+    dt <- data.table(tDiff=t$n$Info[,(tDiff)])
+    dt[,"Positive" := F]
+    dt[(1:nrow(t$n$Info))[which(t$n$Info$cDist<=d)],Positive := T]
+    
+    #Train model to create a set of weights for each sequence
+    mod <- glm(formula = Positive~tDiff, data = dt, family = "binomial")
+    weights <- predict(mod, type = 'response', 
+                       data.table(tDiff=as.numeric(max(t$v$Time)-c(t$v$Time, t$n$Info$mTime))))
+    names(weights) <- c(t$v$ID, t$n$Info$ID)
+    
+    #Apply those weights to the members of each cluster for cluster predictive models 
+    t$c$Info[, "Weight" := sapply(t$c$Membership, function(x) {sum(weights[x])})]
+    
+    #Compares clusters with weights obtained through variables to clusters with even weights
+    fit1 <- glm(formula = New~Weight, data = t$c$Info, family = "poisson")
+    fit2 <- glm(formula = New~Old, data = t$c$Info, family = "poisson")
+    
+    #GAIC is the difference between the AIC of two models
+    #Put another way, this is the AIC loss associated with predictive variables
+    gaic <- fit1$aic-fit2$aic
   })
   
-  return(runRes)
+  return(gaics)
 }
 
+#Test scripts (seattle subset)
 if(F){
   
   #Set inputs for test
@@ -353,39 +234,11 @@ if(F){
   
   oT <- impTree(tFile, reVars='_', varInd = c(1,2), dateFormat = "%Y") 
   oT <- growthSim(oT, gFile)
-  oT <- STClu(oT, maxD = 0.0)
-  
-  iT <- oT
-  minB <- 1.0
-  maxD <- 0.02
-  meanD <- F
-  rand <- F
-  
-  cutoffs <- seq(0,0.2,0.002)
-  #cutB <- seq(1,0,-0.02)
-  res <- GAICRun(oT, cutoffs)
-  
-  #saveRDS(res, "resST")
-  
-  gaics <- sapply(res, function(x){x[[1]]$gaic})
-  plot(cutoffs, gaics, xlab = "Mean Cutoff", ylab="GAIC")
-  lines(cutoffs, gaics, col="red")
-  
-  
-  blahs <- sapply(res, function(x){nrow(x[[1]]$growth)})
-  plot(cutoffs, blahs, xlab = "Mean Cutoff", ylab="GAIC")
-  lines(cutoffs, blahs)
 
+  maxDs <- seq(0.001, 0.05, 0.001)
+  gaics <- GAICRun(oT, maxDs)
+  
+  plot(gaics, xlab="Thresholds", ylab="AIC Loss")
   
   
-  blahs <- sapply(res, function(x){(x[[1]]$nullFit$aic)})
-  plot(cutoffs, blahs, xlab = "Mean Cutoff", ylab="GAIC")
-  lines(cutoffs, blahs)
-  blahs <- sapply(res, function(x){(x[[1]]$propFit$aic)})
-  lines(cutoffs, blahs)
-  
-  
-  #res <- GAICRun(oT, cutoffs,rand=F)
-  #modAIC <- sapply(res, function(x){x[[1]]$propFit$aic})
-  #nullAIC <- modAIC-gaics
 }
