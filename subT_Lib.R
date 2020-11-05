@@ -1,7 +1,7 @@
 require("ape")
 require("phangorn")
 require("dplyr")
-require("parallel")
+#require("parallel")
 
 #Import Tree Data and output an annotated tree with additional information to assist clustering
 impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d", varMan=NA, nCore=detectCores()){
@@ -31,7 +31,6 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   t$v <- data.table(ID=temp[varInd[[1]],],  
                     Time=as.Date(temp[varInd[[2]],], format=dateFormat), 
                     stringsAsFactors = F)
-  t$v <- t$v[order(t$v$Time)]
   
   #Obtain the tip and node names (as numbers)
   #Obtain the list of descendants
@@ -132,7 +131,7 @@ STClu <- function(iT, maxD) {
   pathLens <- iT$edge.length[pathEdge]
   pathSteps <- which(pathLens<=maxD)
   
-  #Step up any indivual edges that are short enough 
+  #Step up any individual edges that are short enough 
   #This loop terminates when either all tips have reached the root
   while(length(pathSteps)>0){
     
@@ -150,7 +149,7 @@ STClu <- function(iT, maxD) {
   
   #Each tip has the cluster it joins (ie. the highest node reached in an uninterrupted path of short edges) 
   #The same is true for internal nodes, which travel by the same logic
-  pathEdge[is.na(pathEdge)] <- which(iT$edge[,1]==length(iT$tip.label)+1)
+  pathEdge <- replace(pathEdge, which(is.na(pathEdge)), which(iT$edge[,1]==length(iT$tip.label)+1)[[1]])
   clusIDs <- iT$edge[pathEdge,2]
   iT$v$Cluster <- clusIDs[1:length(iT$tip.label)]
   iT$n$Info$Cluster <- clusIDs[(length(iT$tip.label)+1):(length(iT$tip.label)+iT$Nnode)]
@@ -189,37 +188,55 @@ GAICRun <- function(iT, maxDs) {
   #@param maxD: The maximum distance criteria defining clusters
   #@return: A vector of GAIC measurements obtained with different clustering criteria
   
-  #This function runs through severel comparisons of a model weighted by predictors, to a model without those variab;s
-  gaics <- sapply(maxDs, function(d) {
+  #This function runs through severel comparisons of a model weighted by predictors, to a model without those variables
+  df <- lapply(maxDs, function(d) {
     
     #Obtain clusters
     t <- STClu(iT, d)
     
     #Obtain data used to weight individual tips within a given cluster
     ##TO-DO: Allow for generalization with other predictors -##
-    dt <- data.table(tDiff=t$n$Info[,(tDiff)])
-    dt[,"Positive" := F]
-    dt[(1:nrow(t$n$Info))[which(t$n$Info$cDist<=d)],Positive := T]
+    trainD <- iT$n$Info[(cDist)<=d, (tDiff)]
     
-    #Train model to create a set of weights for each sequence
-    mod <- glm(formula = Positive~tDiff, data = dt, family = "binomial")
-    weights <- predict(mod, type = 'response', 
-                       data.table(tDiff=as.numeric(max(t$v$Time)-c(t$v$Time, t$n$Info$mTime))))
-    names(weights) <- c(t$v$ID, t$n$Info$ID)
+    #In the events that there is no training data
+    if(length(trainD)>0){
+      dn <- density(iT$n$Info[(cDist)<=d, (tDiff)], 
+                    bw=365,  n=nrow(t$v)*2-1, from=0, 
+                    to=max(t$v$Time)-min(t$v$Time))
+      
+      wFun <- with(dn, approxfun(dn$x, dn$y, method="constant", rule = 1))
+      recencies <- as.numeric(max(t$v$Time)-c(t$v$Time))
+      weights <- sapply(recencies, function(x) {wFun(x)})
+      names(weights) <- c(t$v$ID)
+      
+    } else {
+      weights <- rep(1, length(t$v$Time))
+    }
     
+    #if(rando) {weights <- sample(seq(0,1,0.01), length(weights), replace = T)}
+        
     #Apply those weights to the members of each cluster for cluster predictive models 
-    t$c$Info[, "Weight" := sapply(t$c$Membership, function(x) {sum(weights[x])})]
+    t$c$Info[, "Weight" := sapply(t$c$Membership, function(x) {sum(weights[x[x%in%names(weights)]])})]
     
     #Compares clusters with weights obtained through variables to clusters with even weights
     fit1 <- glm(formula = New~Weight, data = t$c$Info, family = "poisson")
     fit2 <- glm(formula = New~Old, data = t$c$Info, family = "poisson")
+
+    print(fit1$aic-fit2$aic)
+    print(fit1$null.deviance/fit1$deviance)
     
     #GAIC is the difference between the AIC of two models
     #Put another way, this is the AIC loss associated with predictive variables
-    gaic <- fit1$aic-fit2$aic
+    #Other descriptive data characteristics
+    data.frame(modAIC=fit1$aic, nullAIC=fit2$aic, GAIC=(fit1$aic-fit2$aic), coeff=fit1$coefficients['Weight'],
+               GrowthTot=nrow(t$g[Cluster>0,]), Singletons=nrow(t$c$Info[(Old)==1,]), MeanSize=mean(t$c$Info[,(Old)]),
+               GrowthMax=max(t$c$Info[,(New)]), GrowthMaxID=t$c$Info[which.max((New)), (ID)],
+               SizeMax=max(t$c$Info[,(Old)]), SizeMaxID=t$c$Info[which.max((Old)), (ID)])
   })
   
-  return(gaics)
+  dt <- as.data.table(bind_rows(df))
+  
+  return(dt)
 }
 
 #Test scripts (seattle subset)
@@ -231,14 +248,20 @@ if(F){
   dateFormat <- '%Y'
   tFile <- "~/Data/Seattle/strefpackages/st1.refpkg/sttree1.nwk"
   gFile <- "~/Data/Seattle/strefpackages/growthFiles/growthFile1.tree"
-  
+  #tFile <- "~/Data/Seattle/IqTree_Bootstrap/SeattleB_PRO_Filt.fasta.treefile"
+  #gFile <- "~/Data/Seattle/IqTree_Bootstrap/stNoBoot.tre"
+  #tFile <- "~/Data/Tennessee/IqTree_Bootstrap_Diag/TennesseeB_Trim_Diag_Filt.fasta.treefile"
+  #gFile <- "~/Data/Tennessee/IqTree_Bootstrap_Diag/tnNoBoot.tre"
+
+    
   oT <- impTree(tFile, reVars='_', varInd = c(1,2), dateFormat = "%Y") 
   oT <- growthSim(oT, gFile)
 
-  maxDs <- seq(0.001, 0.05, 0.001)
+  maxDs <- seq(0, 0.04, 0.0005)
   gaics <- GAICRun(oT, maxDs)
   
-  plot(gaics, xlab="Thresholds", ylab="AIC Loss")
+  plot(maxDs, gaics$GAIC, xlab="Thresholds", ylab="AIC Loss")
+  lines(maxDs, gaics$GAIC)
   
   
 }

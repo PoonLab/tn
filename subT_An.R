@@ -4,13 +4,6 @@ require(R.utils)
 ## Generating Analysis
 #____________________________________________________________________________________________________________________________#
 
-#iFile <- "~/Data/Seattle/SeattleB_PRO_iq_pplacer/st.refpkg/SeattleB_PRO_Filt.fasta.tree"
-#gFile <- "~/Data/Seattle/SeattleB_PRO_iq_pplacer/st.tre"
-
-#iFile <- "~/Data/Tennessee/TennesseeB_Trim_Diag_IqTree_nm/TennesseeB_Trim_Diag_Filt.fasta.treefile" 
-#gFile <- "~/Data/Tennessee/TennesseeB_Trim_Diag_pplacer/tn.tre"
-
-
 #Expecting a newick file and a guppy run (set of trees)
 #Expecting patient information in the format ID_Date
 #The name/path of the output file, will both a pdf summary, a set of all clustering data, and a complete version of the graph in question 
