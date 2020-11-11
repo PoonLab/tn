@@ -1,7 +1,7 @@
 require("ape")
 require("phangorn")
 require("dplyr")
-#require("parallel")
+#require("parallel") #Likely unnecessary
 
 #Import Tree Data and output an annotated tree with additional information to assist clustering
 impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d", varMan=NA, nCore=detectCores()){
@@ -24,6 +24,8 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   
   #Obtaining and midpioint rooting an ape phylogeny object from the tree file, store in a greater list "t"
   t <- midpoint(read.tree(tFile))
+  tips <- 1:length(t$tip.label)
+  nodes <- (max(tips)+1):(max(tips)*2-1) 
   
   #Obtain lists of sequence ID and Time
   #Reformat edge list as data table object with predictors extracted from sequence header
@@ -31,11 +33,6 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   t$v <- data.table(ID=temp[varInd[[1]],],  
                     Time=as.Date(temp[varInd[[2]],], format=dateFormat), 
                     stringsAsFactors = F)
-  
-  #Obtain the tip and node names (as numbers)
-  #Obtain the list of descendants
-  tips <- 1:nrow(t$v)
-  nodes <- (max(tips)+1):(max(tips)*2-1) 
   
   #Obtain the full set of descendants at each node
   t$n <- list()
@@ -48,6 +45,12 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   t$n$Info[,"ID" := nodes] 
   t$n$Info[,"TipCount" := sapply(t$n$Des, function(x){length(x[x%in%tips])})]
   t$n$Info[,"mTime" := sapply(t$n$Des, function(x){mean(t$v$Time[(x[x%in%tips])])})]
+  t$n$Info[,"Bootstrap" := as.numeric(t$node.label)]
+  
+  #Set root node bootstrap support to 1 and adjust these values to be fractions out of 1
+  #Different tree-building methods display bootstrap support differently
+  t$n$Info[is.na(Bootstrap), "Bootstrap" := 1]
+  t$n$Info[,"Bootstrap" := ceiling((Bootstrap)/max(t$n$Info$Bootstrap))]
   
   #This block obtains the time difference between each child for each parent node
   #As well as the largest branch length obtained by a specific child branch
@@ -140,6 +143,8 @@ STClu <- function(iT, maxD) {
       p <- iT$edge[x,1]
       ifelse(p==(length(iT$tip.label)+1), 
              NA, which(iT$edge[,2]==p))
+      
+      
     })
     
     #These two are upated based on pathEdge
@@ -183,7 +188,7 @@ STClu <- function(iT, maxD) {
 }
 
 #Obtain GAIC at several different cutoffs
-GAICRun <- function(iT, maxDs) {
+GAICRun <- function(iT, maxDs, rando = F) {
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param maxD: The maximum distance criteria defining clusters
   #@return: A vector of GAIC measurements obtained with different clustering criteria
@@ -196,24 +201,17 @@ GAICRun <- function(iT, maxDs) {
     
     #Obtain data used to weight individual tips within a given cluster
     ##TO-DO: Allow for generalization with other predictors -##
-    trainD <- iT$n$Info[(cDist)<=d, (tDiff)]
-    
-    #In the events that there is no training data
-    if(length(trainD)>0){
-      dn <- density(iT$n$Info[(cDist)<=d, (tDiff)], 
-                    bw=365,  n=nrow(t$v)*2-1, from=0, 
-                    to=max(t$v$Time)-min(t$v$Time))
+    tdFreq<- table(round(iT$n$Info[(cDist)<=d, (tDiff)]))
+    tdSpan <- rep((1*(10^-100)), as.numeric(max(t$v$Time)-min(t$v$Time)))
+    tdSpan[as.numeric(names(tdFreq))] <- as.numeric(tdFreq)
       
-      wFun <- with(dn, approxfun(dn$x, dn$y, method="constant", rule = 1))
-      recencies <- as.numeric(max(t$v$Time)-c(t$v$Time))
-      weights <- sapply(recencies, function(x) {wFun(x)})
-      names(weights) <- c(t$v$ID)
-      
-    } else {
-      weights <- rep(1, length(t$v$Time))
-    }
+    df <- data.frame(f=tdSpan, tDiff=0:(length(tdSpan)-1))
+    mod <- lm(log(f)~tDiff, data=df)
+    weights <- exp(predict(mod, type='response', 
+                           data.frame(tDiff=as.numeric(max(t$v$Time)-t$v$Time))))
+    names(weights) <- t$v$ID
     
-    #if(rando) {weights <- sample(seq(0,1,0.01), length(weights), replace = T)}
+    if(rando) {weights <- sample(seq(0,1,0.01), length(weights), replace = T)}
         
     #Apply those weights to the members of each cluster for cluster predictive models 
     t$c$Info[, "Weight" := sapply(t$c$Membership, function(x) {sum(weights[x[x%in%names(weights)]])})]
@@ -222,9 +220,6 @@ GAICRun <- function(iT, maxDs) {
     fit1 <- glm(formula = New~Weight, data = t$c$Info, family = "poisson")
     fit2 <- glm(formula = New~Old, data = t$c$Info, family = "poisson")
 
-    print(fit1$aic-fit2$aic)
-    print(fit1$null.deviance/fit1$deviance)
-    
     #GAIC is the difference between the AIC of two models
     #Put another way, this is the AIC loss associated with predictive variables
     #Other descriptive data characteristics
@@ -239,29 +234,28 @@ GAICRun <- function(iT, maxDs) {
   return(dt)
 }
 
-#Test scripts (seattle subset)
+#Test scripts
 if(F){
   
   #Set inputs for test
   reVars <- '_'
   varInd <- c(1,2)
   dateFormat <- '%Y'
-  tFile <- "~/Data/Seattle/strefpackages/st1.refpkg/sttree1.nwk"
-  gFile <- "~/Data/Seattle/strefpackages/growthFiles/growthFile1.tree"
-  #tFile <- "~/Data/Seattle/IqTree_Bootstrap/SeattleB_PRO_Filt.fasta.treefile"
-  #gFile <- "~/Data/Seattle/IqTree_Bootstrap/stNoBoot.tre"
-  #tFile <- "~/Data/Tennessee/IqTree_Bootstrap_Diag/TennesseeB_Trim_Diag_Filt.fasta.treefile"
+  #tFile <- "~/Data/Seattle/strefpackages/st1.refpkg/sttree1.nwk"
+  #gFile <- "~/Data/Seattle/strefpackages/growthFiles/growthFile1.tree"
+  tFile <- "~/Data/Seattle/IqTree_Bootstrap/SeattleB_PRO_Filt.fasta.treefile"
+  gFile <- "~/Data/Seattle/IqTree_Bootstrap/stNoBoot.tre"
+  #tFile <- "~/Data/Tennessee/tnTreeData/TennesseeB_Trim_Diag_Filt.fasta.treefile"
   #gFile <- "~/Data/Tennessee/IqTree_Bootstrap_Diag/tnNoBoot.tre"
 
     
   oT <- impTree(tFile, reVars='_', varInd = c(1,2), dateFormat = "%Y") 
   oT <- growthSim(oT, gFile)
-
-  maxDs <- seq(0, 0.04, 0.0005)
-  gaics <- GAICRun(oT, maxDs)
+     
+  maxDs <- seq(0,0.05, 0.0001)
+  res <- GAICRun(oT, maxDs)
   
-  plot(maxDs, gaics$GAIC, xlab="Thresholds", ylab="AIC Loss")
-  lines(maxDs, gaics$GAIC)
-  
+  plot(maxDs, res$GAIC, xlab="Thresholds", ylab="AIC Loss")
+  lines(maxDs, res$GAIC)
   
 }

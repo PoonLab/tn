@@ -8,6 +8,13 @@ require("ape")
 iFile <- commandArgs(trailingOnly = T)
 seqs <- read.dna(iFile, format = "fasta", as.character = T)
 
+#Check highly gapped regions for trimming
+positGaps <- sapply(1:ncol(seqs), function(i) {
+  iSeq <- seqs[,i]
+  lGaps <- length(iSeq[iSeq%in%"-"])
+  lGaps/length(iSeq)
+})
+
 #Collect Frequencies of ambiguity
 fs <- sapply(1:nrow(seqs), function(i) {
   iSeq <- seqs[i,]
