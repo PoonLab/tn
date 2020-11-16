@@ -19,7 +19,8 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   #    $n: A list of each node's descendants ($Des), as well as information used to obtain clusters from nodes 
   #        This additional data is stored in ($Info) as $cDist for the longest branch length between the two child branches.
   #        $cDist will later be correlated with variables such as $tDiff (time difference between nodes).  
-  #    $f: A list of data used to train a predictive model. This focuses on instances of terminal branches joining the tree
+  #    $f: A list of data used to train a predictive model. This is the expected distribution associated with each variable.
+  #        For example, $tDiff is the distribution of possible time differences given the distribution of times.
 
   
   #Obtaining and midpioint rooting an ape phylogeny object from the tree file, store in a greater list "t"
@@ -49,8 +50,8 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   
   #Set root node bootstrap support to 1 and adjust these values to be fractions out of 1
   #Different tree-building methods display bootstrap support differently
-  t$n$Info[is.na(Bootstrap), "Bootstrap" := 1]
-  t$n$Info[,"Bootstrap" := ceiling((Bootstrap)/max(t$n$Info$Bootstrap))]
+  t$n$Info[is.na(Bootstrap), "Bootstrap" := 10^ceiling(log10(max(t$n$Info$Bootstrap)))]
+  t$n$Info[,"Bootstrap" := ceiling((t$n$Info$Bootstrap)/max(t$n$Info$Bootstrap))]
   
   #This block obtains the time difference between each child for each parent node
   #As well as the largest branch length obtained by a specific child branch
@@ -62,6 +63,21 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   })
   t$n$Info[,"tDiff" := temp[1,]]
   t$n$Info[,"cDist" := temp[2,]]
+  
+  #Obtain initial distributions of variables for the purposes of training future models
+  ##--TO DO: Expand to other vars --##
+  t$f <- list()
+  
+  #Obtain range of times that exist, as well as the total span of times between minimum and maximum time
+  r <- t$v$Time[order(t$v$Time)]
+  rTot <- 0:(max(r)-min(r))
+  t$f$tDiff  <- rep(0, length(rTot))
+  names(t$f$tDiff ) <- as.character(rTot)
+  
+  #Obtain empiricle range of time differences time differences
+  tDiffs <- table(unlist(lapply(1:(length(r)-1), function(i) {r[(i+1):length(r)]-r[i]})))
+  t$f$tDiff[names(tDiffs)] <- tDiffs
+  t$f$tDiff <- t$f$tDiff/sum(t$f$tDiff)
     
   return(t)
 }
@@ -201,16 +217,14 @@ GAICRun <- function(iT, maxDs, rando = F) {
     
     #Obtain data used to weight individual tips within a given cluster
     ##TO-DO: Allow for generalization with other predictors -##
-    tdFreq<- table(round(iT$n$Info[(cDist)<=d, (tDiff)]))
-    tdSpan <- rep((1*(10^-100)), as.numeric(max(t$v$Time)-min(t$v$Time)))
-    tdSpan[as.numeric(names(tdFreq))] <- as.numeric(tdFreq)
-      
-    df <- data.frame(f=tdSpan, tDiff=0:(length(tdSpan)-1))
-    mod <- lm(log(f)~tDiff, data=df)
-    weights <- exp(predict(mod, type='response', 
-                           data.frame(tDiff=as.numeric(max(t$v$Time)-t$v$Time))))
-    names(weights) <- t$v$ID
     
+    #Obtain range of times that exist, as well as the total span of times between minimum and maximum time
+    tDiffPos <- table(round(t$n$Info[(cDist)<=d, (tDiff)]))
+    tDiffPos <- tDiffPos/sum(tDiffPos)
+    t$f$tDiff[names(tDiffPos)] <- tDiffPos/t$f$tDiff[names(tDiffPos)]
+    t$f$tDiff[-names(tDiffPos)] <- 0/t$f$tDiff[names(tDiffPos)]
+
+    #Weights represent the odds ratio of clustered vs. unclustered
     if(rando) {weights <- sample(seq(0,1,0.01), length(weights), replace = T)}
         
     #Apply those weights to the members of each cluster for cluster predictive models 
