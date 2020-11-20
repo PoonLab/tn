@@ -1,6 +1,7 @@
 require("ape")
-require("phangorn")
 require("dplyr")
+require("data.table")
+require("phytools") #Literally just for midpoint rooting. Use APE for this in future if possible
 #require("parallel") #Likely unnecessary
 
 #Import Tree Data and output an annotated tree with additional information to assist clustering
@@ -24,7 +25,7 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
 
   
   #Obtaining and midpioint rooting an ape phylogeny object from the tree file, store in a greater list "t"
-  t <- midpoint(read.tree(tFile))
+  t <- midpoint.root(read.tree(tFile))
   tips <- 1:length(t$tip.label)
   nodes <- (max(tips)+1):(max(tips)*2-1) 
   
@@ -37,7 +38,7 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   
   #Obtain the full set of descendants at each node
   t$n <- list()
-  t$n$Des <- lapply(nodes, function(x){Descendants(t,x,"all")})
+  t$n$Des <- lapply(nodes, function(x){getDescendants(t,x)})
   names(t$n$Des) <- as.character(nodes)
   
   #Information necessary for clustering each node and building a growth model is stored in an info data table
@@ -50,8 +51,8 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   
   #Set root node bootstrap support to 1 and adjust these values to be fractions out of 1
   #Different tree-building methods display bootstrap support differently
-  t$n$Info[is.na(Bootstrap), "Bootstrap" := 10^ceiling(log10(max(t$n$Info$Bootstrap)))]
-  t$n$Info[,"Bootstrap" := ceiling((t$n$Info$Bootstrap)/max(t$n$Info$Bootstrap))]
+  t$n$Info[is.na(Bootstrap), "Bootstrap" := 10^ceiling(log10(max(t$n$Info$Bootstrap[!is.na(t$n$Info$Bootstrap)])))]
+  t$n$Info[,"Bootstrap" := (t$n$Info$Bootstrap)/max(t$n$Info$Bootstrap)]
   
   #This block obtains the time difference between each child for each parent node
   #As well as the largest branch length obtained by a specific child branch
@@ -64,21 +65,10 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   t$n$Info[,"tDiff" := temp[1,]]
   t$n$Info[,"cDist" := temp[2,]]
   
-  #Obtain initial distributions of variables for the purposes of training future models
-  ##--TO DO: Expand to other vars --##
-  t$f <- list()
-  
-  #Obtain range of times that exist, as well as the total span of times between minimum and maximum time
+  #Vector of all known time differences for the purpose of sampling
   r <- t$v$Time[order(t$v$Time)]
-  rTot <- 0:(max(r)-min(r))
-  t$f$tDiff  <- rep(0, length(rTot))
-  names(t$f$tDiff ) <- as.character(rTot)
+  t$f$tDiff <- table(unlist(lapply(1:(length(r)-1), function(i) {r[(i+1):length(r)]-r[i]})))
   
-  #Obtain empiricle range of time differences time differences
-  tDiffs <- table(unlist(lapply(1:(length(r)-1), function(i) {r[(i+1):length(r)]-r[i]})))
-  t$f$tDiff[names(tDiffs)] <- tDiffs
-  t$f$tDiff <- t$f$tDiff/sum(t$f$tDiff)
-    
   return(t)
 }
 
@@ -115,7 +105,7 @@ growthSim <- function(iT, gFile) {
     #Obtain the node corresponding to the neighbour based on that node's number in the old tree
     oIDs <- setdiff(t$tip.label, nID)
     oTips <- which(iT$tip.label%in%oIDs)
-    oNode <- mrca.phylo(iT, oTips)
+    oNode <- getMRCA(iT, oTips)
     
     #To catch a singleton connecting to a new tip
     if(is.null(oNode)){
@@ -215,14 +205,23 @@ GAICRun <- function(iT, maxDs, rando = F) {
     #Obtain clusters
     t <- STClu(iT, d)
     
-    #Obtain data used to weight individual tips within a given cluster
-    ##TO-DO: Allow for generalization with other predictors -##
+    #Obtain positive terminal nodes
+    posN <- t$n$Info[cDist<d,]
     
-    #Obtain range of times that exist, as well as the total span of times between minimum and maximum time
-    tDiffPos <- table(round(t$n$Info[(cDist)<=d, (tDiff)]))
-    tDiffPos <- tDiffPos/sum(tDiffPos)
-    t$f$tDiff[names(tDiffPos)] <- tDiffPos/t$f$tDiff[names(tDiffPos)]
-    t$f$tDiff[-names(tDiffPos)] <- 0/t$f$tDiff[names(tDiffPos)]
+    #Obtain frequencies of positives affiliated with a particular time difference
+    tDiffPos <- table(round(posN[,(tDiff)]))
+    r <- min(as.numeric(names(t$f$tDiff))):max(as.numeric(names(t$f$tDiff)))
+    tDiff <- rep(0,length(r))
+    names(tDiff) <- r
+    tDiff[names(tDiffPos)] <- as.numeric(tDiffPos)
+      
+    df <- data.frame(tDiff=round(as.numeric(names(tDiff))), 
+                     ConnRate=as.numeric(tDiff))
+    
+    #Train a binomial model based on successes and failures to 
+    mod <- glm(ConnRate~tDiff, data = df,family="poisson")
+    weights <- predict(mod, type="response", data.frame(tDiff=as.numeric(max(t$v$Time)- t$v$Time)))
+    names(weights) <- t$v$ID
 
     #Weights represent the odds ratio of clustered vs. unclustered
     if(rando) {weights <- sample(seq(0,1,0.01), length(weights), replace = T)}
@@ -255,21 +254,19 @@ if(F){
   reVars <- '_'
   varInd <- c(1,2)
   dateFormat <- '%Y'
-  #tFile <- "~/Data/Seattle/strefpackages/st1.refpkg/sttree1.nwk"
-  #gFile <- "~/Data/Seattle/strefpackages/growthFiles/growthFile1.tree"
-  tFile <- "~/Data/Seattle/IqTree_Bootstrap/SeattleB_PRO_Filt.fasta.treefile"
-  gFile <- "~/Data/Seattle/IqTree_Bootstrap/stNoBoot.tre"
+  tFile <- "~/Data/st.treefile"
+  gFile <- "~/Data/stNoBootGrowth.tre"
+  #tFile <- "~/Data/Seattle/IqTree_Bootstrap/SeattleB_PRO_Filt.fasta.treefile"
+  #gFile <- "~/Data/Seattle/IqTree_Bootstrap/stNoBoot.tre"
   #tFile <- "~/Data/Tennessee/tnTreeData/TennesseeB_Trim_Diag_Filt.fasta.treefile"
   #gFile <- "~/Data/Tennessee/IqTree_Bootstrap_Diag/tnNoBoot.tre"
 
-    
-  oT <- impTree(tFile, reVars='_', varInd = c(1,2), dateFormat = "%Y") 
+  oT <- impTree(tFile, reVars='_', varInd = c(1,2), dateFormat = "%Y")
   oT <- growthSim(oT, gFile)
      
-  maxDs <- seq(0,0.05, 0.0001)
+  maxDs <- seq(0, 0.03, 0.0002)
   res <- GAICRun(oT, maxDs)
   
   plot(maxDs, res$GAIC, xlab="Thresholds", ylab="AIC Loss")
   lines(maxDs, res$GAIC)
-  
 }
