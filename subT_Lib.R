@@ -122,7 +122,7 @@ growthSim <- function(iT, gFile) {
 }
 
 #Clusters are defined as a series of tips diverging from a series of quickly branching nodes
-STClu <- function(iT, maxD) {
+STClu <- function(iT, maxD, minB=NA) {
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param maxD: The maximum distance criterion defining clusters
   #@return: The tree annotated with $c, which contains cluster membership information ($Membership).
@@ -133,35 +133,51 @@ STClu <- function(iT, maxD) {
   
   #Initiate the position of each tip and node
   #An if statement checks if the parent of an edge is the root
-  pathEdge <- sapply(1:(length(iT$tip.label)+iT$Nnode), function(x) {
+  pathStack <- lapply(1:(length(iT$tip.label)+iT$Nnode), function(x) {
     ifelse(x==(length(iT$tip.label)+1), 
            NA, which(iT$edge[,2]==x))
   })
+  pathEdge <- sapply(pathStack, function(x){x[[1]]})
   pathLens <- iT$edge.length[pathEdge]
   pathSteps <- which(pathLens<=maxD)
-  
+
   #Step up any individual edges that are short enough 
   #This loop terminates when either all tips have reached the root
   while(length(pathSteps)>0){
     
     #PathEdge is updated with the parent edge of the parent node for any short original edges
-    pathEdge[pathSteps] <- sapply(pathEdge[pathSteps], function(x){
-      p <- iT$edge[x,1]
-      ifelse(p==(length(iT$tip.label)+1), 
-             NA, which(iT$edge[,2]==p))
-      
-      
+    pathStack[pathSteps] <- lapply(pathStack[pathSteps], function(x){
+      pN <- iT$edge[x[[1]],1]
+      pE <- ifelse(pN==(length(iT$tip.label)+1), 
+             NA, which(iT$edge[,2]==pN))
+      return(c(pE, x))
     })
     
-    #These two are upated based on pathEdge
+    #These two are updated based on pathEdge
+    pathEdge <- sapply(pathStack, function(x){x[[1]]})
     pathLens <- iT$edge.length[pathEdge]
     pathSteps <- which(pathLens<=maxD)
   }
   
   #Each tip has the cluster it joins (ie. the highest node reached in an uninterrupted path of short edges) 
   #The same is true for internal nodes, which travel by the same logic
-  pathEdge <- replace(pathEdge, which(is.na(pathEdge)), which(iT$edge[,1]==length(iT$tip.label)+1)[[1]])
+  pathEdge <- sapply(pathStack, function(x){x[[1]]})
   clusIDs <- iT$edge[pathEdge,2]
+  clusIDs <- replace(clusIDs, which(is.na(clusIDs)), length(iT$tip.label)+1)
+  
+  #Check a bootstrap requirement by walking back down the tree
+  #Parent Edges with low bootstrap certainty are stepped back to the next point in path which meets bootstrap requirement
+  if(!is.na(minB)){
+    stepDownI <- which(clusIDs%in%iT$n$Info[Bootstrap<minB, (ID)])
+    pathEdge[stepDownI] <- sapply(pathStack[stepDownI], function(x){
+      nodes <- iT$edge[x,2]
+      cluI <- which(nodes%in%iT$n$Info[Bootstrap>=minB, (ID)])
+      ifelse(length(cluI)>0, x[cluI], x[length(x)])
+    })
+  }
+  
+  clusIDs <- iT$edge[pathEdge,2]
+  clusIDs <- replace(clusIDs, which(is.na(clusIDs)), length(iT$tip.label)+1)
   iT$v$Cluster <- clusIDs[1:length(iT$tip.label)]
   iT$n$Info$Cluster <- clusIDs[(length(iT$tip.label)+1):(length(iT$tip.label)+iT$Nnode)]
 
@@ -205,38 +221,17 @@ GAICRun <- function(iT, maxDs, rando = F) {
     #Obtain clusters
     t <- STClu(iT, d)
     
-    #Obtain positive terminal nodes
-    posN <- t$n$Info[cDist<d,]
-    
-    #Obtain frequencies of positives affiliated with a particular time difference
-    tDiffPos <- table(round(posN[,(tDiff)]))
-    r <- min(as.numeric(names(t$f$tDiff))):max(as.numeric(names(t$f$tDiff)))
-    tDiff <- rep(0,length(r))
-    names(tDiff) <- r
-    tDiff[names(tDiffPos)] <- as.numeric(tDiffPos)
-      
-    df <- data.frame(tDiff=round(as.numeric(names(tDiff))), 
-                     ConnRate=as.numeric(tDiff))
-    
-    #Train a binomial model based on successes and failures to 
-    mod <- glm(ConnRate~tDiff, data = df,family="poisson")
-    weights <- predict(mod, type="response", data.frame(tDiff=as.numeric(max(t$v$Time)- t$v$Time)))
-    names(weights) <- t$v$ID
-
-    #Weights represent the odds ratio of clustered vs. unclustered
-    if(rando) {weights <- sample(seq(0,1,0.01), length(weights), replace = T)}
-        
-    #Apply those weights to the members of each cluster for cluster predictive models 
-    t$c$Info[, "Weight" := sapply(t$c$Membership, function(x) {sum(weights[x[x%in%names(weights)]])})]
+    #Obtain recency (a sum value of all member tips collection date recency) for each cluster.
+    t$c$Info[, "Recency" := sapply(t$c$Membership, function(x) {sum(as.numeric(t$v[ID%in%x, (Time)]))})]
     
     #Compares clusters with weights obtained through variables to clusters with even weights
-    fit1 <- glm(formula = New~Weight, data = t$c$Info, family = "poisson")
+    fit1 <- glm(formula = New~Old+Recency, data = t$c$Info, family = "poisson")
     fit2 <- glm(formula = New~Old, data = t$c$Info, family = "poisson")
 
     #GAIC is the difference between the AIC of two models
     #Put another way, this is the AIC loss associated with predictive variables
     #Other descriptive data characteristics
-    data.frame(modAIC=fit1$aic, nullAIC=fit2$aic, GAIC=(fit1$aic-fit2$aic), coeff=fit1$coefficients['Weight'],
+    data.frame(modAIC=fit1$aic, nullAIC=fit2$aic, GAIC=(fit1$aic-fit2$aic),
                GrowthTot=nrow(t$g[Cluster>0,]), Singletons=nrow(t$c$Info[(Old)==1,]), MeanSize=mean(t$c$Info[,(Old)]),
                GrowthMax=max(t$c$Info[,(New)]), GrowthMaxID=t$c$Info[which.max((New)), (ID)],
                SizeMax=max(t$c$Info[,(Old)]), SizeMaxID=t$c$Info[which.max((Old)), (ID)])
@@ -254,17 +249,17 @@ if(F){
   reVars <- '_'
   varInd <- c(1,2)
   dateFormat <- '%Y'
-  tFile <- "~/Data/st.treefile"
-  gFile <- "~/Data/stNoBootGrowth.tre"
-  #tFile <- "~/Data/Seattle/IqTree_Bootstrap/SeattleB_PRO_Filt.fasta.treefile"
-  #gFile <- "~/Data/Seattle/IqTree_Bootstrap/stNoBoot.tre"
+  #tFile <- "~/Data/st.treefile"
+  #gFile <- "~/Data/stNoBootGrowth.tre"
+  tFile <- "~/Data/Seattle/IqTree_Bootstrap/SeattleB_PRO_Filt.fasta.treefile"
+  gFile <- "~/Data/Seattle/IqTree_Bootstrap/stNoBoot.tre"
   #tFile <- "~/Data/Tennessee/tnTreeData/TennesseeB_Trim_Diag_Filt.fasta.treefile"
   #gFile <- "~/Data/Tennessee/IqTree_Bootstrap_Diag/tnNoBoot.tre"
 
   oT <- impTree(tFile, reVars='_', varInd = c(1,2), dateFormat = "%Y")
   oT <- growthSim(oT, gFile)
      
-  maxDs <- seq(0, 0.03, 0.0002)
+  maxDs <- seq(0, 0.05, 0.0005)
   res <- GAICRun(oT, maxDs)
   
   plot(maxDs, res$GAIC, xlab="Thresholds", ylab="AIC Loss")
