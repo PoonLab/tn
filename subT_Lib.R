@@ -20,9 +20,6 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   #    $n: A list of each node's descendants ($Des), as well as information used to obtain clusters from nodes 
   #        This additional data is stored in ($Info) as $cDist for the longest branch length between the two child branches.
   #        $cDist will later be correlated with variables such as $tDiff (time difference between nodes).  
-  #    $f: A list of data used to train a predictive model. This is the expected distribution associated with each variable.
-  #        For example, $tDiff is the distribution of possible time differences given the distribution of times.
-
   
   #Obtaining and midpioint rooting an ape phylogeny object from the tree file, store in a greater list "t"
   t <- midpoint.root(read.tree(tFile))
@@ -31,9 +28,9 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   
   #Obtain lists of sequence ID and Time
   #Reformat edge list as data table object with predictors extracted from sequence header
-  temp <- sapply(t$tip.label, function(x) strsplit(x, reVars)[[1]])
-  t$v <- data.table(ID=temp[varInd[[1]],],  
-                    Time=as.Date(temp[varInd[[2]],], format=dateFormat), 
+  temp <- sapply(t$tip.label, function(x) {(strsplit(x, reVars)[[1]])[varInd]})
+  t$v <- data.table(ID=temp[1,],  
+                    Time=as.Date(temp[2,], format=dateFormat), 
                     stringsAsFactors = F)
   
   #Obtain the full set of descendants at each node
@@ -65,15 +62,11 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   t$n$Info[,"tDiff" := temp[1,]]
   t$n$Info[,"cDist" := temp[2,]]
   
-  #Vector of all known time differences for the purpose of sampling
-  r <- t$v$Time[order(t$v$Time)]
-  t$f$tDiff <- table(unlist(lapply(1:(length(r)-1), function(i) {r[(i+1):length(r)]-r[i]})))
-  
   return(t)
 }
 
 #After simulating the growth of trees by placing recent sequences as tips on a fixed ML tree
-growthSim <- function(iT, gFile) {
+growthSim <- function(iT, gFile, boots=T) {
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param gFile: The growth file from a pplacer run for all new cases
   #@return: The input tree annotated with growth information stored as $g.
@@ -99,20 +92,35 @@ growthSim <- function(iT, gFile) {
     termDist <- t$edge.length[nE]
     penDist <- t$edge.length[penE]
     
-    #Extract the subtree which contains the newest tip
-    t <- extract.clade(t, p)
-    
-    #Obtain the node corresponding to the neighbour based on that node's number in the old tree
-    oIDs <- setdiff(t$tip.label, nID)
-    oTips <- which(iT$tip.label%in%oIDs)
-    oNode <- getMRCA(iT, oTips)
-    
-    #To catch a singleton connecting to a new tip
-    if(is.null(oNode)){
-      oNode <- which(iT$tip.label%in%oIDs)
-    }
-  
-    data.frame(nID=nID, TermDist=termDist, PenDist=penDist, oConn=oNode)
+    #A nested loop to obtain placement information for each tip
+    bind_rows(lapply(1:length(p), function(i){
+
+      #Extract the subtree which contains the newest tip      
+      c <- extract.clade(t, p[i])
+      
+      #Obtain the node corresponding to the neighbour based on that node's number in the old tree
+      oIDs <- setdiff(c$tip.label, nID[i])
+      oTips <- which(iT$tip.label%in%oIDs)
+      oNode <- getMRCA(iT, oTips)
+      
+      #To catch a singleton connecting to a new tip
+      if(is.null(oNode)){
+        oNode <- which(iT$tip.label%in%oIDs)
+      }
+      
+      #Obtain Bootstrap Certainty and clarify node IDs
+      #All new node placements should share the same ID
+      temp <- strsplit(nID[i], "_#")[[1]]
+      ID <- temp[[1]]
+      if(length(temp)>1) {
+        b <- strsplit(temp[[2]], "=")[[1]]
+        b <- as.numeric(b[length(b)])  
+      } else {
+        b <- 1
+      }
+      
+      data.frame(nID=ID, TermDist=termDist[i], PenDist=penDist[i], oConn=oNode, Bootstrap = b)
+    }))
   }))  
   
   #Add this information as a data table under g.
@@ -210,7 +218,7 @@ STClu <- function(iT, maxD, minB=NA) {
 }
 
 #Obtain GAIC at several different cutoffs
-GAICRun <- function(iT, maxDs, rando = F) {
+GAICRun <- function(iT, maxDs, minB=NA, rando = F) {
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param maxD: The maximum distance criteria defining clusters
   #@return: A vector of GAIC measurements obtained with different clustering criteria
@@ -219,15 +227,20 @@ GAICRun <- function(iT, maxDs, rando = F) {
   df <- lapply(maxDs, function(d) {
     
     #Obtain clusters
-    t <- STClu(iT, d)
+    t <- STClu(iT, d, minB)
     
     #Obtain recency (a sum value of all member tips collection date recency) for each cluster.
-    t$c$Info[, "Recency" := sapply(t$c$Membership, function(x) {sum(as.numeric(t$v[ID%in%x, (Time)]))})]
+    t$c$Info[, "Recency" := sapply(t$c$Membership, function(x) {
+      sum(as.numeric(t$v[ID%in%x, (Time)]) - min(as.numeric(t$v[,(Time)])))
+    })]
     
     #Compares clusters with weights obtained through variables to clusters with even weights
     fit1 <- glm(formula = New~Old+Recency, data = t$c$Info, family = "poisson")
     fit2 <- glm(formula = New~Old, data = t$c$Info, family = "poisson")
 
+    print(fit2$aic - fit1$aic)
+    print(fit2$aic)
+    
     #GAIC is the difference between the AIC of two models
     #Put another way, this is the AIC loss associated with predictive variables
     #Other descriptive data characteristics
@@ -247,19 +260,21 @@ if(F){
   
   #Set inputs for test
   reVars <- '_'
-  varInd <- c(1,2)
-  dateFormat <- '%Y'
-  #tFile <- "~/Data/st.treefile"
-  #gFile <- "~/Data/stNoBootGrowth.tre"
+  varInd <- c(2,3)
+  dateFormat <- "%Y-%m-%d"
   tFile <- "~/Data/Seattle/IqTree_Bootstrap/SeattleB_PRO_Filt.fasta.treefile"
-  gFile <- "~/Data/Seattle/IqTree_Bootstrap/stNoBoot.tre"
+  #gFile <- "~/Data/Seattle/IqTree_Bootstrap/stNoBoot.tre"
+  gFile <- "~/Data/Seattle/IqTree_Bootstrap/st.tre"
   #tFile <- "~/Data/Tennessee/tnTreeData/TennesseeB_Trim_Diag_Filt.fasta.treefile"
   #gFile <- "~/Data/Tennessee/IqTree_Bootstrap_Diag/tnNoBoot.tre"
+  #tFile <- "~/Data/Seattle/stKingTrees/stKing_PRO_H_Filt.fasta.treefile"
+  #gFile <- "~/Data/Seattle/stKingTrees/stKing.tre"
 
   oT <- impTree(tFile, reVars='_', varInd = c(1,2), dateFormat = "%Y")
+  #oT <- impTree(tFile, reVars='_', varInd = c(2,3), dateFormat = "%Y-%m-%d")
   oT <- growthSim(oT, gFile)
      
-  maxDs <- seq(0, 0.05, 0.0005)
+  maxDs <- seq(0, 0.04, 0.001)
   res <- GAICRun(oT, maxDs)
   
   plot(maxDs, res$GAIC, xlab="Thresholds", ylab="AIC Loss")
