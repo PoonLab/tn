@@ -66,7 +66,7 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
 }
 
 #After simulating the growth of trees by placing recent sequences as tips on a fixed ML tree
-growthSim <- function(iT, gFile, boots=T) {
+growthSim <- function(iT, gFile) {
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param gFile: The growth file from a pplacer run for all new cases
   #@return: The input tree annotated with growth information stored as $g.
@@ -130,7 +130,7 @@ growthSim <- function(iT, gFile, boots=T) {
 }
 
 #Clusters are defined as a series of tips diverging from a series of quickly branching nodes
-STClu <- function(iT, maxD, minB=NA) {
+STClu <- function(iT, maxD, minB=0) {
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param maxD: The maximum distance criterion defining clusters
   #@return: The tree annotated with $c, which contains cluster membership information ($Membership).
@@ -175,15 +175,18 @@ STClu <- function(iT, maxD, minB=NA) {
   
   #Check a bootstrap requirement by walking back down the tree
   #Parent Edges with low bootstrap certainty are stepped back to the next point in path which meets bootstrap requirement
-  if(!is.na(minB)){
-    stepDownI <- which(clusIDs%in%iT$n$Info[Bootstrap<minB, (ID)])
+  stepDownI <- which(clusIDs%in%iT$n$Info[(Bootstrap)<minB, (ID)])
+  rescuedI <- which(clusIDs%in%iT$g[((Bootstrap)>=minB)&((PenDist)<=maxD)&((TermDist)<=maxD), (oConn)])
+  stepDownI <- setdiff(stepDownI, rescuedI)
+  
+  if(length(stepDownI)>1) {
     pathEdge[stepDownI] <- sapply(pathStack[stepDownI], function(x){
       nodes <- iT$edge[x,2]
       cluI <- which(nodes%in%iT$n$Info[Bootstrap>=minB, (ID)])
       ifelse(length(cluI)>0, x[cluI], x[length(x)])
-    })
+    })  
   }
-  
+
   clusIDs <- iT$edge[pathEdge,2]
   clusIDs <- replace(clusIDs, which(is.na(clusIDs)), length(iT$tip.label)+1)
   iT$v$Cluster <- clusIDs[1:length(iT$tip.label)]
@@ -197,7 +200,20 @@ STClu <- function(iT, maxD, minB=NA) {
   #This is sorted with growth info to be appended onto the final tree
   iT$c <- list()
   old <- table(iT$v$Cluster)
-  temp <- table(iT$g$Cluster)
+  
+  #Sum bootstrap values within a given cluster
+  #Only new cases which join a particular cluster with enough total certainty are considered growth.
+  nidG <- sapply(unique(iT$g[,(nID)]), function(id) {
+    idG <- iT$g[(nID)%in%id,]
+    totB <- sapply(unique(idG[,(Cluster)]), function(x){
+      sum(idG[(Cluster)==x, (Bootstrap)])
+    })
+    ifelse(max(totB)<minB, 0,
+           idG[which.max(totB)[[1]], (Cluster)]) 
+  })
+  temp <- table(nidG)
+  
+  #Initialize and fill table representing new case attachment (ie. growth)
   new <- old-old
   new[names(new)%in%names(temp)] <- temp[names(temp)%in%names(new)]
 
@@ -210,7 +226,7 @@ STClu <- function(iT, maxD, minB=NA) {
   iT$c$Membership <- lapply(iT$c$Info[,(ID)], function(x){
     iMem <- iT$n$Info[(Cluster)%in%x, ((ID))]
     oMem <- iT$v[(Cluster)%in%x, (ID)]
-    nMem <- iT$g[(Cluster)%in%x, (nID)]
+    nMem <- names(nidG[nidG%in%x])
     return(c(iMem, oMem, nMem))
   })
   
@@ -218,7 +234,7 @@ STClu <- function(iT, maxD, minB=NA) {
 }
 
 #Obtain GAIC at several different cutoffs
-GAICRun <- function(iT, maxDs, minB=NA, rando = F) {
+GAICRun <- function(iT, maxDs, minB=0, rando = F) {
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param maxD: The maximum distance criteria defining clusters
   #@return: A vector of GAIC measurements obtained with different clustering criteria
@@ -231,15 +247,14 @@ GAICRun <- function(iT, maxDs, minB=NA, rando = F) {
     
     #Obtain recency (a sum value of all member tips collection date recency) for each cluster.
     t$c$Info[, "Recency" := sapply(t$c$Membership, function(x) {
-      sum(as.numeric(t$v[ID%in%x, (Time)]) - min(as.numeric(t$v[,(Time)])))
+      mean(as.numeric(t$v[ID%in%x, (Time)]) - min(as.numeric(t$v[,(Time)])))
     })]
     
     #Compares clusters with weights obtained through variables to clusters with even weights
     fit1 <- glm(formula = New~Old+Recency, data = t$c$Info, family = "poisson")
     fit2 <- glm(formula = New~Old, data = t$c$Info, family = "poisson")
 
-    print(fit2$aic - fit1$aic)
-    print(fit2$aic)
+    print(fit1$aic - fit2$aic)
     
     #GAIC is the difference between the AIC of two models
     #Put another way, this is the AIC loss associated with predictive variables
@@ -277,6 +292,7 @@ if(F){
   maxDs <- seq(0, 0.04, 0.001)
   res <- GAICRun(oT, maxDs)
   
-  plot(maxDs, res$GAIC, xlab="Thresholds", ylab="AIC Loss")
-  lines(maxDs, res$GAIC)
+  plot(maxDs[1:10], res$GAIC[1:10], xlab="Thresholds", ylab="AIC Loss")
+  lines(maxDs[1:10], res$GAIC[1:10])
+  lines(maxDs[1:10], res1$GAIC[1:10], col="red")
 }
