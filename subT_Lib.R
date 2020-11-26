@@ -48,7 +48,7 @@ impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d"
   
   #Set root node bootstrap support to 1 and adjust these values to be fractions out of 1
   #Different tree-building methods display bootstrap support differently
-  t$n$Info[is.na(Bootstrap), "Bootstrap" := 10^ceiling(log10(max(t$n$Info$Bootstrap[!is.na(t$n$Info$Bootstrap)])))]
+  t$n$Info[is.na(Bootstrap)|((Bootstrap)%in%c("", "Root")), "Bootstrap" := 10^ceiling(log10(max(t$n$Info$Bootstrap[!is.na(t$n$Info$Bootstrap)])))]
   t$n$Info[,"Bootstrap" := (t$n$Info$Bootstrap)/max(t$n$Info$Bootstrap)]
   
   #This block obtains the time difference between each child for each parent node
@@ -234,10 +234,20 @@ STClu <- function(iT, maxD, minB=0) {
 }
 
 #Obtain GAIC at several different cutoffs
-GAICRun <- function(iT, maxDs, minB=0, rando = F) {
+GAICRun <- function(iT, maxDs=NA, minB=0, monitor=T, runID=0) {
   #@param iT: The input tree file, annotated with vertex and edge information
-  #@param maxD: The maximum distance criteria defining clusters
+  #@param maxDs: The maximum distance criteria defining clusters
+  #@param minB: The minimum bootstrap criterion for clustering
+  #@param runID: An identifier to stash this particular run and compare it to others
+  #@param monitor: A switch to determine if there should be a readout of this run
   #@return: A vector of GAIC measurements obtained with different clustering criteria
+  
+  #Initialize a set of cutoffs to observe (based on the branch-length distribution)
+  ##-UNTESTED-##
+  if(is.na(maxDs)) {
+    steps <- head(hist(iT$edge.length, plot=FALSE)$breaks, -5)
+    maxDs <- seq(0 , max(steps), max(steps)/50) 
+  }
   
   #This function runs through severel comparisons of a model weighted by predictors, to a model without those variables
   df <- lapply(maxDs, function(d) {
@@ -250,22 +260,65 @@ GAICRun <- function(iT, maxDs, minB=0, rando = F) {
       mean(as.numeric(t$v[ID%in%x, (Time)]) - min(as.numeric(t$v[,(Time)])))
     })]
     
+    #A randomly weighted model, can also act as a useful comparison
+    t$c$Info[, "Rando" := sample(1:00, nrow(t$c$Info), replace=T)]
+    
     #Compares clusters with weights obtained through variables to clusters with even weights
     fit1 <- glm(formula = New~Old+Recency, data = t$c$Info, family = "poisson")
     fit2 <- glm(formula = New~Old, data = t$c$Info, family = "poisson")
+    fitR <- glm(formula = New~Old+Rando, data = t$c$Info, family = "poisson")
 
-    print(fit1$aic - fit2$aic)
+    if(monitor) {
+      print(fit1$aic - fit2$aic)
+    }
     
     #GAIC is the difference between the AIC of two models
     #Put another way, this is the AIC loss associated with predictive variables
     #Other descriptive data characteristics
-    data.frame(modAIC=fit1$aic, nullAIC=fit2$aic, GAIC=(fit1$aic-fit2$aic),
+    data.frame(modAIC=fit1$aic, nullAIC=fit2$aic, GAIC=(fit1$aic-fit2$aic), randAIC=fitR$aic ,
                GrowthTot=nrow(t$g[Cluster>0,]), Singletons=nrow(t$c$Info[(Old)==1,]), MeanSize=mean(t$c$Info[,(Old)]),
                GrowthMax=max(t$c$Info[,(New)]), GrowthMaxID=t$c$Info[which.max((New)), (ID)],
                SizeMax=max(t$c$Info[,(Old)]), SizeMaxID=t$c$Info[which.max((Old)), (ID)])
   })
   
   dt <- as.data.table(bind_rows(df))
+  dt[,"RunID" := runID]
+  
+  return(dt)
+}
+
+#Obtain results for a much larger set of sub-sampled trees.
+#See pplacer_utils, for how this data is set up on a larger scale
+multiGAICRun <- function(resDir, maxDs, minB=0, 
+                         reVars='_', varInd = c(1,2), dateFormat = "%Y") {
+  #@param resDir: A directory containing a set of trees previously made as well 
+  #               as a matching set of growth file placements
+  #@param maxDs: The maximum distance criteria defining clusters
+  #
+  #@return: A data table of multiple runs worth of cluster information.
+  #         Each run will be labelled with a particular run ID
+  
+  #Obtain a pair of lists - trees and growth files
+  tfs <- list.files(paste0(resDir, "trees"))
+  tfs <- tfs[order(tfs)]
+  gfs <- list.files(paste0(resDir, "growthFiles"))
+  gfs <- gfs[order(gfs)]
+  
+  #Multi GAIC Run based on pre-made directory
+  #Again, see pplacer_utils for multi-directory creation
+  dt <- bind_rows(lapply(1:length(tfs), function(i){
+    
+    #Pair tree and growth file from list
+    tFile <- paste0(resDir, "trees/", tfs[[1]])
+    gFile <- paste0(resDir, "growthFiles/", gfs[[1]])
+  
+    print(i)
+    
+    #Run GAIC run on smaller tree
+    oT <- impTree(tFile, reVars, varInd, dateFormat)
+    oT <- growthSim(oT, gFile)
+    GAICRun(oT, maxDs, runID=i, monitor=F)
+  }))
   
   return(dt)
 }
@@ -275,24 +328,31 @@ if(F){
   
   #Set inputs for test
   reVars <- '_'
-  varInd <- c(2,3)
-  dateFormat <- "%Y-%m-%d"
+  varInd <- c(1,2)
+  dateFormat <- "%Y"
+  
   tFile <- "~/Data/Seattle/IqTree_Bootstrap/SeattleB_PRO_Filt.fasta.treefile"
-  #gFile <- "~/Data/Seattle/IqTree_Bootstrap/stNoBoot.tre"
   gFile <- "~/Data/Seattle/IqTree_Bootstrap/st.tre"
-  #tFile <- "~/Data/Tennessee/tnTreeData/TennesseeB_Trim_Diag_Filt.fasta.treefile"
-  #gFile <- "~/Data/Tennessee/IqTree_Bootstrap_Diag/tnNoBoot.tre"
+  
+  #tFile <- "~/Data/Tennessee/tn_ColTreeData/tn.refpkg/tn_Coltree.nwk"
+  #gFile <- "~/Data/Tennessee/tn_ColTreeData/tn_ColGrowth.tre"
+  
+  #tFile <- "~/Data/Tennessee/tn_DiagTreeData/tn.refpkg/tn.tre"
+  #gFile <- "~/Data/Tennessee/tn_DiagTreeData/tnTGrowth.tre"
+  
   #tFile <- "~/Data/Seattle/stKingTrees/stKing_PRO_H_Filt.fasta.treefile"
   #gFile <- "~/Data/Seattle/stKingTrees/stKing.tre"
 
+  #tFile <- "~/Data/NAlberta/IqTree_Bootstrap/na.refpkg/NorthAlbertaB_PRO_Filt.fasta.treefile"
+  #gFile <- "~/Data/NAlberta/IqTree_Bootstrap/na.tre"
+  
   oT <- impTree(tFile, reVars='_', varInd = c(1,2), dateFormat = "%Y")
-  #oT <- impTree(tFile, reVars='_', varInd = c(2,3), dateFormat = "%Y-%m-%d")
   oT <- growthSim(oT, gFile)
      
   maxDs <- seq(0, 0.04, 0.001)
-  res <- GAICRun(oT, maxDs)
+  res <- GAICRun(oT, maxDs, minB=0.90)
   
-  plot(maxDs[1:10], res$GAIC[1:10], xlab="Thresholds", ylab="AIC Loss")
-  lines(maxDs[1:10], res$GAIC[1:10])
-  lines(maxDs[1:10], res1$GAIC[1:10], col="red")
+  plot(maxDs, res$GAIC, xlab="Thresholds", ylab="AIC Loss")
+  lines(maxDs, res$GAIC)
+  lines(maxDs, res$randAIC-res$nullAIC, col="red")
 }

@@ -46,8 +46,8 @@ impTN93 <- function(iFile, reVars='/|\\|', varInd=c(5,6,2), varMan=NA, dateForma
   
   #Vertices and edges lists together start a graph object
   g <- list(v=vl[order(vl$Time),], e=el[order(el$tMax),])
-  g$e[, "i" := .I]
-  g$v[, "i" := .I]
+  g$e[, "I" := .I]
+  g$v[, "I" := .I]
   
   #Set a "New Point", such that cases after this point are considered new for the purposes of growth
   newPoint <- quantile(as.numeric(g$v$Time), partQ)
@@ -67,7 +67,7 @@ impTN93 <- function(iFile, reVars='/|\\|', varInd=c(5,6,2), varMan=NA, dateForma
   retE <- g$e[(New)&((t1<newPoint)|(t2<newPoint)),]
   iMRE <- sapply(g$v[(New), (ID)], function(id){
     iE <- retE[(ID1%in%id)|(ID2%in%id), ]
-    iE[which.min(iE$Distance)[[1]], i] 
+    iE[which.min(iE$Distance)[[1]], I] 
   })
   
   #Only the minimum retrospective edges for all new cases remain unfiltered
@@ -155,9 +155,12 @@ compClu <- function(iG, maxD) {
 }
 
 #Run across a set of several subGraphs created at various filters, analyzing GAIC at each with clusterAnalyze
-gaicRun <- function(iG, maxDs=NA) {
+GAICRun <- function(iG, maxDs=NA, runID=0, monitor=T) {
   #@param iG: Expecting the entire Graph, but in some cases may take a subset  
-  #@return: A data frame of each runs cluster information (clusterAnalyze output)
+  #@param maxDs: A list of cutoff thresholds
+  #@param runID: An identifier to stash this particular run and compare it to others
+  #@param monitor: A switch to determine if there should be a readout of this run
+  #@return: A data frame of each runs cluster information.
   
   #Initialize a set of cutoffs to observe (based on the genetic distance distribution)
   if  (is.na(maxDs)) {
@@ -180,26 +183,57 @@ gaicRun <- function(iG, maxDs=NA) {
     fit1 <- glm(formula = New~Old+Recency, data = subG$c$Info, family = "poisson")
     fit2 <- glm(formula = New~Old, data = subG$c$Info, family = "poisson")
     
-    print(fit1$aic- fit2$aic)
+    if(monitor){
+      print(fit1$aic- fit2$aic)
+    }
     
     #GAIC is the difference between the AIC of two models
     #Put another way, this is the AIC loss associated with predictive variables
     #Other descriptive data characteristics
     data.frame(modAIC=fit1$aic, nullAIC=fit2$aic, GAIC=(fit1$aic-fit2$aic),
-               GrowthTot=sum(subG$c$Info[(New),]), Singletons=nrow(subG$c$Info[(Old)==1,]), MeanSize=mean(subG$c$Info[,(Old)]),
+               GrowthTot=sum(subG$c$Info[,(New)]), Singletons=nrow(subG$c$Info[(Old)==1,]), MeanSize=mean(subG$c$Info[,(Old)]),
                GrowthMax=max(subG$c$Info[,(New)])[[1]], GrowthMaxID=which.max(subG$c$Info[,(New)]),
                SizeMax=max(subG$c$Info[,(Old)]), SizeMaxID=which.max(subG$c$Info[,(Old)]))
   })
   
   dt <- as.data.table(bind_rows(df))
+  dt[,"RunID" := runID]
   
   return(dt)
 }
 
-if(F){
-  g <- impTN93(iFile="~/Data/Seattle/sttn93.txt", reVars='_', varInd=c(1,2), dateFormat="%Y",partQ=1-0.06819591)
-  res <- gaicRun(g, seq(0, 0.05, 0.001))
+#Obtain several run results for a much larger set of sub-sampled graphs
+multiGAICRun <- function(iG, n, maxDs=NA, prop=0.80) {
+  #@param iG: Expecting the entire Graph  
+  #@param maxDs: A list of cutoff thresholds
+  #@param n: The number of subsample runs to determine
+  #@param prop: The proportion of the data set sampled for each sub-sample.
+  #@return: A data table of multiple runs worth of cluster information.
+  #         Each run will be labelled with a particular run ID
+
+  #Initialize a set of cutoffs to observe (based on the genetic distance distribution)
+  if  (is.na(maxDs)) {
+    steps <- head(hist(subset(iG$e, Distance<0.05)$Distance, plot=FALSE)$breaks, -5)
+    maxDs <- seq(0 , max(steps), max(steps)/50) 
+  }
   
-  plot(seq(0, 0.05, 0.001),res$GAIC, xlab="Thresholds", ylab="AIC Loss")
-  lines(seq(0, 0.05, 0.001), res$GAIC)
+  #Run n different runs, each labelled with their own runID
+  dt <- bind_rows(lapply(1:n, function(i){
+    
+    #Copy a sample instance of the inserted graph
+    sampG <- copy(iG)
+    
+    #Sample new and old IDs 
+    sampIDs <- c(sample(iG$v[!(New),(ID)], round(prop*nrow(iG$v[!(New)]))),
+                 sample(iG$v[(New), (ID)], round(prop*nrow(iG$v[(New)]))))
+    
+    sampG$v <- iG$v[(ID)%in%sampIDs,]
+    sampG$e <- iG$e[((ID1)%in%sampIDs)&((ID2)%in%sampIDs),]
+    
+    print(i)
+    
+    GAICRun(iG, maxDs, runID=i, monitor=F)
+  }))
+  
+  return(dt)
 }

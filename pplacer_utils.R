@@ -41,7 +41,6 @@ translator <- function(sampsDir, n) {
 }
 
 #Effectively the reverse of makeNSFile
-##-UNTESTED Not Used for first results -##
 makeFiltFile <-function(iFile, new, oFile) {
   seqs <- read.FASTA(iFile)
   seqs <- seqs[!grepl(new, names(seqs))]
