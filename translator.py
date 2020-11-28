@@ -49,22 +49,22 @@ if __name__ == '__main__':
             if re.search(pattern, line):
                 s = line.split()
         
-                oText["empirical_frequencies"] = true
+                oText["empirical_frequencies"] = True
                 oText["datatype"] = args.datatype
                 oText["subs_model"] = args.subs_model
                 oText["program"] = args.program
                 oText["ras_model"] = args.ras_model
                 gamma = {}
-                gamma["alpha"] = "1.0"
-                gamma["n_cats"] = "20"
+                gamma["alpha"] = 1.0
+                gamma["n_cats"] = 20
                 oText["gamma"] = gamma
                 sub_rates = {}
-                sub_rates["ac"] = s[1]
-                sub_rates["gt"] = s[2]
-                sub_rates["at"] = s[3]
-                sub_rates["ag"] = s[4]
-                sub_rates["cg"] = s[5]
-                sub_rates["ct"] = s[6]
+                sub_rates["ac"] = float(s[1])
+                sub_rates["gt"] = float(s[2])
+                sub_rates["at"] = float(s[3])
+                sub_rates["ag"] = float(s[4])
+                sub_rates["cg"] = float(s[5])
+                sub_rates["ct"] = float(s[6])
                 oText["subs_rates"] = sub_rates
 
         json.dump(oText, oFile, indent=4)

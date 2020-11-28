@@ -225,14 +225,14 @@ multiGAICRun <- function(iG, n, maxDs=NA, prop=0.80) {
     
     #Sample new and old IDs 
     sampIDs <- c(sample(iG$v[!(New),(ID)], round(prop*nrow(iG$v[!(New)]))),
-                 sample(iG$v[(New), (ID)], round(prop*nrow(iG$v[(New)]))))
+                 iG$v[(New), (ID)])
     
     sampG$v <- iG$v[(ID)%in%sampIDs,]
     sampG$e <- iG$e[((ID1)%in%sampIDs)&((ID2)%in%sampIDs),]
     
     print(i)
     
-    GAICRun(iG, maxDs, runID=i, monitor=F)
+    GAICRun(sampG, maxDs, runID=i, monitor=F)
   }))
   
   return(dt)

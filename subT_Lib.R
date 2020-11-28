@@ -309,15 +309,15 @@ multiGAICRun <- function(resDir, maxDs, minB=0,
   dt <- bind_rows(lapply(1:length(tfs), function(i){
     
     #Pair tree and growth file from list
-    tFile <- paste0(resDir, "trees/", tfs[[1]])
-    gFile <- paste0(resDir, "growthFiles/", gfs[[1]])
+    tf <- paste0(resDir, "trees/", tfs[[i]])
+    gf <- paste0(resDir, "growthFiles/", gfs[[i]])
   
     print(i)
     
     #Run GAIC run on smaller tree
-    oT <- impTree(tFile, reVars, varInd, dateFormat)
-    oT <- growthSim(oT, gFile)
-    GAICRun(oT, maxDs, runID=i, monitor=F)
+    sampT <- impTree(tf, reVars, varInd, dateFormat)
+    sampT <- growthSim(sampT, gf)
+    GAICRun(sampT, maxDs, runID=i, monitor=F)
   }))
   
   return(dt)

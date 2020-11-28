@@ -3,15 +3,13 @@ require(rjson)
 require(digest)
 
 #Obtain n samples from a given fasta file, save this to a directory
-sampleFasta <- function(iFile, n=100){
+sampleFasta <- function(iFile, sampsDir, n=100){
   
   seqs <- read.FASTA(iFile)
   
   for(i in 1:n) {
     samp <- sample(seqs, 0.8*(length(seqs)), replace = F)
-    dir.create(paste0(iFile,"Samps"))
-    setwd(paste0(iFile,"Samps"))
-    s <- paste0("samp", i, ".fasta")
+    s <- paste0(sampsDir, "/samp", i, ".fasta")
     write.FASTA(samp, s)
   }
 }
@@ -22,6 +20,7 @@ multiRun <- function(sampsDir) {
   n <- length(list.files(sampsDir, pattern = "\\.fasta$"))
   
   for(i in 1:n) {
+    print(i)
     system(paste0("FastTree -gtr -log ", sampsDir, "/log", i, ".txt ",
                   "-nt ", sampsDir, "/samp", i, ".fasta ",
                   "> ", sampsDir, "/tree", i, ".nwk"))
@@ -30,13 +29,13 @@ multiRun <- function(sampsDir) {
 
 #A wrapper for the python translator script
 #This translates the FastTree output into a .json file which can be used in .jplace file for 
-translator <- function(sampsDir, n) {
+translator <- function(sampsDir) {
   
   files <- list.files(sampsDir, patter="\\.txt$")
   
   for(i in 1:length(files)) {
-    system(paste0("python3 translator.py -i ", files[i],
-                  "-o ", sampsDir, "/ststats", i, ".json"))
+    system(paste0("python3 translator.py -i ", sampsDir, "/", files[i],
+                  " -o ", sampsDir, "/ststats", i, ".json"))
   }
 }
 
@@ -119,7 +118,7 @@ multiTaxit <- function(sampsDir, n, short="", nSeqs, oDir) {
     
     treeF <- paste0(sampsDir, "/", short, "tree", i, ".nwk")
     logF <- paste0(sampsDir, "/", short, "log", i, ".txt")
-    statsF <- paste0(sampsDir, "/", short, "stats", i, ".json")
+    statsF <- paste0(sampsDir, "/", "st", "stats", i, ".json")
     
     taxitCreate(treeF=treeF, logF=logF, statsF=statsF, refpkg = refpkg)
   }
@@ -137,7 +136,7 @@ multiPplacer <- function(refDir, oDir, short, n=100) {
 #Runs guppy on all files in a directory to obtain growth files (inputs for tree growth method)
 multiGuppy <- function(refDir, oDir, n=100) {
   for (i in 1:n) {
-    f <- paste0(refDir, "/jplaceFile", i, ".jplace")
-    system(paste0("guppy sing --point-mass ", f, " -o ", oDir, "/growthFile", i, ".tree"))
+    f <- paste0(refDir, "/jplaceFile.jplace", i)
+    system(paste0("guppy sing ", f, " -o ", oDir, "/growthFile", i, ".tree"))
   }
 }
