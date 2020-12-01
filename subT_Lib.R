@@ -314,7 +314,7 @@ multiGAICRun <- function(resDir, maxDs, minB=0,
     #Run GAIC run on smaller tree
     sampT <- impTree(tf, reVars, varInd, dateFormat)
     sampT <- growthSim(sampT, gf)
-    GAICRun(sampT, maxDs, runID=i, monitor=F)
+    GAICRun(sampT, maxDs, runID=i)
   }))
   
   return(dt)

@@ -7,7 +7,7 @@ library(parallel)
 #Creates a set of data-tables representing a graph of sequences, with the edges between those sequences representing the TN93 Distance.
 #The time and location associated with the sequence can be taken either directly from the sequence header, or provided separately in a .csv file
 #This set of data tables also includes the set of minimum retrospective edges from sequences at the newest time point.
-impTN93 <- function(iFile, reVars='/|\\|', varInd=c(5,6,2), varMan=NA, dateFormat="%Y-%m-%d", partQ=0.95, nCores=detectCores()){
+impTN93 <- function(iFile, reVars='/|\\|', varInd=c(5,6,2), varMan=NA, dateFormat="%Y-%m-%d", partQ=0.95){
   #@param iFile: The name/path of the input file (expecting tn93 output csv)
   #@param reVars: The regular expression used to extract variables from column headers. This is passed to strsplit, creating a vertex of values from the column header
   #@param varInd: A vector of numbers describing the order of variables in the split string. This should describe the index of the unique ID, the Timepoint and the location.
@@ -155,11 +155,11 @@ compClu <- function(iG, maxD) {
 }
 
 #Run across a set of several subGraphs created at various filters, analyzing GAIC at each with clusterAnalyze
-GAICRun <- function(iG, maxDs=NA, runID=0, monitor=T) {
+GAICRun <- function(iG, maxDs=NA, runID=0, nCores=1) {
   #@param iG: Expecting the entire Graph, but in some cases may take a subset  
   #@param maxDs: A list of cutoff thresholds
   #@param runID: An identifier to stash this particular run and compare it to others
-  #@param monitor: A switch to determine if there should be a readout of this run
+  #@param nCores: The number of cores for parallel functionality
   #@return: A data frame of each runs cluster information.
   
   #Initialize a set of cutoffs to observe (based on the genetic distance distribution)
@@ -169,7 +169,7 @@ GAICRun <- function(iG, maxDs=NA, runID=0, monitor=T) {
   }
   
   #This function runs through severel comparisons of a model weighted by predictors, to a model without those variables
-  df <- lapply(maxDs, function(d) {
+  df <- mclapply(maxDs, function(d) {
     
     #Obtain clusters
     subG <- compClu(iG, d)
@@ -183,10 +183,6 @@ GAICRun <- function(iG, maxDs=NA, runID=0, monitor=T) {
     fit1 <- glm(formula = New~Old+Recency, data = subG$c$Info, family = "poisson")
     fit2 <- glm(formula = New~Old, data = subG$c$Info, family = "poisson")
     
-    if(monitor){
-      print(fit1$aic- fit2$aic)
-    }
-    
     #GAIC is the difference between the AIC of two models
     #Put another way, this is the AIC loss associated with predictive variables
     #Other descriptive data characteristics
@@ -194,7 +190,7 @@ GAICRun <- function(iG, maxDs=NA, runID=0, monitor=T) {
                GrowthTot=sum(subG$c$Info[,(New)]), Singletons=nrow(subG$c$Info[(Old)==1,]), MeanSize=mean(subG$c$Info[,(Old)]),
                GrowthMax=max(subG$c$Info[,(New)])[[1]], GrowthMaxID=which.max(subG$c$Info[,(New)]),
                SizeMax=max(subG$c$Info[,(Old)]), SizeMaxID=which.max(subG$c$Info[,(Old)]))
-  })
+  }, mc.cores=nCores)
   
   dt <- as.data.table(bind_rows(df))
   dt[,"RunID" := runID]
@@ -232,7 +228,7 @@ multiGAICRun <- function(iG, n, maxDs=NA, prop=0.80) {
     
     print(i)
     
-    GAICRun(sampG, maxDs, runID=i, monitor=F)
+    GAICRun(sampG, maxDs, runID=i)
   }))
   
   return(dt)
