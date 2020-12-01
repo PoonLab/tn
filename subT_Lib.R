@@ -2,10 +2,10 @@ require("ape")
 require("dplyr")
 require("data.table")
 require("phytools") #Literally just for midpoint rooting. Use APE for this in future if possible
-#require("parallel") #Likely unnecessary
+require("parallel") 
 
 #Import Tree Data and output an annotated tree with additional information to assist clustering
-impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d", varMan=NA, nCore=detectCores()){
+impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d", varMan=NA){
   #@param iFile: The name/path of the input file (expecting a newick file)
   #@param iFile: The name/path of the input file (expecting tn93 output csv)
   #@param reVars: The regular expression used to extract variables from column headers. This is passed to strsplit, creating a vertex of values from the column header
@@ -234,12 +234,12 @@ STClu <- function(iT, maxD, minB=0) {
 }
 
 #Obtain GAIC at several different cutoffs
-GAICRun <- function(iT, maxDs=NA, minB=0, monitor=T, runID=0) {
+GAICRun <- function(iT, maxDs=NA, minB=0, runID=0, nCores=1) {
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param maxDs: The maximum distance criteria defining clusters
   #@param minB: The minimum bootstrap criterion for clustering
   #@param runID: An identifier to stash this particular run and compare it to others
-  #@param monitor: A switch to determine if there should be a readout of this run
+  #@param nCore: Number of cores for parallel processing
   #@return: A vector of GAIC measurements obtained with different clustering criteria
   
   #Initialize a set of cutoffs to observe (based on the branch-length distribution)
@@ -250,7 +250,7 @@ GAICRun <- function(iT, maxDs=NA, minB=0, monitor=T, runID=0) {
   }
   
   #This function runs through severel comparisons of a model weighted by predictors, to a model without those variables
-  df <- lapply(maxDs, function(d) {
+  df <- mclapply(maxDs, function(d) {
     
     #Obtain clusters
     t <- STClu(iT, d, minB)
@@ -267,10 +267,6 @@ GAICRun <- function(iT, maxDs=NA, minB=0, monitor=T, runID=0) {
     fit1 <- glm(formula = New~Old+Recency, data = t$c$Info, family = "poisson")
     fit2 <- glm(formula = New~Old, data = t$c$Info, family = "poisson")
     fitR <- glm(formula = New~Old+Rando, data = t$c$Info, family = "poisson")
-
-    if(monitor) {
-      print(fit1$aic - fit2$aic)
-    }
     
     #GAIC is the difference between the AIC of two models
     #Put another way, this is the AIC loss associated with predictive variables
@@ -279,10 +275,11 @@ GAICRun <- function(iT, maxDs=NA, minB=0, monitor=T, runID=0) {
                GrowthTot=nrow(t$g[Cluster>0,]), Singletons=nrow(t$c$Info[(Old)==1,]), MeanSize=mean(t$c$Info[,(Old)]),
                GrowthMax=max(t$c$Info[,(New)]), GrowthMaxID=t$c$Info[which.max((New)), (ID)],
                SizeMax=max(t$c$Info[,(Old)]), SizeMaxID=t$c$Info[which.max((Old)), (ID)])
-  })
+  }, mc.cores = nCores)
   
   dt <- as.data.table(bind_rows(df))
   dt[,"RunID" := runID]
+  dt[,"Threshold" := maxDs]
   
   return(dt)
 }
@@ -331,8 +328,8 @@ if(F){
   varInd <- c(1,2)
   dateFormat <- "%Y"
   
-  tFile <- "~/Data/Seattle/IqTree_Bootstrap/SeattleB_PRO_Filt.fasta.treefile"
-  gFile <- "~/Data/Seattle/IqTree_Bootstrap/st.tre"
+  #tFile <- "~/Data/Seattle/IqTree_Bootstrap/SeattleB_PRO_Filt.fasta.treefile"
+  #gFile <- "~/Data/Seattle/IqTree_Bootstrap/st.tre"
   
   #tFile <- "~/Data/Tennessee/tn_ColTreeData/tn.refpkg/tn_Coltree.nwk"
   #gFile <- "~/Data/Tennessee/tn_ColTreeData/tn_ColGrowth.tre"
@@ -340,17 +337,17 @@ if(F){
   #tFile <- "~/Data/Tennessee/tn_DiagTreeData/tn.refpkg/tn.tre"
   #gFile <- "~/Data/Tennessee/tn_DiagTreeData/tnTGrowth.tre"
   
-  #tFile <- "~/Data/Seattle/stKingTrees/stKing_PRO_H_Filt.fasta.treefile"
-  #gFile <- "~/Data/Seattle/stKingTrees/stKing.tre"
+  tFile <- "~/Data/Seattle/stKingTrees/stKing_PRO_H_Filt.fasta.treefile"
+  gFile <- "~/Data/Seattle/stKingTrees/stKing.tre"
 
   #tFile <- "~/Data/NAlberta/IqTree_Bootstrap/na.refpkg/NorthAlbertaB_PRO_Filt.fasta.treefile"
   #gFile <- "~/Data/NAlberta/IqTree_Bootstrap/na.tre"
   
-  oT <- impTree(tFile, reVars='_', varInd = c(1,2), dateFormat = "%Y")
+  oT <- impTree(tFile, reVars='_', varInd = c(2,3), dateFormat = "%Y-%m-%d")
   oT <- growthSim(oT, gFile)
      
   maxDs <- seq(0, 0.04, 0.001)
-  res <- GAICRun(oT, maxDs, minB=0.90)
+  res <- GAICRun(oT, maxDs, minB=0.90, nCores=8)
   
   plot(maxDs, res$GAIC, xlab="Thresholds", ylab="AIC Loss")
   lines(maxDs, res$GAIC)
