@@ -5,7 +5,7 @@ require("phytools") #Literally just for midpoint rooting. Use APE for this in fu
 require("parallel") 
 
 #Import Tree Data and output an annotated tree with additional information to assist clustering
-impTree <-function(tFile, reVars='/|\\|', varInd=c(5,6,2), dateFormat="%Y-%m-%d", varMan=NA){
+impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y", varMan=NA){
   #@param iFile: The name/path of the input file (expecting a newick file)
   #@param iFile: The name/path of the input file (expecting tn93 output csv)
   #@param reVars: The regular expression used to extract variables from column headers. This is passed to strsplit, creating a vertex of values from the column header
@@ -239,8 +239,14 @@ GAICRun <- function(iT, maxDs=NA, minB=0, runID=0, nCores=1) {
   #@param maxDs: The maximum distance criteria defining clusters
   #@param minB: The minimum bootstrap criterion for clustering
   #@param runID: An identifier to stash this particular run and compare it to others
-  #@param nCore: Number of cores for parallel processing
-  #@return: A vector of GAIC measurements obtained with different clustering criteria
+  #@param nCores: Number of cores for parallel processing
+  #@return: A data table of each runs cluster information.
+  #         Both null and proposed model AIC values, as well as the AIC loss ($nullAIC, $modAIC and $GAIC)
+  #         The max size, average size and number of singletons ($SizeMax, $MeanSize and $Singletons)
+  #         The total growth, largest growth and number of growing clusters ($GrowthTot, $GrowthMax, and $nGrowing)
+  #         The ID of the largest cluster and the cluster with the highest growth ($SizeMaxID and $GrowthMaxID)
+  #         The effect ratio of mean recency in growing clusters over mean recency in non-growing clusters ($xMag)
+  
   
   #Initialize a set of cutoffs to observe (based on the branch-length distribution)
   ##-UNTESTED-##
@@ -279,7 +285,8 @@ GAICRun <- function(iT, maxDs=NA, minB=0, runID=0, nCores=1) {
   
   dt <- as.data.table(bind_rows(df))
   dt[,"RunID" := runID]
-  dt[,"Threshold" := maxDs]
+  dt[,"MaxDistance" := maxDs]
+  df[,"minBootstrap" := minB]
   
   return(dt)
 }

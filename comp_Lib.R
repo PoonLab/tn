@@ -2,12 +2,11 @@
 library(dplyr)
 library(data.table)
 library(parallel)
-#library(speedglm) --POSSIBLY UNNECESSARY
 
 #Creates a set of data-tables representing a graph of sequences, with the edges between those sequences representing the TN93 Distance.
 #The time and location associated with the sequence can be taken either directly from the sequence header, or provided separately in a .csv file
 #This set of data tables also includes the set of minimum retrospective edges from sequences at the newest time point.
-impTN93 <- function(iFile, reVars='/|\\|', varInd=c(5,6,2), varMan=NA, dateFormat="%Y-%m-%d", partQ=0.95){
+impTN93 <- function(iFile, reVars="_" , varInd=c(1, 2), varMan=NA, dateFormat="%Y", partQ=0.95){
   #@param iFile: The name/path of the input file (expecting tn93 output csv)
   #@param reVars: The regular expression used to extract variables from column headers. This is passed to strsplit, creating a vertex of values from the column header
   #@param varInd: A vector of numbers describing the order of variables in the split string. This should describe the index of the unique ID, the Timepoint and the location.
@@ -23,11 +22,10 @@ impTN93 <- function(iFile, reVars='/|\\|', varInd=c(5,6,2), varMan=NA, dateForma
   idt <- fread(iFile)
   
   #Reformat edge list as data table object with predictors extracted from sequence header
-  temp1 <- sapply(idt$ID1, function(x) (strsplit(x,reVars)[[1]]))
-  temp2 <- sapply(idt$ID2, function(x) (strsplit(x,reVars)[[1]]))
+  temp <- sapply(c(idt$ID1, idt$ID2), function(x) ((strsplit(x,reVars)[[1]]))[varInd])
 
-  el <- data.table(ID1=as.character(temp1[varInd[[1]],]), t1=as.Date(temp1[varInd[[2]],], format=dateFormat),
-                   ID2=as.character(temp2[varInd[[1]],]), t2=as.Date(temp2[varInd[[2]],], format=dateFormat),
+  el <- data.table(ID1=as.character(temp[1,1:nrow(idt)]), t1=as.Date(temp[2,1:nrow(idt)], format=dateFormat),
+                   ID2=as.character(temp[1,(nrow(idt)+1):(2*nrow(idt))]), t2=as.Date(temp[2,(nrow(idt)+1):(2*nrow(idt))], format=dateFormat),
                    Distance = as.numeric(idt$Distance), stringsAsFactors= F)
   
   #Obtain the maximum time and time difference between the head and tail of each edge
@@ -84,6 +82,7 @@ compClu <- function(iG, maxD) {
   #@param maxD: The maximum tn93 distance. Edges higher than this distance will be filtered out of the graph
   #@return: The inputted graph, annotated with a cluster size summary and case membership in the vertices section
   
+  #Because data.tables are being used, this prevents original values being reassigned via pointer
   iG <- copy(iG)
   
   #Filter cases distant edges
@@ -155,12 +154,18 @@ compClu <- function(iG, maxD) {
 }
 
 #Run across a set of several subGraphs created at various filters, analyzing GAIC at each with clusterAnalyze
+##-TO-DO: Make threadsafe. -##
 GAICRun <- function(iG, maxDs=NA, runID=0, nCores=1) {
   #@param iG: Expecting the entire Graph, but in some cases may take a subset  
   #@param maxDs: A list of cutoff thresholds
   #@param runID: An identifier to stash this particular run and compare it to others
-  #@param nCores: The number of cores for parallel functionality
-  #@return: A data frame of each runs cluster information.
+  #@param nCores: The number of cores for parallel functionality. -CURRENTLY NOT THREADSAFE
+  #@return: A data table of each runs cluster information.
+  #         Both null and proposed model AIC values, as well as the AIC loss ($nullAIC, $modAIC and $GAIC)
+  #         The max size, average size and number of singletons ($SizeMax, $MeanSize and $Singletons)
+  #         The total growth, largest growth and number of growing clusters ($GrowthTot, $GrowthMax, and $nGrowing)
+  #         The ID of the largest cluster and the cluster with the highest growth ($SizeMaxID and $GrowthMaxID)
+  #         The effect ratio of mean recency in growing clusters over mean recency in non-growing clusters ($xMag)
   
   #Initialize a set of cutoffs to observe (based on the genetic distance distribution)
   if  (is.na(maxDs)) {
@@ -179,6 +184,8 @@ GAICRun <- function(iG, maxDs=NA, runID=0, nCores=1) {
       mean(as.numeric(subG$v[ID%in%x, (Time)]) - min(as.numeric(subG$v[,(Time)])))
     })]
     
+    xMag = mean(subG$c$Info[(New)>0, (Recency)]) / mean(subG$c$Info[(New)==0, (Recency)])
+    
     #Compares clusters with weights obtained through variables to clusters with even weights
     fit1 <- glm(formula = New~Old+Recency, data = subG$c$Info, family = "poisson")
     fit2 <- glm(formula = New~Old, data = subG$c$Info, family = "poisson")
@@ -188,12 +195,13 @@ GAICRun <- function(iG, maxDs=NA, runID=0, nCores=1) {
     #Other descriptive data characteristics
     data.frame(modAIC=fit1$aic, nullAIC=fit2$aic, GAIC=(fit1$aic-fit2$aic),
                GrowthTot=sum(subG$c$Info[,(New)]), Singletons=nrow(subG$c$Info[(Old)==1,]), MeanSize=mean(subG$c$Info[,(Old)]),
-               GrowthMax=max(subG$c$Info[,(New)])[[1]], GrowthMaxID=which.max(subG$c$Info[,(New)]),
-               SizeMax=max(subG$c$Info[,(Old)]), SizeMaxID=which.max(subG$c$Info[,(Old)]))
+               GrowthMax=max(subG$c$Info[,(New)])[[1]], GrowthMaxID=which.max(subG$c$Info[,(New)]), nGrowing=nrow(subG$c$Info[(New)>0,]),
+               SizeMax=max(subG$c$Info[,(Old)]), SizeMaxID=which.max(subG$c$Info[,(Old)]), xMag =xMag)
   }, mc.cores=nCores)
   
   dt <- as.data.table(bind_rows(df))
   dt[,"RunID" := runID]
+  dt[,"MaxDistance" := maxDs]
   
   return(dt)
 }
