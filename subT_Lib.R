@@ -30,7 +30,7 @@ impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y", varMan=NA)
   #Reformat edge list as data table object with predictors extracted from sequence header
   temp <- sapply(t$tip.label, function(x) {(strsplit(x, reVars)[[1]])[varInd]})
   t$v <- data.table(ID=temp[1,],  
-                    Time=as.Date(temp[2,], format=dateFormat), 
+                    Time=ifelse(dateFormat=NA, as.Date(temp[2,], format=dateFormat)), 
                     stringsAsFactors = F)
   
   #Obtain the full set of descendants at each node

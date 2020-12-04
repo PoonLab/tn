@@ -6,15 +6,16 @@ library(parallel)
 #Creates a set of data-tables representing a graph of sequences, with the edges between those sequences representing the TN93 Distance.
 #The time and location associated with the sequence can be taken either directly from the sequence header, or provided separately in a .csv file
 #This set of data tables also includes the set of minimum retrospective edges from sequences at the newest time point.
-impTN93 <- function(iFile, reVars="_" , varInd=c(1, 2), varMan=NA, dateFormat="%Y", partQ=0.95){
+impTN93 <- function(iFile, reVars="_", varInd=c(1, 2),  addVarN=NA, addVarT=NA, 
+                    dateFormat="%Y", partQ=0.95){
   #@param iFile: The name/path of the input file (expecting tn93 output csv)
   #@param reVars: The regular expression used to extract variables from column headers. This is passed to strsplit, creating a vertex of values from the column header
   #@param varInd: A vector of numbers describing the order of variables in the split string. This should describe the index of the unique ID, the Timepoint and the location.
   #               ex. If the header would be split such that the 4th index is the Unique ID, then 4 should be the first number in this list
   #               ID and timepoint are currently required. If the location information is not available, it should be set as "0".
-  #@param varMan: Variables can be assigned manually with a csv containing columns of ID, Time point, and Location, in that order. Again, location is not mandatory. 
-  #               If this option is used, reVars and varInd, need not be provided. --CURRENTLY UNNUSED--
   #@param partQ: The proportion of the set that is to define "known" cases for the purposes of cluster growth. The remaining quantile is marked as new cases.
+  #@oaram addvarN: The names of additional variables beyond the second
+  #@param addVarTL The variable types of additional variables beyond the second
   #@return: A list of 3 Data frames. An edge list (weighted by TN93 genetic distance), a vertex list, 
   #         and a list of minimum edges, for the future establishment of a timepoint-based model
   
@@ -28,21 +29,48 @@ impTN93 <- function(iFile, reVars="_" , varInd=c(1, 2), varMan=NA, dateFormat="%
                    ID2=as.character(temp[1,(nrow(idt)+1):(2*nrow(idt))]), t2=as.Date(temp[2,(nrow(idt)+1):(2*nrow(idt))], format=dateFormat),
                    Distance = as.numeric(idt$Distance), stringsAsFactors= F)
   
+  #In the event of additional variables
+  if(length(varInd>2)){
+    
+    #A quick type-converter for the ability to input types
+    typeConv <- function(x, type) {
+      if(type%in%c("num", "numeric")) {return(as.numeric(x))}
+      if(type%in%c("str", "string", "char", "character")) {return(as.character(x))}
+      if(type%in%c("fac", "factor")) {return(as.factor(x))}
+      if(type%in%c("log", "logic", "logical", "bool", "boolean")) {return(as.logical(x))}
+      if(type%in%c("date", "time")) {return(as.Date(x, format=dateFormat))}
+    }
+    
+    #Add additional variables
+    for(i in 1:(length(varInd)-2)) {
+      el[,paste0(addVarN[i],"1"):=typeConv(temp[i+2,1:nrow(idt)], addVarT[i])]
+      el[,paste0(addVarN[i],"2"):=typeConv(temp[i+2,(nrow(idt)+1):(2*nrow(idt))], addVarT[i])]
+      
+      #Calculate differences if applicable
+      if(addVarT[i]%in%c("num", "numeric", "date", "time")) {
+        el[,paste0(addVarN[i],"Diff") := (paste0(addVarN[i],"1"))-(paste0(addVarN[i],"2"))]
+      }
+      
+      #Calculate shared value if applicable
+      ##-TODO: Fix this -##
+      if(addVarT[i]%in%c("fac", "factor")) {
+        el[,paste0(addVarN[i],"Match") := F]
+        el[(paste0(addVarN[i],"1"))%in%(paste0(addVarN[i],"2")), paste0(addVarN[i],"Match") :=T]
+      }
+    }
+  }
+  
   #Obtain the maximum time and time difference between the head and tail of each edge
+  ##-TODO: Check Necessity -##
   el[,"tMax" := pmax(t1,t2)] 
   el[,"tDiff" := (t1-t2)]
   
-  if(length(varInd)>2) {
-    el[,"l1" := temp1[varInd[[3]],]]
-    el[,"l2" := temp2[varInd[[3]],]]
-    el[,"lMatch" := .SD$l1 %in%.SD$l2, .(ID1, ID2)]
-  }
-  
   #Obtain list of unique sequences (also data table)
-  vl <- data.table(ID = c(el$ID1, el$ID2), Time = c(el$t1, el$t2), Location = c(el$l1, el$l2), stringsAsFactors=F)
+  vl <- data.table(ID = c(el$ID1, el$ID2), Time = c(el$t1, el$t2), stringsAsFactors=F)
   vl <- vl[match(unique(vl$ID), vl$ID),]
   
   #Vertices and edges lists together start a graph object
+  ##-TODO: Add extra Var functionality-##
   g <- list(v=vl[order(vl$Time),], e=el[order(el$tMax),])
   g$e[, "I" := .I]
   g$v[, "I" := .I]
@@ -180,6 +208,7 @@ GAICRun <- function(iG, maxDs=NA, runID=0, nCores=1) {
     subG <- compClu(iG, d)
     
     #Obtain recency (a sum value of all member tips collection date recency) for each cluster.
+    ##-TODO: Add extra Var functionality-##
     subG$c$Info[, "Recency" := sapply(subG$c$Membership, function(x) {
       mean(as.numeric(subG$v[ID%in%x, (Time)]) - min(as.numeric(subG$v[,(Time)])))
     })]
