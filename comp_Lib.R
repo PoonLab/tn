@@ -192,12 +192,13 @@ compClu <- function(iG, maxD) {
 
 #Run across a set of several subGraphs created at various filters, analyzing GAIC at each with clusterAnalyze
 ##- TO-DO: Monitor Thread-safety -##
-GAICRun <- function(iG, maxDs=NA, runID=0, nCores=1, plotGAIC=F) {
+GAICRun <- function(iG, maxDs=NA, runID=0, nCores=1, addVarInd=NA, plotGAIC=F) {
   #@param iG: Expecting the entire Graph, but in some cases may take a subset  
   #@param maxDs: A list of cutoff thresholds
   #@param runID: An identifier to stash this particular run and compare it to others
   #@param nCores: The number of cores for parallel functionality. -CURRENTLY SOMETIMES ERROR PRONE
   #@param plotGAIC: If true, plots a visual of the key result (GAIC)
+  #@param addVarInd: The indices of additional variables to be used.
   #@return: A data table of each runs cluster information.
   #         Both null and proposed model AIC values, as well as the AIC loss ($nullAIC, $modAIC and $GAIC)
   #         The max size, average size and number of singletons ($SizeMax, $MeanSize and $Singletons)
@@ -211,6 +212,12 @@ GAICRun <- function(iG, maxDs=NA, runID=0, nCores=1, plotGAIC=F) {
     maxDs <- seq(0 , max(steps), max(steps)/50) 
   }
   
+  #Initialize additional variables as the complete set of possible additional vars
+  addVarN <- colnames(subG$v[,!c("ID", "Time", "I", "New", "Cluster")])
+  if (!is.na(addVarInd)) {
+    addVarN <- addVarN[addVarInd]
+  } 
+  
   #This function runs through severel comparisons of a model weighted by predictors, to a model without those variables
   df <- mclapply(maxDs, function(d) {
     
@@ -221,9 +228,6 @@ GAICRun <- function(iG, maxDs=NA, runID=0, nCores=1, plotGAIC=F) {
     subG$c$Info[, "Recency" := sapply(subG$c$Membership, function(x) {
       mean(as.numeric(subG$v[ID%in%x, (Time)]) - min(as.numeric(subG$v[,(Time)])))
     })]
-    
-    #List any additional variables beyond time
-    addVarN <- colnames(subG$v[,!c("ID", "Time", "I", "New", "Cluster")])
     
     #Loop through additional variables 
     for(nm in addVarN){
