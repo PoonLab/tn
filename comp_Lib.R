@@ -1,4 +1,5 @@
-# Functions necessary for efficient data storage and processing
+#Supply functions necessary for efficient data storage and processing
+#Possibly unnecessary with heavy restructuring (ie. if graph creation can be avoided)
 library(dplyr)
 library(data.table)
 library(parallel)
@@ -14,8 +15,9 @@ impTN93 <- function(iFile, reVars="_", varInd=c(1, 2),  addVarN=NA, addVarT=NA,
   #               ex. If the header would be split such that the 4th index is the Unique ID, then 4 should be the first number in this list
   #               ID and timepoint are currently required. If the location information is not available, it should be set as "0".
   #@param partQ: The proportion of the set that is to define "known" cases for the purposes of cluster growth. The remaining quantile is marked as new cases.
-  #@oaram addvarN: The names of additional variables beyond the second
-  #@param addVarTL The variable types of additional variables beyond the second
+  #@oaram addvarN: The names of additional variables beyond the second.
+  #@param addVarT: The variable types of additional variables beyond the second. Accepts several strings.
+  #                "num" for numeric, "str" for characters, "bool" for logical, and "date" for dates (these must be formatted consistantly with other inputted dates) 
   #@return: A list of 3 Data frames. An edge list (weighted by TN93 genetic distance), a vertex list, 
   #         and a list of minimum edges, for the future establishment of a timepoint-based model
   
@@ -29,8 +31,15 @@ impTN93 <- function(iFile, reVars="_", varInd=c(1, 2),  addVarN=NA, addVarT=NA,
                    ID2=as.character(temp[1,(nrow(idt)+1):(2*nrow(idt))]), t2=as.Date(temp[2,(nrow(idt)+1):(2*nrow(idt))], format=dateFormat),
                    Distance = as.numeric(idt$Distance), stringsAsFactors= F)
   
+  #Obtain the maximum time and time difference between the head and tail of each edge
+  el[,"tMax" := pmax(t1,t2)] 
+  el[,"tDiff" := (t1-t2)]
+  
+  #Obtain list of unique sequences (also data table)
+  vl <- data.table(ID = c(el$ID1, el$ID2), Time = c(el$t1, el$t2), stringsAsFactors=F)
+  
   #In the event of additional variables
-  if(length(varInd>2)){
+  if(length(varInd)>2){
     
     #A quick type-converter for the ability to input types
     typeConv <- function(x, type) {
@@ -43,34 +52,34 @@ impTN93 <- function(iFile, reVars="_", varInd=c(1, 2),  addVarN=NA, addVarT=NA,
     
     #Add additional variables
     for(i in 1:(length(varInd)-2)) {
-      el[,paste0(addVarN[i],"1"):=typeConv(temp[i+2,1:nrow(idt)], addVarT[i])]
-      el[,paste0(addVarN[i],"2"):=typeConv(temp[i+2,(nrow(idt)+1):(2*nrow(idt))], addVarT[i])]
       
-      #Calculate differences if applicable
+      #Add variables named based on character strings in addVarN
+      #These variables types are based on addVarT, converted with typeConv()
+      v1 <- (paste0(addVarN[i],"1"))
+      v2 <- (paste0(addVarN[i],"2"))
+      el[,(v1):=typeConv(temp[i+2,1:nrow(idt)], addVarT[i])]
+      el[,(v2):=typeConv(temp[i+2,(nrow(idt)+1):(2*nrow(idt))], addVarT[i])]
+      
+      #Add this variable to the vertex list
+      vl[, (addVarN[i]) := unlist(list(el[, get(v1)], el[, get(v2)]))]
+      
+      #Calculate differences for edges if applicable
       if(addVarT[i]%in%c("num", "numeric", "date", "time")) {
-        el[,paste0(addVarN[i],"Diff") := (paste0(addVarN[i],"1"))-(paste0(addVarN[i],"2"))]
+        el[,paste0(addVarN[i],"Diff") := el[,..v1]-el[,..v2]]
       }
       
       #Calculate shared value if applicable
-      ##-TODO: Fix this -##
-      if(addVarT[i]%in%c("fac", "factor")) {
+      if(addVarT[i]%in%c("fac", "factor", "char", "string", "str", "character")) {
         el[,paste0(addVarN[i],"Match") := F]
-        el[(paste0(addVarN[i],"1"))%in%(paste0(addVarN[i],"2")), paste0(addVarN[i],"Match") :=T]
+        el[get(v1) == get(v2), paste0(addVarN[i],"Match") := T]
       }
     }
   }
   
-  #Obtain the maximum time and time difference between the head and tail of each edge
-  ##-TODO: Check Necessity -##
-  el[,"tMax" := pmax(t1,t2)] 
-  el[,"tDiff" := (t1-t2)]
-  
-  #Obtain list of unique sequences (also data table)
-  vl <- data.table(ID = c(el$ID1, el$ID2), Time = c(el$t1, el$t2), stringsAsFactors=F)
+  #Collapse length of edge list into vertex list (1 row per sequence)
   vl <- vl[match(unique(vl$ID), vl$ID),]
   
   #Vertices and edges lists together start a graph object
-  ##-TODO: Add extra Var functionality-##
   g <- list(v=vl[order(vl$Time),], e=el[order(el$tMax),])
   g$e[, "I" := .I]
   g$v[, "I" := .I]
@@ -182,12 +191,13 @@ compClu <- function(iG, maxD) {
 }
 
 #Run across a set of several subGraphs created at various filters, analyzing GAIC at each with clusterAnalyze
-##-TO-DO: Make threadsafe. -##
-GAICRun <- function(iG, maxDs=NA, runID=0, nCores=1) {
+##- TO-DO: Monitor Thread-safety -##
+GAICRun <- function(iG, maxDs=NA, runID=0, nCores=1, plotGAIC=F) {
   #@param iG: Expecting the entire Graph, but in some cases may take a subset  
   #@param maxDs: A list of cutoff thresholds
   #@param runID: An identifier to stash this particular run and compare it to others
-  #@param nCores: The number of cores for parallel functionality. -CURRENTLY NOT THREADSAFE
+  #@param nCores: The number of cores for parallel functionality. -CURRENTLY SOMETIMES ERROR PRONE
+  #@param plotGAIC: If true, plots a visual of the key result (GAIC)
   #@return: A data table of each runs cluster information.
   #         Both null and proposed model AIC values, as well as the AIC loss ($nullAIC, $modAIC and $GAIC)
   #         The max size, average size and number of singletons ($SizeMax, $MeanSize and $Singletons)
@@ -208,29 +218,67 @@ GAICRun <- function(iG, maxDs=NA, runID=0, nCores=1) {
     subG <- compClu(iG, d)
     
     #Obtain recency (a sum value of all member tips collection date recency) for each cluster.
-    ##-TODO: Add extra Var functionality-##
     subG$c$Info[, "Recency" := sapply(subG$c$Membership, function(x) {
       mean(as.numeric(subG$v[ID%in%x, (Time)]) - min(as.numeric(subG$v[,(Time)])))
     })]
     
-    xMag = mean(subG$c$Info[(New)>0, (Recency)]) / mean(subG$c$Info[(New)==0, (Recency)])
+    #List any additional variables beyond time
+    addVarN <- colnames(subG$v[,!c("ID", "Time", "I", "New", "Cluster")])
+    
+    #Loop through additional variables 
+    for(nm in addVarN){
+      
+      #For categorical data, a string is returned and factorized
+      if(typeof(subG$v[, (nm)]) %in% c("integer", "character")) {
+        #The most common value is used to represent the value of a given cluster
+        subG$c$Info[, (nm) := as.factor(sapply(subG$c$Membership, function(x) {
+          t <- table(subG$v[(ID)%in%x, get(nm)])
+          names(t[which.max(t)])
+        }))]
+      }
+      
+      #For numeric data, an average is returned
+      ## - UNTESTED - ##
+      if(typeof(subG$v[, (nm)]) %in% c("double")) {
+        subG$c$Info[, (nm) := sapply(subG$c$Membership, function(x) {mean(x)})]
+      }
+    }
+    
+    #Create proposed model formula dynamically based on number of new dependant variables
+    propForm <- as.formula(paste0("New~", paste(colnames(subG$c$Info)[-2], collapse="+")))
     
     #Compares clusters with weights obtained through variables to clusters with even weights
-    fit1 <- glm(formula = New~Old+Recency, data = subG$c$Info, family = "poisson")
+    fit1 <- glm(formula = propForm, data = subG$c$Info, family = "poisson")
     fit2 <- glm(formula = New~Old, data = subG$c$Info, family = "poisson")
     
     #GAIC is the difference between the AIC of two models
     #Put another way, this is the AIC loss associated with predictive variables
     #Other descriptive data characteristics
-    data.frame(modAIC=fit1$aic, nullAIC=fit2$aic, GAIC=(fit1$aic-fit2$aic),
+    dfi <- data.frame(modAIC=fit1$aic, nullAIC=fit2$aic, GAIC=(fit1$aic-fit2$aic),
                GrowthTot=sum(subG$c$Info[,(New)]), Singletons=nrow(subG$c$Info[(Old)==1,]), MeanSize=mean(subG$c$Info[,(Old)]),
                GrowthMax=max(subG$c$Info[,(New)])[[1]], GrowthMaxID=which.max(subG$c$Info[,(New)]), nGrowing=nrow(subG$c$Info[(New)>0,]),
-               SizeMax=max(subG$c$Info[,(Old)]), SizeMaxID=which.max(subG$c$Info[,(Old)]), xMag =xMag)
+               SizeMax=max(subG$c$Info[,(Old)]), SizeMaxID=which.max(subG$c$Info[,(Old)]))
+    
+    #To track the potentially many variable effect sizes
+    for(cf in names(fit1$coefficients)){
+      dfi[,paste0(cf, "_Coefficient")]=fit1$coefficients[cf]
+    }
+    
+    return(dfi)
   }, mc.cores=nCores)
   
+  #Convert output to data table and add reference labels based on the run information
   dt <- as.data.table(bind_rows(df))
   dt[,"RunID" := runID]
   dt[,"MaxDistance" := maxDs]
+  
+  #For quick visual feedback
+  if(plotGAIC) {
+    plot(dt$MaxDistance, dt$GAIC, xlab="Threshold", ylab="AIC Loss")
+    lines(dt$MaxDistance, dt$GAIC)
+    abline(h=0, lty=2)
+    abline(v=dt$MaxDistance[which.max(abs(dt$GAIC))], lty=2)
+  }
   
   return(dt)
 }
