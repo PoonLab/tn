@@ -2,58 +2,117 @@ require(ape)
 require(rjson)
 require(digest)
 
-#Obtain n samples from a given fasta file, save this to a directory
-sampleFasta <- function(iFile, sampsDir, n=100){
+#Split new cases from old cases based on a Marker
+newSplit <- function(iFile, newMark) {
+  #@param iFile: Input file (a full set of fasta sequences)
+  #@param newMark: The marker defining new sequences from a set of time-defined seqs
+  #                This must be something that exists in the headers of ONLY new sequences
   
+  #Take fasta file input and identify new sequences
+  seqs <- read.FASTA(iFile)
+  iNewSeq <- grepl(newMark, names(seqs))
+  
+  #Two files are made to delimit old and new sequences
+  oFileO <- paste0(gsub(".fasta$", "_Old.fasta", iFile))
+  oFileN <- paste0(gsub(".fasta$", "_New.fasta", iFile))
+  write.FASTA(seqs[!iNewSeq], oFileO)
+  write.FASTA(seqs[iNewSeq], oFileN)
+}
+
+#Obtain n random samples from a given fasta file, save this to a directory. 
+#Each file in the directory will simply be labelled as "samp<i>.fasta"
+#Alternatively - If a marker for "New" sequences is added, this can be used 
+sampleFasta <- function(iFile, sampsDir, n=100, prop=0.8, short=NA, nFile=NA) {
+  #@param iFile: Input file (For robustness tests, this is a filtered set of fasta sequences)
+  #@param sampsDir: The filepath to the output directory for samples
+  #@param n: The number of random samples to take.
+  #@param nFile: The file containing specifically the newest sequences
+  #@param prop: The proportion of the sequences to be taken as a random sample
+  #@param short: The short form label to be used for these sequences.
+  #              This is defaulted to the name of the fasta file if not supplied
+  #              Any "_" characters in short names will be replaced with "-"
+  
+  #Take file input
   seqs <- read.FASTA(iFile)
   
+  #Standardize sampsDir to include terminal / and create dir if it doesn't exist
+  sampsDir <- gsub("$|/$", "/", sampsDir)
+  if(!file.exists(sampsDir)) {dir.create(sampsDir)}
+  
+  #Default nickname is that of the fasta file
+  if(is.na(short)){
+    temp <- strsplit(iFile, "/|\\.")[[1]]
+    short <- temp[length(temp)-1]
+    short <- gsub("_", "-", short)
+  }
+  
+  #Sample and write to sample file 
   for(i in 1:n) {
-    samp <- sample(seqs, 0.8*(length(seqs)), replace = F)
-    s <- paste0(sampsDir, "/samp", i, ".fasta")
-    write.FASTA(samp, s)
+    samp <- sample(seqs, prop*(length(seqs)), replace = F)
+    oFile <- paste0(sampsDir, short, "_samp", i, ".fasta")
+    write.FASTA(samp, oFile)
+  }
+  
+  #Attach new sequences to the set of samples to obtain sets of "complete" fastas
+  if(is.na(nFile)) {nFile <- gsub("_Old", "_New", iFile)}
+  if(file.exists(nFile)) {
+    
+    seqsN <- read.FASTA(oFileN)
+    seqFiles <- list.files(sampsDir)
+    
+    #Loop through samples
+    for(i in 1:length(seqFiles)) {
+      iSeqs <- read.FASTA(paste0(sampsDir, seqFiles[i]))
+      oSeqs <- c(iSeqs, seqsN)
+      oFile <- paste0(sampsDir, short, "_full", i, ".fasta")
+      write.FASTA(oSeqs, oFile)
+    }
   }
 }
 
 #Run FastTree on a set of sequences generated through sample fasta
-multiRun <- function(sampsDir) {
+#The output is also saved to the samps directory
+multiTree <- function(sampsDir) {
+  #@param sampsDir: The filepath to the output directory for samples
   
-  n <- length(list.files(sampsDir, pattern = "\\.fasta$"))
+  #Pull sequence files from sample directory
+  sampsDir <- gsub("$|/$", "/", sampsDir)
+  seqFiles <- list.files(sampsDir, pattern = "\\_samp[0-9]+.fasta$")
+  n <- length(seqFiles)
   
+  #Standardize sampsDir to include terminal / and standardize nickname
+  short <- (strsplit(seqFiles[1], "_")[[1]])[1]
+  
+  #Create FastTree for each. Logfiles are recorded for future extraction of stats.
+  #This uses GTR methods, and creates a Newick format tree
   for(i in 1:n) {
-    print(i)
-    system(paste0("FastTree -gtr -log ", sampsDir, "/log", i, ".txt ",
-                  "-nt ", sampsDir, "/samp", i, ".fasta ",
-                  "> ", sampsDir, "/tree", i, ".nwk"))
+    system(paste0("FastTree -gtr -log ", sampsDir, short, "_log", i, ".txt ",
+                  "-nt ", sampsDir, short, "_samp", i, ".fasta ",
+                  "> ", sampsDir, short, "_tree", i, ".nwk"))
   }
 }
+
+##POINT OF REVIEW##
 
 #A wrapper for the python translator script
-#This translates the FastTree output into a .json file which can be used in .jplace file for 
-translator <- function(sampsDir) {
+#This translates the FastTree output into a .json "stats" file 
+multiTranslator <- function(sampsDir, fPath) {
+  #@param sampsDir: The filepath to the output directory for samples
+  #@param fPath: Path to the python translator function
+
+  #Standardize sampsDir to include terminal / and standardize nickname
+  sampsDir <- gsub("$|/$", "/", sampsDir)
+  short <- (strsplit(logFiles[1], "_")[[1]])[1]
+    
+  #Pull log files from sample directory
+  logFiles <- list.files(sampsDir, pattern = "\\.txt$")
+  n <- length(logFiles)
   
-  files <- list.files(sampsDir, patter="\\.txt$")
-  
-  for(i in 1:length(files)) {
-    system(paste0("python3 translator.py -i ", sampsDir, "/", files[i],
-                  " -o ", sampsDir, "/ststats", i, ".json"))
+  #For each log file, create a stats 
+  for(i in 1:n) {
+    system(paste0("python3", fPath, "-i ", sampsDir, short, "_log",
+                  " -o ", sampsDir, short, "_stats", i, ".json"))
   }
-}
-
-#Effectively the reverse of makeNSFile
-makeFiltFile <-function(iFile, new, oFile) {
-  seqs <- read.FASTA(iFile)
-  seqs <- seqs[!grepl(new, names(seqs))]
-  
-  write.FASTA(seqs, oFile)
-}
-
-#Find new sequences in a complete input file and separate them in a fast
-#New sequences are based on a series of strings in the 
-getNS <- function(iFile, oFile, new){
-  
-  seqs <- read.FASTA(iFile)
-  seqs <- seqs[grepl(new, names(seqs))]
-  write.FASTA(seqs, oFile)
 }
 
 #A similar function to the taxit create function found in pplacer

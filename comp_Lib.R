@@ -2,13 +2,13 @@
 #Possibly unnecessary with heavy restructuring (ie. if graph creation can be avoided)
 library(dplyr)
 library(data.table)
-library(parallel)
+library(parallel) #Some thread safety problems
 
 #Creates a set of data-tables representing a graph of sequences, with the edges between those sequences representing the TN93 Distance.
 #The time and location associated with the sequence can be taken either directly from the sequence header, or provided separately in a .csv file
 #This set of data tables also includes the set of minimum retrospective edges from sequences at the newest time point.
 impTN93 <- function(iFile, reVars="_", varInd=c(1, 2),  addVarN=NA, addVarT=NA, 
-                    dateFormat="%Y", partQ=0.95){
+                    dateFormat="%Y", partQ=0.95) {
   #@param iFile: The name/path of the input file (expecting tn93 output csv)
   #@param reVars: The regular expression used to extract variables from column headers. This is passed to strsplit, creating a vertex of values from the column header
   #@param varInd: A vector of numbers describing the order of variables in the split string. This should describe the index of the unique ID, the Timepoint and the location.
