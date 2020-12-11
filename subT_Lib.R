@@ -335,6 +335,9 @@ if(F){
   varInd <- c(1,2)
   dateFormat <- "%Y"
   
+  #tFile <- "~/Data/NAlberta/naFullTree/old.treefile"
+  #gFile <- "~/Data/NAlberta/naFullTree/old_growth.tree"
+  
   #tFile <- "~/Data/Seattle/IqTree_Bootstrap/SeattleB_PRO_Filt.fasta.treefile"
   #gFile <- "~/Data/Seattle/IqTree_Bootstrap/st.tre"
   
@@ -344,8 +347,8 @@ if(F){
   #tFile <- "~/Data/Tennessee/tn_DiagTreeData/tn.refpkg/tn.tre"
   #gFile <- "~/Data/Tennessee/tn_DiagTreeData/tnTGrowth.tre"
   
-  tFile <- "~/Data/Seattle/stKingTrees/stKing_PRO_H_Filt.fasta.treefile"
-  gFile <- "~/Data/Seattle/stKingTrees/stKing.tre"
+  #tFile <- "~/Data/Seattle/stKingTrees/stKing_PRO_H_Filt.fasta.treefile"
+  #gFile <- "~/Data/Seattle/stKingTrees/stKing.tre"
 
   #tFile <- "~/Data/NAlberta/IqTree_Bootstrap/na.refpkg/NorthAlbertaB_PRO_Filt.fasta.treefile"
   #gFile <- "~/Data/NAlberta/IqTree_Bootstrap/na.tre"

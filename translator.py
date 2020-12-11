@@ -69,8 +69,7 @@ if __name__ == '__main__':
 
         json.dump(oText, oFile, indent=4)
 
-
-    if args.program == "IQ-TREE multicore version 1.6.12":
+    if any(x in args.program for x in ["iqtree", "IQ-TREE", "IqTree", "iq-tree", "Iq-Tree"]):
         pattern="Rate parameters:"
         oText = {}
         for line in iFile:

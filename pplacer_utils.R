@@ -58,11 +58,10 @@ sampleFasta <- function(iFile, sampsDir, n=100, prop=0.8, short=NA, nFile=NA) {
   if(file.exists(nFile)) {
     
     seqsN <- read.FASTA(oFileN)
-    seqFiles <- list.files(sampsDir)
     
     #Loop through samples
-    for(i in 1:length(seqFiles)) {
-      iSeqs <- read.FASTA(paste0(sampsDir, seqFiles[i]))
+    for(i in 1:n) {
+      iSeqs <- read.FASTA(paste0(sampsDir, short, "_samp", i, ".fasta"))
       oSeqs <- c(iSeqs, seqsN)
       oFile <- paste0(sampsDir, short, "_full", i, ".fasta")
       write.FASTA(oSeqs, oFile)
@@ -92,8 +91,6 @@ multiTree <- function(sampsDir) {
   }
 }
 
-##POINT OF REVIEW##
-
 #A wrapper for the python translator script
 #This translates the FastTree output into a .json "stats" file 
 multiTranslator <- function(sampsDir, fPath) {
@@ -101,39 +98,54 @@ multiTranslator <- function(sampsDir, fPath) {
   #@param fPath: Path to the python translator function
 
   #Standardize sampsDir to include terminal / and standardize nickname
+  #In addition, pull log files from sample directory
   sampsDir <- gsub("$|/$", "/", sampsDir)
+  logFiles <- list.files(sampsDir, pattern = "\\_log[0-9]+.txt$")
   short <- (strsplit(logFiles[1], "_")[[1]])[1]
-    
-  #Pull log files from sample directory
-  logFiles <- list.files(sampsDir, pattern = "\\.txt$")
   n <- length(logFiles)
   
-  #For each log file, create a stats 
+  #For each log file, create a stats json file
   for(i in 1:n) {
-    system(paste0("python3", fPath, "-i ", sampsDir, short, "_log",
+    system(paste0("python3 ", fPath, " -i ", sampsDir, short, "_log", i, ".txt",
                   " -o ", sampsDir, short, "_stats", i, ".json"))
   }
 }
 
-#A similar function to the taxit create function found in pplacer
-taxitCreate <- function(treeF, logF, statsF, locus="pol_SubB", refpkg) {
+#A wrapper for the taxit create function found in pplacer
+#Can be run in Isolation
+taxitCreate <- function(treeF, logF, statsF, fullF, oDir, locus="LOCUS", noCopies=F) {
+  #@param treeF: Path to the newick tree file
+  #@param fullF: Path to the full alignment file (new + old seqs)
+  #@param logF: Path to the log file from the tree building process
+  #@param statsF: Path to the stats .json file created by translator
+  #@param locus: Extra information required for the summary json
+  #@param oDir: The output refpackage directory name
+  #@param noCopies: An option to save space and clutter by destroying original copies after their placement in a refpackage
   
-  #Copy files and update filenames to trim complete paths
-  file.copy(logF, refpkg)
-  file.copy(treeF, refpkg)
-  file.copy(statsF, refpkg)
-  logF <- tail(strsplit(logF, "/")[[1]],1)
-  treeF <- tail(strsplit(treeF, "/")[[1]],1)
-  statsF <- tail(strsplit(statsF, "/")[[1]],1)
+  #Standardize oDir to include terminal / and create dir if it doesn't exist
+  oDir <- gsub("$|/$", "/", oDir)
+  if(!file.exists(oDir)) {dir.create(oDir)}
+  
+  #Copy files and update filenames
+  file.copy(treeF, oDir)  
+  file.copy(logF, oDir)
+  file.copy(statsF, oDir)
+  file.copy(fullF, oDir)
+  
+  #Trim complete filenames
+  logFT <- tail(strsplit(logF, "/")[[1]],1)
+  treeFT <- tail(strsplit(treeF, "/")[[1]],1)
+  statsFT <- tail(strsplit(statsF, "/")[[1]],1)
+  fullFT <- tail(strsplit(fullF, "/")[[1]],1)
   
   #Create contents JSON file
-  conF <- file(paste0(refpkg, "/CONTENTS.json"))
+  conF <- file(paste0(oDir, "/CONTENTS.json"))
   conText <- toJSON(list(
     "files" = list(
-      "aln_fasta" = "fullAln.fasta" ,
-      "phylo_model" = statsF,
-      "tree" = treeF,
-      "tree_stats" = logF
+      "aln_fasta" = fullFT,
+      "phylo_model" = statsFT,
+      "tree" = treeFT,
+      "tree_stats" = logFT
     ),
     "rollback"=NULL,
     "log"= c("Stripped refpkg (removed 0 files)",
@@ -145,10 +157,10 @@ taxitCreate <- function(treeF, logF, statsF, locus="pol_SubB", refpkg) {
     ),
     "rollforward"=NULL,
     "md5"= list(
-      "aln_fasta" = digest("fullAln.fasta", algo = "md5"),
-      "phylo_model" = digest(logF, algo = "md5"),
-      "tree" = digest(treeF, algo = "md5"),
-      "tree_stats" = digest(logF, algo = "md5")
+      "aln_fasta" = digest(fullFT, algo = "md5"),
+      "phylo_model" = digest(logFT, algo = "md5"),
+      "tree" = digest(treeFT, algo = "md5"),
+      "tree_stats" = digest(logFT, algo = "md5")
     )
   ), indent=4)
   write(conText, conF)
@@ -156,46 +168,85 @@ taxitCreate <- function(treeF, logF, statsF, locus="pol_SubB", refpkg) {
 }
 
 #A function to call taxit create many times on a directory of repeated runs
-multiTaxit <- function(sampsDir, n, short="", nSeqs, oDir) {
+#This is expected to sort through hundreds of files in a single folder, sorting sets into refpackages
+multiTaxit <- function(sampsDir, oDir=NA, locus="LOCUS") {
+  #@param sampsDir: The filepath to the output directory for samples
+  #@param oDir: The output directory for the sample directory
+  #@param locus: Passed to taxit create for the Contents json. 
   
-  oDir <- paste0(oDir, "/", short, "refpackages")
-  dir.create(oDir)
+  #Standardize sampsDir and oDir to include terminal / and create dir if it doesn't exist
+  sampsDir <- gsub("$|/$", "/", sampsDir)
   
-  #
-  seqs <- lapply(1:n, function(i) {
-    samp <- paste0(sampsDir, "/", short, "samp", i, ".fasta")
-    seqs <- c(read.FASTA(samp), read.FASTA(nSeqs))
-    return(seqs)
-  })
+  #Obtain nickname and sample number from sample directory
+  seqFiles <- list.files(sampsDir, pattern = "\\_samp[0-9]+.fasta$")
+  n <- length(seqFiles)
+  short <- (strsplit(seqFiles[1], "_")[[1]])[1]
   
+  #Initialize output directory
+  if(is.na(oDir)) {oDir <- paste0(sampsDir, short, "_refpackages")}
+  oDir <- gsub("$|/$", "/", oDir)
+  if(!file.exists(oDir)) {dir.create(oDir)}
+  
+  #Iterate through listed files and create refpackages for each.
   for (i in 1:n) {
-    #File Manipulation and directory setup 
-    refpkg <- paste0(oDir, "/", short, i, ".refpkg")
-    dir.create(refpkg)
     
-    write.FASTA(seqs[[i]], paste0(refpkg, "/fullAlign.fasta"))
+    treeF <- paste0(sampsDir, short, "_tree", i, ".nwk")
+    logF <- paste0(sampsDir, short, "_log", i, ".txt")
+    statsF <- paste0(sampsDir, short, "_stats", i, ".json")
+    fullF <- paste0(sampsDir, short, "_full", i, ".fasta")
     
-    treeF <- paste0(sampsDir, "/", short, "tree", i, ".nwk")
-    logF <- paste0(sampsDir, "/", short, "log", i, ".txt")
-    statsF <- paste0(sampsDir, "/", "st", "stats", i, ".json")
+    refDir <- paste0(oDir, short, "_refpkg", i)
     
-    taxitCreate(treeF=treeF, logF=logF, statsF=statsF, refpkg = refpkg)
+    taxitCreate(treeF, logF, statsF, fullF, refDir, locus, noCopies = T)
+    
+    #Tidy up original files
+    file.remove(treeF)
+    file.remove(logF)
+    file.remove(statsF)
+    file.remove(fullF)
   }
 }
 
 #Runs pplacer on all files in a directory to obtain placement files
-multiPplacer <- function(refDir, oDir, short, n=100) {
+multiPplacer <- function(iDir, oDir) {
+  #@param iDir: Input directory of reference packages
+  #@param oDir: Output directory of .jplace files
+  
+  #Standardize iDir and oDir to include terminal / and create dir if it doesn't exist
+  iDir <- gsub("$|/$", "/", iDir)
+  oDir <- gsub("$|/$", "/", oDir)
+  if(!file.exists(oDir)) {dir.create(oDir)}
+  
+  #Obtain nickname and sample number from sample directory
+  refDirs <- list.files(iDir, pattern = "\\_refpkg[0-9]+$")
+  n <- length(refDirs)
+  short <- (strsplit(refDirs[1], "_")[[1]])[1]
+  
   for (i in 1:n) {
-    f <- paste0(refDir, "/", short, i, ".refpkg")
-    system(paste0("pplacer -c ", f, " -o ", oDir, "/jplaceFile.jplace", i, " ", f, "/fullAlign.fasta"))
+    refDir <- paste0(iDir, short, "_refpkg", i)
+    system(paste0("pplacer -c ", refDir, " -o ", oDir, short, i, ".jplace", " ", 
+                  refDir, "/", short, "_full", i,  ".fasta"))
     
   }
 }
 
 #Runs guppy on all files in a directory to obtain growth files (inputs for tree growth method)
-multiGuppy <- function(refDir, oDir, n=100) {
+multiGuppy <- function(iDir, oDir) {
+  #@param iDir: Input directory of .jplace files
+  #@param oDir: Output directory of growth files
+  
+  #Standardize iDir and oDir to include terminal / and create dir if it doesn't exist
+  iDir <- gsub("$|/$", "/", iDir)
+  oDir <- gsub("$|/$", "/", oDir)
+  if(!file.exists(oDir)) {dir.create(oDir)}
+  
+  #Obtain nickname and sample number from sample directory
+  jpFiles <- list.files(iDir, pattern = "\\.jplace$")
+  n <- length(jpFiles)
+  short <- (strsplit(jpFiles[1], "_")[[1]])[1]
+  
   for (i in 1:n) {
-    f <- paste0(refDir, "/jplaceFile.jplace", i)
-    system(paste0("guppy sing ", f, " -o ", oDir, "/growthFile", i, ".tree"))
+    jpFile <- paste0(iDir, short, i, ".jplace")
+    system(paste0("guppy sing ", jpFile, " -o ", oDir, short, "_growth", i, ".tree"))
   }
 }
