@@ -57,7 +57,7 @@ sampleFasta <- function(iFile, sampsDir, n=100, prop=0.8, short=NA, nFile=NA) {
   if(is.na(nFile)) {nFile <- gsub("_Old", "_New", iFile)}
   if(file.exists(nFile)) {
     
-    seqsN <- read.FASTA(oFileN)
+    seqsN <- read.FASTA(nFile)
     
     #Loop through samples
     for(i in 1:n) {
@@ -113,14 +113,13 @@ multiTranslator <- function(sampsDir, fPath) {
 
 #A wrapper for the taxit create function found in pplacer
 #Can be run in Isolation
-taxitCreate <- function(treeF, logF, statsF, fullF, oDir, locus="LOCUS", noCopies=F) {
+taxitCreate <- function(treeF, logF, statsF, fullF, oDir, locus="LOCUS") {
   #@param treeF: Path to the newick tree file
   #@param fullF: Path to the full alignment file (new + old seqs)
   #@param logF: Path to the log file from the tree building process
   #@param statsF: Path to the stats .json file created by translator
   #@param locus: Extra information required for the summary json
   #@param oDir: The output refpackage directory name
-  #@param noCopies: An option to save space and clutter by destroying original copies after their placement in a refpackage
   
   #Standardize oDir to include terminal / and create dir if it doesn't exist
   oDir <- gsub("$|/$", "/", oDir)
@@ -160,7 +159,7 @@ taxitCreate <- function(treeF, logF, statsF, fullF, oDir, locus="LOCUS", noCopie
       "aln_fasta" = digest(fullFT, algo = "md5"),
       "phylo_model" = digest(logFT, algo = "md5"),
       "tree" = digest(treeFT, algo = "md5"),
-      "tree_stats" = digest(logFT, algo = "md5")
+      "tree_stats" = digest(statsFT, algo = "md5")
     )
   ), indent=4)
   write(conText, conF)

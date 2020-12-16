@@ -16,8 +16,6 @@ impTN93 <- function(iFile, reVars="_", varInd=c(1, 2),  addVarN=NA, addVarT=NA,
   #               ID and timepoint are currently required. If the location information is not available, it should be set as "0".
   #@param partQ: The proportion of the set that is to define "known" cases for the purposes of cluster growth. The remaining quantile is marked as new cases.
   #@oaram addvarN: The names of additional variables beyond the second.
-  #@param addVarT: The variable types of additional variables beyond the second. Accepts several strings.
-  #                "num" for numeric, "str" for characters, "bool" for logical, and "date" for dates (these must be formatted consistantly with other inputted dates) 
   #@return: A list of 3 Data frames. An edge list (weighted by TN93 genetic distance), a vertex list, 
   #         and a list of minimum edges, for the future establishment of a timepoint-based model
   
@@ -41,35 +39,45 @@ impTN93 <- function(iFile, reVars="_", varInd=c(1, 2),  addVarN=NA, addVarT=NA,
   #In the event of additional variables
   if(length(varInd)>2){
     
-    #A quick type-converter for the ability to input types
-    typeConv <- function(x, type) {
-      if(type%in%c("num", "numeric")) {return(as.numeric(x))}
-      if(type%in%c("str", "string", "char", "character")) {return(as.character(x))}
-      if(type%in%c("fac", "factor")) {return(as.factor(x))}
-      if(type%in%c("log", "logic", "logical", "bool", "boolean")) {return(as.logical(x))}
-      if(type%in%c("date", "time")) {return(as.Date(x, format=dateFormat))}
-    }
-    
     #Add additional variables
     for(i in 1:(length(varInd)-2)) {
       
       #Add variables named based on character strings in addVarN
+      addVars <- temp[2+i,]
+      
+      #To catch the event that the inputted variable is likely a date
+      #This is determined if over half of the input can be converted to a date
+      if(sum(sapply(addVars, function(x) {
+        o <- tryCatch({as.Date(x, format=dateFormat)}, 
+                      error=function(cond){return(NA)})
+        return(is.na(o))
+      }))/length(addVars)<0.5) {
+        
+        addVars <- as.Date(addVars, format=dateFormat)
+        
+      } else {
+        
+        #If not a date, type.convert automatically converts the variable typing
+        addVars <- type.convert(addVars)
+      }
+        
+      #Add variables named based on character strings in addVarN
       #These variables types are based on addVarT, converted with typeConv()
       v1 <- (paste0(addVarN[i],"1"))
       v2 <- (paste0(addVarN[i],"2"))
-      el[,(v1):=typeConv(temp[i+2,1:nrow(idt)], addVarT[i])]
-      el[,(v2):=typeConv(temp[i+2,(nrow(idt)+1):(2*nrow(idt))], addVarT[i])]
+      el[,(v1):= addVars[1:nrow(idt)]]
+      el[,(v2):= addVars[(nrow(idt)+1):(2*nrow(idt))]]
       
       #Add this variable to the vertex list
       vl[, (addVarN[i]) := unlist(list(el[, get(v1)], el[, get(v2)]))]
       
       #Calculate differences for edges if applicable
-      if(addVarT[i]%in%c("num", "numeric", "date", "time")) {
+      if(typeof(addVars[1])%in%c("integer", "double", "date")) {
         el[,paste0(addVarN[i],"Diff") := el[,..v1]-el[,..v2]]
       }
       
       #Calculate shared value if applicable
-      if(addVarT[i]%in%c("fac", "factor", "char", "string", "str", "character")) {
+      if(typeod(addVars[1])%in%c("factor", "logical")) {
         el[,paste0(addVarN[i],"Match") := F]
         el[get(v1) == get(v2), paste0(addVarN[i],"Match") := T]
       }

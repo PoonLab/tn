@@ -5,16 +5,14 @@ require("phytools") #Literally just for midpoint rooting. Use APE for this in fu
 require("parallel") 
 
 #Import Tree Data and output an annotated tree with additional information to assist clustering
-impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y", varMan=NA){
+impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y",  addVarN=NA, addVarT=NA){
   #@param iFile: The name/path of the input file (expecting a newick file)
   #@param iFile: The name/path of the input file (expecting tn93 output csv)
   #@param reVars: The regular expression used to extract variables from column headers. This is passed to strsplit, creating a vertex of values from the column header
   #@param varInd: A vector of numbers describing the order of variables in the split string. This should describe the index of the unique ID, the Timepoint and the location.
   #               ex. If the header would be split such that the 4th index is the Unique ID, then 4 should be the first number in this list
   #               ID and timepoint are currently required. If the location information is not available, it should be set as "0".
-  #@param varMan: Variables can be assigned manually with a csv containing columns of ID, Time point, and Location, in that order. Again, location is not mandatory. 
-  #               If this option is used, reVars and varInd, need not be provided. --CURRENTLY UNNUSED--
-  #@param nCore: The number of cores used for multi-threading. --CURRENTLY UNNUSED--
+  #@oaram addvarN: The names of additional variables beyond the second.
   #@return: An ape phylo object annotated with the additional data summarized below
   #    $v: A data frame storing vertex information ($ID, $Time, and, if given $Location)
   #    $n: A list of each node's descendants ($Des), as well as information used to obtain clusters from nodes 
@@ -29,9 +27,37 @@ impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y", varMan=NA)
   #Obtain lists of sequence ID and Time
   #Reformat edge list as data table object with predictors extracted from sequence header
   temp <- sapply(t$tip.label, function(x) {(strsplit(x, reVars)[[1]])[varInd]})
+  
   t$v <- data.table(ID=temp[1,],  
-                    Time=ifelse(dateFormat=NA, as.Date(temp[2,], format=dateFormat)), 
+                    Time= as.Date(temp[2,], format=dateFormat), 
                     stringsAsFactors = F)
+  
+  #In the event of additional variables
+  if(length(varInd)>2){
+    
+    #Add additional variables
+    for(i in 1:length(addVarN)) {
+      
+      #Add variables named based on character strings in addVarN
+      addVars <- temp[2+i,]
+    
+      #To catch the event that the inputted variable is likely a date
+      #This is determined if over half of the input can be converted to a date
+      if(sum(sapply(addVars, function(x) {
+        o <- tryCatch({as.Date(x, format=dateFormat)}, 
+                 error=function(cond){return(NA)})
+        return(is.na(o))
+      }))/length(addVars)<0.5) {
+        addVars <- as.Date(addVars, dateFormat)
+      } else {
+        
+        #If not a date, type.convert automatically converts the variable typing
+        addVars <- type.convert(addVars)
+      }
+      
+      t$v[, (addVar[i]):=addVars]
+    }
+  }
   
   #Obtain the full set of descendants at each node
   t$n <- list()
@@ -335,8 +361,8 @@ if(F){
   varInd <- c(1,2)
   dateFormat <- "%Y"
   
-  #tFile <- "~/Data/NAlberta/naFullTree/old.treefile"
-  #gFile <- "~/Data/NAlberta/naFullTree/old_growth.tree"
+  tFile <- "~/Data/NAlberta/naFullTree/old.treefile"
+  gFile <- "~/Data/NAlberta/naFullTree/old_growth.tree"
   
   #tFile <- "~/Data/Seattle/IqTree_Bootstrap/SeattleB_PRO_Filt.fasta.treefile"
   #gFile <- "~/Data/Seattle/IqTree_Bootstrap/st.tre"
