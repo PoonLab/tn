@@ -7,8 +7,7 @@ library(parallel) #Some thread safety problems
 #Creates a set of data-tables representing a graph of sequences, with the edges between those sequences representing the TN93 Distance.
 #The time and location associated with the sequence can be taken either directly from the sequence header, or provided separately in a .csv file
 #This set of data tables also includes the set of minimum retrospective edges from sequences at the newest time point.
-impTN93 <- function(iFile, reVars="_", varInd=c(1, 2),  addVarN=NA, addVarT=NA, 
-                    dateFormat="%Y", partQ=0.95) {
+impTN93 <- function(iFile, reVars="_", varInd=c(1, 2),  addVarN=NA, dateFormat="%Y", partQ=0.95) {
   #@param iFile: The name/path of the input file (expecting tn93 output csv)
   #@param reVars: The regular expression used to extract variables from column headers. This is passed to strsplit, creating a vertex of values from the column header
   #@param varInd: A vector of numbers describing the order of variables in the split string. This should describe the index of the unique ID, the Timepoint and the location.
@@ -23,10 +22,10 @@ impTN93 <- function(iFile, reVars="_", varInd=c(1, 2),  addVarN=NA, addVarT=NA,
   idt <- fread(iFile)
   
   #Reformat edge list as data table object with predictors extracted from sequence header
-  temp <- sapply(c(idt$ID1, idt$ID2), function(x) ((strsplit(x,reVars)[[1]]))[varInd])
+  splitHeaders <- sapply(c(idt$ID1, idt$ID2), function(x) ((strsplit(x,reVars)[[1]]))[varInd])
 
-  el <- data.table(ID1=as.character(temp[1,1:nrow(idt)]), t1=as.Date(temp[2,1:nrow(idt)], format=dateFormat),
-                   ID2=as.character(temp[1,(nrow(idt)+1):(2*nrow(idt))]), t2=as.Date(temp[2,(nrow(idt)+1):(2*nrow(idt))], format=dateFormat),
+  el <- data.table(ID1=as.character(splitHeaders[1,1:nrow(idt)]), t1=as.Date(splitHeaders[2,1:nrow(idt)], format=dateFormat),
+                   ID2=as.character(splitHeaders[1,(nrow(idt)+1):(2*nrow(idt))]), t2=as.Date(splitHeaders[2,(nrow(idt)+1):(2*nrow(idt))], format=dateFormat),
                    Distance = as.numeric(idt$Distance), stringsAsFactors= F)
   
   #Obtain the maximum time and time difference between the head and tail of each edge
@@ -37,21 +36,21 @@ impTN93 <- function(iFile, reVars="_", varInd=c(1, 2),  addVarN=NA, addVarT=NA,
   vl <- data.table(ID = c(el$ID1, el$ID2), Time = c(el$t1, el$t2), stringsAsFactors=F)
   
   #In the event of additional variables
-  if(length(varInd)>2){
+  if(!is.na(addVarN)){
     
     #Add additional variables
-    for(i in 1:(length(varInd)-2)) {
+    for(i in 1:length(addVarN)) {
       
       #Add variables named based on character strings in addVarN
-      addVars <- temp[2+i,]
+      addVars <- splitHeaders[2+i,]
       
       #To catch the event that the inputted variable is likely a date
       #This is determined if over half of the input can be converted to a date
-      if(sum(sapply(addVars, function(x) {
+      if(sum(sapply(sample(addVars,100,replace =F), function(x) {
         o <- tryCatch({as.Date(x, format=dateFormat)}, 
                       error=function(cond){return(NA)})
         return(is.na(o))
-      }))/length(addVars)<0.5) {
+      }))/100<0.5) {
         
         addVars <- as.Date(addVars, format=dateFormat)
         
@@ -60,6 +59,9 @@ impTN93 <- function(iFile, reVars="_", varInd=c(1, 2),  addVarN=NA, addVarT=NA,
         #If not a date, type.convert automatically converts the variable typing
         addVars <- type.convert(addVars)
       }
+      
+      #Obtain typing, this is better than typeof() in that Date and Factor values are captured
+      addVarT <- (strsplit(capture.output(str(addVars)), " |\\[")[[1]])[2]
         
       #Add variables named based on character strings in addVarN
       #These variables types are based on addVarT, converted with typeConv()
@@ -72,14 +74,20 @@ impTN93 <- function(iFile, reVars="_", varInd=c(1, 2),  addVarN=NA, addVarT=NA,
       vl[, (addVarN[i]) := unlist(list(el[, get(v1)], el[, get(v2)]))]
       
       #Calculate differences for edges if applicable
-      if(typeof(addVars[1])%in%c("integer", "double", "date")) {
-        el[,paste0(addVarN[i],"Diff") := el[,..v1]-el[,..v2]]
+      if(addVarT%in%c("num", "int", "Date")) {
+        el[,paste0(addVarN[i],"Diff") := abs(el[,..v1]-el[,..v2])]
       }
       
       #Calculate shared value if applicable
-      if(typeod(addVars[1])%in%c("factor", "logical")) {
+      if(addVarT%in%c("Factor")) {
         el[,paste0(addVarN[i],"Match") := F]
         el[get(v1) == get(v2), paste0(addVarN[i],"Match") := T]
+      }
+      
+      #Calculate logical notation if applicable
+      #This will be 1 if discordant, 0 if both FALSE or 2 if Both TRUE
+      if(addVarT%in%c("logi")) {
+        el[,paste0(addVarN[i],"Logic") := el[,..v1]+el[,..v2]]
       }
     }
   }
@@ -200,9 +208,11 @@ compClu <- function(iG, maxD) {
 
 #Run across a set of several subGraphs created at various filters, analyzing GAIC at each with clusterAnalyze
 ##- TO-DO: Monitor Thread-safety -##
-GAICRun <- function(iG, maxDs=NA, runID=0, nCores=1, addVarInd=NA, plotGAIC=F) {
+GAICRun <- function(iG, maxDs=NA, runID=0, nCores=1, addVarInd=NA, plotGAIC=F, modFormula=(New~Old+Recency)) {
   #@param iG: Expecting the entire Graph, but in some cases may take a subset  
   #@param maxDs: A list of cutoff thresholds
+  #@param modFormula: The predictive model formula. This may be changed with additional variables
+  #                   Recency is always calculated for all clusters.
   #@param runID: An identifier to stash this particular run and compare it to others
   #@param nCores: The number of cores for parallel functionality. -CURRENTLY SOMETIMES ERROR PRONE
   #@param plotGAIC: If true, plots a visual of the key result (GAIC)
@@ -221,7 +231,7 @@ GAICRun <- function(iG, maxDs=NA, runID=0, nCores=1, addVarInd=NA, plotGAIC=F) {
   }
   
   #Initialize additional variables as the complete set of possible additional vars
-  addVarN <- colnames(subG$v[,!c("ID", "Time", "I", "New", "Cluster")])
+  addVarN <- colnames(g$v[,!c("ID", "Time", "I", "New", "Cluster")])
   if (!is.na(addVarInd)) {
     addVarN <- addVarN[addVarInd]
   } 
@@ -256,11 +266,8 @@ GAICRun <- function(iG, maxDs=NA, runID=0, nCores=1, addVarInd=NA, plotGAIC=F) {
       }
     }
     
-    #Create proposed model formula dynamically based on number of new dependant variables
-    propForm <- as.formula(paste0("New~", paste(colnames(subG$c$Info)[-2], collapse="+")))
-    
     #Compares clusters with weights obtained through variables to clusters with even weights
-    fit1 <- glm(formula = propForm, data = subG$c$Info, family = "poisson")
+    fit1 <- glm(formula = modFormula, data = subG$c$Info, family = "poisson")
     fit2 <- glm(formula = New~Old, data = subG$c$Info, family = "poisson")
     
     #GAIC is the difference between the AIC of two models
@@ -296,9 +303,11 @@ GAICRun <- function(iG, maxDs=NA, runID=0, nCores=1, addVarInd=NA, plotGAIC=F) {
 }
 
 #Obtain several run results for a much larger set of sub-sampled graphs
-multiGAICRun <- function(iG, n, maxDs=NA, prop=0.80) {
+multiGAICRun <- function(iG, n, maxDs=NA, prop=0.80,  modFormula=(New~Old+Recency)) {
   #@param iG: Expecting the entire Graph  
   #@param maxDs: A list of cutoff thresholds
+  #@param modFormula: The predictive model formula. This may be changed with additional variables
+  #                   Recency is always calculated for all clusters.
   #@param n: The number of subsample runs to determine
   #@param prop: The proportion of the data set sampled for each sub-sample.
   #@return: A data table of multiple runs worth of cluster information.

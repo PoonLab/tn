@@ -5,9 +5,8 @@ require("phytools") #Literally just for midpoint rooting. Use APE for this in fu
 require("parallel") 
 
 #Import Tree Data and output an annotated tree with additional information to assist clustering
-impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y",  addVarN=NA, addVarT=NA){
+impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y",  addVarN=NA){
   #@param iFile: The name/path of the input file (expecting a newick file)
-  #@param iFile: The name/path of the input file (expecting tn93 output csv)
   #@param reVars: The regular expression used to extract variables from column headers. This is passed to strsplit, creating a vertex of values from the column header
   #@param varInd: A vector of numbers describing the order of variables in the split string. This should describe the index of the unique ID, the Timepoint and the location.
   #               ex. If the header would be split such that the 4th index is the Unique ID, then 4 should be the first number in this list
@@ -26,38 +25,11 @@ impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y",  addVarN=N
   
   #Obtain lists of sequence ID and Time
   #Reformat edge list as data table object with predictors extracted from sequence header
-  temp <- sapply(t$tip.label, function(x) {(strsplit(x, reVars)[[1]])[varInd]})
+  splitHeaders <- sapply(t$tip.label, function(x) {(strsplit(x, reVars)[[1]])[varInd]})
   
-  t$v <- data.table(ID=temp[1,],  
-                    Time= as.Date(temp[2,], format=dateFormat), 
+  t$v <- data.table(ID=splitHeaders[1,],  
+                    Time= as.Date(splitHeaders[2,], format=dateFormat), 
                     stringsAsFactors = F)
-  
-  #In the event of additional variables
-  if(length(varInd)>2){
-    
-    #Add additional variables
-    for(i in 1:length(addVarN)) {
-      
-      #Add variables named based on character strings in addVarN
-      addVars <- temp[2+i,]
-    
-      #To catch the event that the inputted variable is likely a date
-      #This is determined if over half of the input can be converted to a date
-      if(sum(sapply(addVars, function(x) {
-        o <- tryCatch({as.Date(x, format=dateFormat)}, 
-                 error=function(cond){return(NA)})
-        return(is.na(o))
-      }))/length(addVars)<0.5) {
-        addVars <- as.Date(addVars, dateFormat)
-      } else {
-        
-        #If not a date, type.convert automatically converts the variable typing
-        addVars <- type.convert(addVars)
-      }
-      
-      t$v[, (addVar[i]):=addVars]
-    }
-  }
   
   #Obtain the full set of descendants at each node
   t$n <- list()
@@ -71,7 +43,7 @@ impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y",  addVarN=N
   t$n$Info[,"TipCount" := sapply(t$n$Des, function(x){length(x[x%in%tips])})]
   t$n$Info[,"mTime" := sapply(t$n$Des, function(x){mean(t$v$Time[(x[x%in%tips])])})]
   t$n$Info[,"Bootstrap" := as.numeric(t$node.label)]
-  
+    
   #Set root node bootstrap support to 1 and adjust these values to be fractions out of 1
   #Different tree-building methods display bootstrap support differently
   t$n$Info[is.na(Bootstrap)|((Bootstrap)%in%c("", "Root")), "Bootstrap" := 10^ceiling(log10(max(t$n$Info$Bootstrap[!is.na(t$n$Info$Bootstrap)])))]
@@ -87,6 +59,58 @@ impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y",  addVarN=N
   })
   t$n$Info[,"tDiff" := temp[1,]]
   t$n$Info[,"cDist" := temp[2,]]
+  
+  #In the event of additional variables
+  if(!is.na(addVarN)){
+    
+    #Add additional variables
+    for(i in 1:length(addVarN)) {
+      
+      #Add variables named based on character strings in addVarN
+      addVars <- splitHeaders[2+i,]
+      
+      #To catch the event that the inputted variable is likely a date
+      #This is determined if over half of the input can be converted to a date
+      if(sum(sapply(sample(addVars,100,replace =F), function(x) {
+        o <- tryCatch({as.Date(x, format=dateFormat)}, 
+                      error=function(cond){return(NA)})
+        return(is.na(o))
+      }))/100<0.5) {
+        addVars <- as.Date(addVars, dateFormat)
+      } else {
+        
+        #If not a date, type.convert automatically converts the variable typing
+        addVars <- type.convert(addVars)
+      }
+      
+      #Obtain typing, this is better than typeof() in that Date and Factor values are captured
+      addVarT <- (strsplit(capture.output(str(addVars)), " |\\[")[[1]])[2]
+      
+      #Assign variable
+      t$v[, (addVarN[i]):=addVars]
+      
+      #Check Means under each node if applicable
+      if(addVarT%in%c("num", "logi", "int", "Date")){
+        nm <- paste0("m", addVarN[i])
+        t$n$Info[, (nm) := sapply(t$n$Des, function(x){
+          mean(t$v[(x[x%in%tips]), (addVarN[i])])
+        })]
+      }
+      
+      #Check predominant Level if applicable, as well as number of levels under each node
+      if(addVarT%in%"Factor"){
+        nm1 <- paste0("Dominant", addVarN[i])
+        nm2 <- paste0("NumberOf", addVarN[i], "s")
+        
+        temp <- sapply(t$n$Des, function(x){
+          tb <- table(t$v[(x[x%in%tips]), get(addVarN[i])])
+          c(names(tb)[which.max(tb)], length(tb[tb>0]))
+        })
+        t$n$Info[,(nm1) := as.factor(temp[1,])]
+        t$n$Info[,(nm2) := as.numeric(temp[2,])]
+      }
+    }
+  }
   
   return(t)
 }
@@ -260,8 +284,10 @@ STClu <- function(iT, maxD, minB=0) {
 }
 
 #Obtain GAIC at several different cutoffs
-GAICRun <- function(iT, maxDs=NA, minB=0, runID=0, nCores=1) {
+GAICRun <- function(iT, maxDs=NA, minB=0, runID=0, nCores=1, modFormula=(New~Old+Recency)) {
   #@param iT: The input tree file, annotated with vertex and edge information
+  #@param modFormula: The predictive model formula. This may be changed with additional variables
+  #                   Recency is always calculated for all clusters.
   #@param maxDs: The maximum distance criteria defining clusters
   #@param minB: The minimum bootstrap criterion for clustering
   #@param runID: An identifier to stash this particular run and compare it to others
@@ -275,7 +301,6 @@ GAICRun <- function(iT, maxDs=NA, minB=0, runID=0, nCores=1) {
   
   
   #Initialize a set of cutoffs to observe (based on the branch-length distribution)
-  ##-UNTESTED-##
   if(is.na(maxDs)) {
     steps <- head(hist(iT$edge.length, plot=FALSE)$breaks, -5)
     maxDs <- seq(0 , max(steps), max(steps)/50) 
@@ -296,7 +321,7 @@ GAICRun <- function(iT, maxDs=NA, minB=0, runID=0, nCores=1) {
     t$c$Info[, "Rando" := sample(1:00, nrow(t$c$Info), replace=T)]
     
     #Compares clusters with weights obtained through variables to clusters with even weights
-    fit1 <- glm(formula = New~Old+Recency, data = t$c$Info, family = "poisson")
+    fit1 <- glm(formula = modFormula, data = t$c$Info, family = "poisson")
     fit2 <- glm(formula = New~Old, data = t$c$Info, family = "poisson")
     fitR <- glm(formula = New~Old+Rando, data = t$c$Info, family = "poisson")
     
@@ -312,19 +337,28 @@ GAICRun <- function(iT, maxDs=NA, minB=0, runID=0, nCores=1) {
   dt <- as.data.table(bind_rows(df))
   dt[,"RunID" := runID]
   dt[,"MaxDistance" := maxDs]
-  df[,"minBootstrap" := minB]
+  dt[,"minBootstrap" := minB]
   
   return(dt)
 }
 
 #Obtain results for a much larger set of sub-sampled trees.
 #See pplacer_utils, for how this data is set up on a larger scale
-multiGAICRun <- function(resDir, maxDs, minB=0, 
-                         reVars='_', varInd = c(1,2), dateFormat = "%Y") {
+##-UNTESTED WITH PPLACER UTILS AND ADDVARN-##
+multiGAICRun <- function(resDir, maxDs, minB=0, modFormula=(New~Old+Recency),
+                         reVars='_', varInd = c(1,2), dateFormat = "%Y", addVarN=NA) {
   #@param resDir: A directory containing a set of trees previously made as well 
   #               as a matching set of growth file placements
+  #@param modFormula: The predictive model formula. This may be changed with additional variables
+  #                   Recency is always calculated for all clusters. This is passed to GAICRun()
   #@param maxDs: The maximum distance criteria defining clusters
-  #
+  #@param minB: The minimum bootstrap criterion for defining clusters
+  #@param reVars: The regular expression used to extract variables from column headers. This will be passed to impTree().
+  #               The value is then used by strsplit, creating a vertex of values from the column header. 
+  #@param varInd: A vector of numbers describing the order of variables in the split string. This should describe the index of the unique ID, the Timepoint and the location.
+  #               ex. If the header would be split such that the 4th index is the Unique ID, then 4 should be the first number in this list. This will be passed to impTree()
+  #               ID and timepoint are currently required. If the location information is not available, it should be set as "0". 
+  #@oaram addvarN: The names of additional variables beyond the second. This will be passed to impTree()
   #@return: A data table of multiple runs worth of cluster information.
   #         Each run will be labelled with a particular run ID
   
@@ -347,7 +381,7 @@ multiGAICRun <- function(resDir, maxDs, minB=0,
     #Run GAIC run on smaller tree
     sampT <- impTree(tf, reVars, varInd, dateFormat)
     sampT <- growthSim(sampT, gf)
-    GAICRun(sampT, maxDs, runID=i)
+    GAICRun(sampT, maxDs, runID=i, modFormula=modFormula)
   }))
   
   return(dt)
@@ -358,11 +392,22 @@ if(F){
   
   #Set inputs for test
   reVars <- '_'
-  varInd <- c(1,2)
-  dateFormat <- "%Y"
+  varInd <- c(1,2,3)
+  dateFormat <- "%Y-%m-%d"
+  addVarN <- "SubType"
   
   tFile <- "~/Data/NAlberta/naFullTree/old.treefile"
   gFile <- "~/Data/NAlberta/naFullTree/old_growth.tree"
+  
+  oT <- impTree(tFile, reVars='_', varInd = c(1,2,3), dateFormat = "%Y-%m-%d", addVarN = "SubType")
+  oT <- growthSim(oT, gFile)
+  
+  maxDs <- seq(0, 0.04, 0.001)
+  res <- GAICRun(oT, minB=0.90, nCores=8)
+  
+  plot(maxDs, res$GAIC, xlab="Thresholds", ylab="AIC Loss")
+  lines(maxDs, res$GAIC)
+  lines(maxDs, res$randAIC-res$nullAIC, col="red")
   
   #tFile <- "~/Data/Seattle/IqTree_Bootstrap/SeattleB_PRO_Filt.fasta.treefile"
   #gFile <- "~/Data/Seattle/IqTree_Bootstrap/st.tre"
@@ -383,9 +428,9 @@ if(F){
   oT <- growthSim(oT, gFile)
      
   maxDs <- seq(0, 0.04, 0.001)
-  res <- GAICRun(oT, maxDs, minB=0.90, nCores=8)
+  res <- GAICRun(oT, maxDs, minB=0.90, nCores=8, modFormula=New~Old+Recency+DominantSubType)
   
   plot(maxDs, res$GAIC, xlab="Thresholds", ylab="AIC Loss")
   lines(maxDs, res$GAIC)
-  lines(maxDs, res$randAIC-res$nullAIC, col="red")
+  #lines(maxDs, res$randAIC-res$nullAIC, col="red")
 }
