@@ -205,37 +205,38 @@ STClu <- function(iT, maxD, minB=0) {
   
   #Find the Nodes which represent clusters by finding the first step length greater than maxD in the path from node to root
   #Each node then has the cluster it joins (ie. the highest node reached in an uninterrupted path of short edges) 
-  temp <- sapply(iT$pathInfo, function(p) {p[,which(p["StepLength",]>maxD)[1]]})
-  rownames(temp) <- c("Nodes", "Boots", "StepLength")
-  
-  ##Point of Review##
+  temp <- sapply(iT$pathInfo, function(p) {
+    h <- which(p["StepLength",]>maxD)[1]
+    c(p[,h], h)
+  })
+  rownames(temp) <- c("Nodes", "Boots", "StepLength", "Height")
+  temp["Nodes", is.na(temp["Nodes",])] <- length(iT$tip.label)+1
   
   #Check a bootstrap requirement of these nodes
-  temp[,temp["Boots",!is.na(temp["Boots",])]<minB]
+  #Clusters are "Rescued" if a new node is added such that the internal node above them meets the bootstrap requirement
+  stepDownI <- which(temp["Boots",]<minB)
   rescuedI <- which(temp["Nodes",]%in%iT$g[((Bootstrap)>=minB)&((PenDist)<=maxD)&((TermDist)<=maxD), (oConn)])
   stepDownI <- setdiff(stepDownI, rescuedI)
   
+  #If the parent node of a cluster does not meet bootstrap requirements, step back down path until it does
   if(length(stepDownI)>1) {
-    pathEdge[stepDownI] <- sapply(pathStack[stepDownI], function(x){
-      nodes <- iT$edge[x,2]
-      cluI <- which(nodes%in%iT$n[(Bootstrap>=minB)&(!is.na(Bootstrap)), (ID)])
-      ifelse(length(cluI)>0, x[cluI], x[length(x)])
-    })  
+    temp[,stepDownI]  <- sapply(stepDownI, function(i){
+      x <- iT$pathInfo[[i]]
+      h <- which(x["Boots", 1:temp["Height", i]]>=minB)[1]
+      return(c(x[, h], h))
+    })
   }
 
-  clusIDs <- iT$edge[pathEdge,2]
-  clusIDs <- replace(clusIDs, which(is.na(clusIDs)), length(iT$tip.label)+1)
-  iT$v$Cluster <- clusIDs[1:length(iT$tip.label)]
-  iT$n$Info$Cluster <- clusIDs[(length(iT$tip.label)+1):(length(iT$tip.label)+iT$Nnode)]
+  iT$n$Cluster <- temp["Nodes",]
 
   #The cluster that each new tip joins is saved as a column in $g
-  iT$g[,"Cluster" := c(iT$v$Cluster, iT$n$Info$Cluster)[(oConn)]]
+  iT$g[,"Cluster" := c(iT$n$Cluster)[(oConn)]]
   iT$g[(TermDist>maxD)|(PenDist>maxD), Cluster := 0 ]
 
   #Sort cluster membership. Showing the lists of tip labels for each cluster
   #This is sorted with growth info to be appended onto the final tree
   iT$c <- list()
-  old <- table(iT$v$Cluster)
+  old <- table(iT$n$Cluster[1:length(iT$tip.label)])
   
   #Sum bootstrap values within a given cluster
   #Only new cases which join a particular cluster with enough total certainty are considered growth.
@@ -260,11 +261,11 @@ STClu <- function(iT, maxD, minB=0) {
   #This function ensures members are listed by their tip labels.
   #New members are also added here
   iT$c$Membership <- lapply(iT$c$Info[,(ID)], function(x){
-    iMem <- iT$n$Info[(Cluster)%in%x, ((ID))]
-    oMem <- iT$v[(Cluster)%in%x, (ID)]
+    oMem <- iT$n[(Cluster)%in%x, ((ID))]
     nMem <- names(nidG[nidG%in%x])
-    return(c(iMem, oMem, nMem))
+    return(c(oMem, nMem))
   })
+  names(iT$c$Membership) <- iT$c$Info$ID
   
   return(iT)
 }
@@ -300,11 +301,12 @@ GAICRun <- function(iT, maxDs=NA, minB=0, runID=0, nCores=1, modFormula=(New~Old
     
     #Obtain recency (a sum value of all member tips collection date recency) for each cluster.
     t$c$Info[, "Recency" := sapply(t$c$Membership, function(x) {
-      mean(as.numeric(t$v[ID%in%x, (Time)]) - min(as.numeric(t$v[,(Time)])))
+      tips <- x[which(x%in%t$n$ID[1:length(t$tip.label)])]
+      mean(as.numeric(t$n[ID%in%tips, (mTime)]) - min(as.numeric(t$n[,(mTime)])))
     })]
     
     #A randomly weighted model, can also act as a useful comparison
-    t$c$Info[, "Rando" := sample(1:00, nrow(t$c$Info), replace=T)]
+    t$c$Info[, "Rando" := sample(1:100, nrow(t$c$Info), replace=T)]
     
     #Compares clusters with weights obtained through variables to clusters with even weights
     fit1 <- glm(formula = modFormula, data = t$c$Info, family = "poisson")
@@ -389,9 +391,9 @@ if(F){
   oT <- growthSim(oT, gFile)
   
   maxDs <- seq(0, 0.04, 0.001)
-  res <- GAICRun(oT, minB=0.90, nCores=8)
+  res <- GAICRun(oT, maxDs, minB=0.90, nCores=8)
   
-  plot(maxDs, res$GAIC, xlab="Thresholds", ylab="AIC Loss")
+  plot(maxDs, res$GAIC, xlab="Thresholds", ylab="AIC Loss", ylim =c(-100, 3))
   lines(maxDs, res$GAIC)
   lines(maxDs, res$randAIC-res$nullAIC, col="red")
   
