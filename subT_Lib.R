@@ -1,64 +1,66 @@
 require("ape")
 require("dplyr")
 require("data.table")
-require("phytools") #Literally just for midpoint rooting. Use APE for this in future if possible
+require("phytools")
 require("parallel") 
 
 #Import Tree Data and output an annotated tree with additional information to assist clustering
-impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y",  addVarN=NA){
+impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y",  addVarN=NA, rootID=NA){
   #@param iFile: The name/path of the input file (expecting a newick file)
+  #@paran rootID: The rootID which can be manually used to root the tree. If NA - the tree is midpoint rooted
   #@param reVars: The regular expression used to extract variables from column headers. This is passed to strsplit, creating a vertex of values from the column header
   #@param varInd: A vector of numbers describing the order of variables in the split string. This should describe the index of the unique ID, the Timepoint and the location.
   #               ex. If the header would be split such that the 4th index is the Unique ID, then 4 should be the first number in this list
   #               ID and timepoint are currently required. If the location information is not available, it should be set as "0".
   #@oaram addvarN: The names of additional variables beyond the second.
   #@return: An ape phylo object annotated with the additional data summarized below
-  #    $v: A data frame storing vertex information ($ID, $Time, and, if given $Location)
-  #    $n: A list of each node's descendants ($Des), as well as information used to obtain clusters from nodes 
-  #        This additional data is stored in ($Info) as $cDist for the longest branch length between the two child branches.
+  #    $Des: A list of each descendant for each node
+  #    $n: Several pieces of info, including $cDist for the longest branch length between the two child branches.
   #        $cDist will later be correlated with variables such as $tDiff (time difference between nodes).  
   
-  #Obtaining and midpioint rooting an ape phylogeny object from the tree file, store in a greater list "t"
-  t <- midpoint.root(read.tree(tFile))
-  tips <- 1:length(t$tip.label)
-  nodes <- (max(tips)+1):(max(tips)*2-1) 
+  #Import the truncated tree from the tree file
+  #By default, root the tree by using mmidpoint root, alternatively, the rootID can be provided.
+  t <- read.tree(tFile)
+  if(is.na(rootID)) {
+    t <- midpoint.root(t)
+  } else{
+    t <- root(t, outgroup = rootID)
+  }
+  nodes <- 1:(2*length(t$tip.label)-1)
   
   #Obtain lists of sequence ID and Time
   #Reformat edge list as data table object with predictors extracted from sequence header
   splitHeaders <- sapply(t$tip.label, function(x) {(strsplit(x, reVars)[[1]])[varInd]})
-  
-  t$v <- data.table(ID=splitHeaders[1,],  
-                    Time= as.Date(splitHeaders[2,], format=dateFormat), 
-                    stringsAsFactors = F)
+  seqInfo <- data.table(ID=splitHeaders[1,],  
+                        Time= as.Date(splitHeaders[2,], format=dateFormat), 
+                        stringsAsFactors = F)
   
   #Obtain the full set of descendants at each node
-  t$n <- list()
-  t$n$Des <- lapply(nodes, function(x){getDescendants(t,x)})
-  names(t$n$Des) <- as.character(nodes)
+  t$Des <- lapply(nodes, function(x){getDescendants(t,x)})
   
   #Information necessary for clustering each node and building a growth model is stored in an info data table
   #See descriptions of the $n output above for more detail on each item
-  t$n$Info <- data.table()
-  t$n$Info[,"ID" := nodes] 
-  t$n$Info[,"TipCount" := sapply(t$n$Des, function(x){length(x[x%in%tips])})]
-  t$n$Info[,"mTime" := sapply(t$n$Des, function(x){mean(t$v$Time[(x[x%in%tips])])})]
-  t$n$Info[,"Bootstrap" := as.numeric(t$node.label)]
+  t$n <- data.table()
+  t$n[,"ID" := c(seqInfo$ID, nodes[(nrow(seqInfo)+1):length(nodes)])] 
+  t$n[,"TipCount" := sapply(t$Des, function(x){length(x[x<=nrow(seqInfo)])})]
+  t$n[,"mTime" := sapply(t$Des, function(x){mean(seqInfo$Time[(x[x<=nrow(seqInfo)])])})]
+  t$n[,"Bootstrap" := c(rep(100, nrow(seqInfo)), as.numeric(t$node.label))]
     
   #Set root node bootstrap support to 1 and adjust these values to be fractions out of 1
   #Different tree-building methods display bootstrap support differently
-  t$n$Info[is.na(Bootstrap)|((Bootstrap)%in%c("", "Root")), "Bootstrap" := 10^ceiling(log10(max(t$n$Info$Bootstrap[!is.na(t$n$Info$Bootstrap)])))]
-  t$n$Info[,"Bootstrap" := (t$n$Info$Bootstrap)/max(t$n$Info$Bootstrap)]
+  t$n[is.na(Bootstrap), "Bootstrap" := 10^ceiling(log10(max(t$n$Bootstrap[!is.na(t$n$Bootstrap)])))]
+  t$n[,"Bootstrap" := (t$n$Bootstrap)/max(t$n$Bootstrap)]
   
   #This block obtains the time difference between each child for each parent node
   #As well as the largest branch length obtained by a specific child branch
-  temp <- sapply(t$n$Info[,(ID)], function(x){
+  temp <- sapply(t$n[-(1:nrow(seqInfo)),(ID)], function(x){
     cE <- which(t$edge[,1]==as.numeric(x))
     c <- t$edge[cE,2]
-    times <- c(t$v$Time, t$n$Info$mTime)[c]
+    times <- t$n$mTime[c]
     c(abs(times[1]-times[2]), max(t$edge.length[cE]))
   })
-  t$n$Info[,"tDiff" := temp[1,]]
-  t$n$Info[,"cDist" := temp[2,]]
+  t$n[,"tDiff" := c(rep(NA, nrow(seqInfo)), temp[1,])]
+  t$n[,"cDist" := c(rep(NA, nrow(seqInfo)), temp[2,])]
   
   #In the event of additional variables
   if(!is.na(addVarN)){
@@ -87,30 +89,42 @@ impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y",  addVarN=N
       addVarT <- (strsplit(capture.output(str(addVars)), " |\\[")[[1]])[2]
       
       #Assign variable
-      t$v[, (addVarN[i]):=addVars]
+      seqInfo[, (addVarN[i]):=addVars]
       
       #Check Means under each node if applicable
       if(addVarT%in%c("num", "logi", "int", "Date")){
         nm <- paste0("m", addVarN[i])
-        t$n$Info[, (nm) := sapply(t$n$Des, function(x){
-          mean(t$v[(x[x%in%tips]), (addVarN[i])])
+        t$n[, (nm) := sapply(t$Des, function(x){
+          mean(seqInfo[x[x<=nrow(seqInfo)], (addVarN[i])])
         })]
       }
       
       #Check predominant Level if applicable, as well as number of levels under each node
       if(addVarT%in%"Factor"){
         nm1 <- paste0("Dominant", addVarN[i])
-        nm2 <- paste0("NumberOf", addVarN[i], "s")
+        nm2 <- paste0("NumberOf", addVarN[i])
         
-        temp <- sapply(t$n$Des, function(x){
-          tb <- table(t$v[(x[x%in%tips]), get(addVarN[i])])
+        temp <- sapply(t$Des, function(x){
+          tb <- table(seqInfo[x[x<=nrow(seqInfo)], get(addVarN[i])])
           c(names(tb)[which.max(tb)], length(tb[tb>0]))
         })
-        t$n$Info[,(nm1) := as.factor(temp[1,])]
-        t$n$Info[,(nm2) := as.numeric(temp[2,])]
+        t$n[,(nm1) := as.factor(temp[1,])]
+        t$n[,(nm2) := as.numeric(temp[2,])]
       }
     }
   }
+  
+  #Obtain the path info from every tip to the root node for future clustering
+  #This includes the step length (from nodes to their parents) and bootstrap values of nodes
+  depLens <- node.depth.edgelength(t)
+  t$pathInfo <- lapply(1:nrow(t$n), function(x){
+    nodes <- nodepath(t, x, nrow(seqInfo)+1)
+    pathBoot <- t$n$Bootstrap[nodes]
+    stepLens <- c((depLens[nodes[-length(nodes)]] - depLens[nodes[-1]]),NA)
+    m <- matrix(c(nodes,pathBoot,stepLens), ncol=length(nodes), nrow=3, byrow = T)
+    rownames(m) <- c("Nodes", "Boots", "StepLength")
+    return(m)
+  })
   
   return(t)
 }
@@ -189,50 +203,22 @@ STClu <- function(iT, maxD, minB=0) {
   #    $Old: The number of cases (not new) in the original cluster
   #    $New: The number of new cases added to the cluster. This represents cluster growth
   
-  #Initiate the position of each tip and node
-  #An if statement checks if the parent of an edge is the root
-  pathStack <- lapply(1:(length(iT$tip.label)+iT$Nnode), function(x) {
-    ifelse(x==(length(iT$tip.label)+1), 
-           NA, which(iT$edge[,2]==x))
-  })
-  pathEdge <- sapply(pathStack, function(x){x[[1]]})
-  pathLens <- iT$edge.length[pathEdge]
-  pathSteps <- which(pathLens<=maxD)
-
-  #Step up any individual edges that are short enough 
-  #This loop terminates when either all tips have reached the root
-  while(length(pathSteps)>0){
-    
-    #PathEdge is updated with the parent edge of the parent node for any short original edges
-    pathStack[pathSteps] <- lapply(pathStack[pathSteps], function(x){
-      pN <- iT$edge[x[[1]],1]
-      pE <- ifelse(pN==(length(iT$tip.label)+1), 
-             NA, which(iT$edge[,2]==pN))
-      return(c(pE, x))
-    })
-    
-    #These two are updated based on pathEdge
-    pathEdge <- sapply(pathStack, function(x){x[[1]]})
-    pathLens <- iT$edge.length[pathEdge]
-    pathSteps <- which(pathLens<=maxD)
-  }
+  #Find the Nodes which represent clusters by finding the first step length greater than maxD in the path from node to root
+  #Each node then has the cluster it joins (ie. the highest node reached in an uninterrupted path of short edges) 
+  temp <- sapply(iT$pathInfo, function(p) {p[,which(p["StepLength",]>maxD)[1]]})
+  rownames(temp) <- c("Nodes", "Boots", "StepLength")
   
-  #Each tip has the cluster it joins (ie. the highest node reached in an uninterrupted path of short edges) 
-  #The same is true for internal nodes, which travel by the same logic
-  pathEdge <- sapply(pathStack, function(x){x[[1]]})
-  clusIDs <- iT$edge[pathEdge,2]
-  clusIDs <- replace(clusIDs, which(is.na(clusIDs)), length(iT$tip.label)+1)
+  ##Point of Review##
   
-  #Check a bootstrap requirement by walking back down the tree
-  #Parent Edges with low bootstrap certainty are stepped back to the next point in path which meets bootstrap requirement
-  stepDownI <- which(clusIDs%in%iT$n$Info[(Bootstrap)<minB, (ID)])
-  rescuedI <- which(clusIDs%in%iT$g[((Bootstrap)>=minB)&((PenDist)<=maxD)&((TermDist)<=maxD), (oConn)])
+  #Check a bootstrap requirement of these nodes
+  temp[,temp["Boots",!is.na(temp["Boots",])]<minB]
+  rescuedI <- which(temp["Nodes",]%in%iT$g[((Bootstrap)>=minB)&((PenDist)<=maxD)&((TermDist)<=maxD), (oConn)])
   stepDownI <- setdiff(stepDownI, rescuedI)
   
   if(length(stepDownI)>1) {
     pathEdge[stepDownI] <- sapply(pathStack[stepDownI], function(x){
       nodes <- iT$edge[x,2]
-      cluI <- which(nodes%in%iT$n$Info[Bootstrap>=minB, (ID)])
+      cluI <- which(nodes%in%iT$n[(Bootstrap>=minB)&(!is.na(Bootstrap)), (ID)])
       ifelse(length(cluI)>0, x[cluI], x[length(x)])
     })  
   }
