@@ -91,8 +91,15 @@ multiTree <- function(sampsDir) {
   }
 }
 
+translator <- function(iFile) {
+  
+  
+  
+}
+
 #A wrapper for the python translator script
 #This translates the FastTree output into a .json "stats" file 
+##TO-DO: No Python dependancy-##
 multiTranslator <- function(sampsDir, fPath) {
   #@param sampsDir: The filepath to the output directory for samples
   #@param fPath: Path to the python translator function

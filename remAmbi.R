@@ -2,8 +2,6 @@
 
 require("ape")
 
-## USAGE: Rscript remAmbi.R [INSERT FASTA FILE HERE] ##
-
 #Take input      
 iFile <- commandArgs(trailingOnly = T)
 seqs <- read.dna(iFile, format = "fasta", as.character = T)
