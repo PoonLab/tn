@@ -1,6 +1,9 @@
-require(ape)
-require(rjson)
-require(digest)
+require("ape")
+require("rjson")
+require("digest")
+require("jsonlite")
+
+##TO-DO: Too Bulky - use multi-tree files or temp files or compression to save space -##
 
 #Split new cases from old cases based on a Marker
 newSplit <- function(iFile, newMark) {
@@ -91,40 +94,69 @@ multiTree <- function(sampsDir) {
   }
 }
 
-translator <- function(iFile) {
-  
-  
-  
-}
-
 #A wrapper for the python translator script
 #This translates the FastTree output into a .json "stats" file 
-##TO-DO: No Python dependancy-##
-multiTranslator <- function(sampsDir, fPath) {
+translator <- function(logF, program, oFile, dataType="DNA", subsModel="GTR") {
   #@param sampsDir: The filepath to the output directory for samples
-  #@param fPath: Path to the python translator function
-
-  #Standardize sampsDir to include terminal / and standardize nickname
-  #In addition, pull log files from sample directory
-  sampsDir <- gsub("$|/$", "/", sampsDir)
-  logFiles <- list.files(sampsDir, pattern = "\\_log[0-9]+.txt$")
-  short <- (strsplit(logFiles[1], "_")[[1]])[1]
-  n <- length(logFiles)
+  #@param program: Changeshow log files are parsed depending on program used
+  #@param oFile: The output file for this stats jason
+  #@param dataType: The type of data of interest. Can alternatively be AA
+  #                 CURRENTLY ONLY BUILT TO HANDLE DNA
+  #@param subsModel: The substitution model used
+  #                  CURRENTLY ONLY BUILT TO HANDLE GTR
   
-  #For each log file, create a stats json file
-  for(i in 1:n) {
-    system(paste0("python3 ", fPath, " -i ", sampsDir, short, "_log", i, ".txt",
-                  " -o ", sampsDir, short, "_stats", i, ".json"))
+  #Open connection to 
+  con <- file(logF)
+  lns <- readLines(con)
+  close(con)
+  
+  #Extracts and normalizes list of frequencies
+  if(program%in%"FastTree") {
+    p <- "GTRRates"
+    s <- lns[grep(p, lns)]
+    s <- strsplit(s, "\t")[[1]]
+    s <- as.numeric(s[2,3,4,5,6,7])
   }
+  if(program%in%"IQ-TREE") {
+    p <- "Rate parameters"
+    s <- lns[grep(p, lns)]
+    s <- strsplit(s[length(s)], " ")[[1]]
+    s <- as.numeric(s[c(5,20,11,8,14,17)])
+  }
+  
+  #Write stats information to .json
+  con <- file(oFile)
+  j <- toJSON(list(
+    "empirical_frequencies"=TRUE,
+    "datatype"=dataType,
+    "subs_model"=subsModel,
+    "program"=program,
+    ##-TO-DO: Test Correctness of gamma assumption -##
+    "ras_model"="gamma",
+    "gamma"=list(
+      "alpha"=1.0,
+      "n_cats"=as.integer(20)
+    ),
+    "subs_rates"=list(
+      "ac"=s[1],
+      "gt"=s[2],
+      "at"=s[3],
+      "ag"=s[4],
+      "cg"=s[5],
+      "ct"=s[6]
+    )
+  ), pretty=T, always_decimal=T, auto_unbox=T)
+  write(j, con)
+  close(con)
 }
 
 #A wrapper for the taxit create function found in pplacer
 #Can be run in Isolation
-taxitCreate <- function(treeF, logF, statsF, fullF, oDir, locus="LOCUS") {
+taxitCreate <- function(treeF, logF, fullF, oDir, program="FastTree", locus="LOCUS") {
   #@param treeF: Path to the newick tree file
+  #@param program: Passed to translator
   #@param fullF: Path to the full alignment file (new + old seqs)
   #@param logF: Path to the log file from the tree building process
-  #@param statsF: Path to the stats .json file created by translator
   #@param locus: Extra information required for the summary json
   #@param oDir: The output refpackage directory name
   
@@ -135,14 +167,16 @@ taxitCreate <- function(treeF, logF, statsF, fullF, oDir, locus="LOCUS") {
   #Copy files and update filenames
   file.copy(treeF, oDir)  
   file.copy(logF, oDir)
-  file.copy(statsF, oDir)
   file.copy(fullF, oDir)
-  
+    
   #Trim complete filenames
   logFT <- tail(strsplit(logF, "/")[[1]],1)
   treeFT <- tail(strsplit(treeF, "/")[[1]],1)
-  statsFT <- tail(strsplit(statsF, "/")[[1]],1)
   fullFT <- tail(strsplit(fullF, "/")[[1]],1)
+  
+  #Create stats file
+  statsFT <- paste0(gsub(".log|_log.txt$", "_stats.json", logFT))
+  translator(logF, program, paste0(oDir, statsFT))
   
   #Create contents JSON file
   conF <- file(paste0(oDir, "/CONTENTS.json"))
@@ -168,17 +202,16 @@ taxitCreate <- function(treeF, logF, statsF, fullF, oDir, locus="LOCUS") {
       "tree" = digest(treeFT, algo = "md5"),
       "tree_stats" = digest(statsFT, algo = "md5")
     )
-  ), indent=4)
+  ), pretty=T, always_decimal=T, auto_unbox=T)
   write(conText, conF)
   close(conF)
 }
 
 #A function to call taxit create many times on a directory of repeated runs
 #This is expected to sort through hundreds of files in a single folder, sorting sets into refpackages
-multiTaxit <- function(sampsDir, oDir=NA, locus="LOCUS") {
+multiTaxit <- function(sampsDir) {
   #@param sampsDir: The filepath to the output directory for samples
-  #@param oDir: The output directory for the sample directory
-  #@param locus: Passed to taxit create for the Contents json. 
+  #                 This should have standardized names
   
   #Standardize sampsDir and oDir to include terminal / and create dir if it doesn't exist
   sampsDir <- gsub("$|/$", "/", sampsDir)
@@ -189,7 +222,7 @@ multiTaxit <- function(sampsDir, oDir=NA, locus="LOCUS") {
   short <- (strsplit(seqFiles[1], "_")[[1]])[1]
   
   #Initialize output directory
-  if(is.na(oDir)) {oDir <- paste0(sampsDir, short, "_refpackages")}
+  oDir <- paste0(sampsDir, short, "_refpackages")
   oDir <- gsub("$|/$", "/", oDir)
   if(!file.exists(oDir)) {dir.create(oDir)}
   
@@ -198,61 +231,64 @@ multiTaxit <- function(sampsDir, oDir=NA, locus="LOCUS") {
     
     treeF <- paste0(sampsDir, short, "_tree", i, ".nwk")
     logF <- paste0(sampsDir, short, "_log", i, ".txt")
-    statsF <- paste0(sampsDir, short, "_stats", i, ".json")
     fullF <- paste0(sampsDir, short, "_full", i, ".fasta")
-    
     refDir <- paste0(oDir, short, "_refpkg", i)
     
-    taxitCreate(treeF, logF, statsF, fullF, refDir, locus, noCopies = T)
+    taxitCreate(treeF, logF, fullF, refDir)
     
     #Tidy up original files
     file.remove(treeF)
     file.remove(logF)
-    file.remove(statsF)
     file.remove(fullF)
   }
 }
 
 #Runs pplacer on all files in a directory to obtain placement files
-multiPplacer <- function(iDir, oDir) {
-  #@param iDir: Input directory of reference packages
-  #@param oDir: Output directory of .jplace files
+multiPplacer <- function(sampsDir) {
+  #@param sampsDir: The filepath to the output directory for samples
+  #                 This should have standardized names
   
-  #Standardize iDir and oDir to include terminal / and create dir if it doesn't exist
-  iDir <- gsub("$|/$", "/", iDir)
-  oDir <- gsub("$|/$", "/", oDir)
-  if(!file.exists(oDir)) {dir.create(oDir)}
+  #Standardize sampsDir and oDir to include terminal / and create dir if it doesn't exist
+  sampsDir <- gsub("$|/$", "/", sampsDir)
   
   #Obtain nickname and sample number from sample directory
-  refDirs <- list.files(iDir, pattern = "\\_refpkg[0-9]+$")
-  n <- length(refDirs)
-  short <- (strsplit(refDirs[1], "_")[[1]])[1]
+  refDir <- list.files(sampsDir, pattern = "\\_refpackages$")
+  short <- (strsplit(refDir, "_")[[1]])[1]
   
+  #Initialize output directory
+  oDir <- paste0(sampsDir, short, "_jplaceFiles")
+  oDir <- gsub("$|/$", "/", oDir)
+  if(!file.exists(oDir)) {dir.create(oDir)}
+
+  n <- length(list.files(paste0(sampsDir, refDir)))
   for (i in 1:n) {
-    refDir <- paste0(iDir, short, "_refpkg", i)
-    system(paste0("pplacer -c ", refDir, " -o ", oDir, short, i, ".jplace", " ", 
-                  refDir, "/", short, "_full", i,  ".fasta"))
+    refPkg <- paste0(sampsDir, refDir, "/", short, "_refpkg", i)
+    system(paste0("pplacer -c ", refPkg, " -o ", oDir, short, i, ".jplace", " ", 
+                  refPkg, "/", short, "_full", i,  ".fasta"))
     
   }
 }
 
 #Runs guppy on all files in a directory to obtain growth files (inputs for tree growth method)
-multiGuppy <- function(iDir, oDir) {
-  #@param iDir: Input directory of .jplace files
-  #@param oDir: Output directory of growth files
+multiGuppy <- function(sampsDir) {
+  #@param sampsDir: The filepath to the output directory for samples
+  #                 This should have standardized names
   
-  #Standardize iDir and oDir to include terminal / and create dir if it doesn't exist
-  iDir <- gsub("$|/$", "/", iDir)
+  #Standardize sampsDir and oDir to include terminal / and create dir if it doesn't exist
+  sampsDir <- gsub("$|/$", "/", sampsDir)
+  
+  #Obtain nickname and sample number from sample directory
+  jplaceDir <- list.files(sampsDir, pattern = "\\_jplaceFiles$")
+  short <- (strsplit(jplaceDir, "_")[[1]])[1]
+  
+  #Initialize output directory
+  oDir <- paste0(sampsDir, short, "_GrowthFiles")
   oDir <- gsub("$|/$", "/", oDir)
   if(!file.exists(oDir)) {dir.create(oDir)}
   
-  #Obtain nickname and sample number from sample directory
-  jpFiles <- list.files(iDir, pattern = "\\.jplace$")
-  n <- length(jpFiles)
-  short <- (strsplit(jpFiles[1], "_")[[1]])[1]
-  
+  n <- length(list.files(paste0(sampsDir, jplaceDir)))
   for (i in 1:n) {
-    jpFile <- paste0(iDir, short, i, ".jplace")
+    jpFile <- paste0(sampsDir, jplaceDir, "/", short, i, ".jplace")
     system(paste0("guppy sing ", jpFile, " -o ", oDir, short, "_growth", i, ".tree"))
   }
 }

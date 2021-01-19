@@ -277,7 +277,7 @@ GAICRun <- function(iT, maxDs=NA, minB=0, runID=0, nCores=1, modFormula=(New~Old
   #                   Recency is always calculated for all clusters.
   #@param maxDs: The maximum distance criteria defining clusters
   #@param minB: The minimum bootstrap criterion for clustering
-  #@param runID: An identifier to stash this particular run and compare it to others
+  #@param runID: An identifier to lable this particular run and compare it to others
   #@param nCores: Number of cores for parallel processing
   #@return: A data table of each runs cluster information.
   #         Both null and proposed model AIC values, as well as the AIC loss ($nullAIC, $modAIC and $GAIC)
@@ -317,7 +317,7 @@ GAICRun <- function(iT, maxDs=NA, minB=0, runID=0, nCores=1, modFormula=(New~Old
     #Put another way, this is the AIC loss associated with predictive variables
     #Other descriptive data characteristics
     data.frame(modAIC=fit1$aic, nullAIC=fit2$aic, GAIC=(fit1$aic-fit2$aic), randAIC=fitR$aic ,
-               GrowthTot=nrow(t$g[Cluster>0,]), Singletons=nrow(t$c$Info[(Old)==1,]), MeanSize=mean(t$c$Info[,(Old)]),
+               GrowthTot=sum(t$c$Info[,(New)]), Singletons=nrow(t$c$Info[(Old)==1,]), MeanSize=mean(t$c$Info[,(Old)]),
                GrowthMax=max(t$c$Info[,(New)]), GrowthMaxID=t$c$Info[which.max((New)), (ID)],
                SizeMax=max(t$c$Info[,(Old)]), SizeMaxID=t$c$Info[which.max((Old)), (ID)])
   }, mc.cores = nCores)
@@ -333,9 +333,9 @@ GAICRun <- function(iT, maxDs=NA, minB=0, runID=0, nCores=1, modFormula=(New~Old
 #Obtain results for a much larger set of sub-sampled trees.
 #See pplacer_utils, for how this data is set up on a larger scale
 ##-UNTESTED WITH PPLACER UTILS AND ADDVARN-##
-multiGAICRun <- function(resDir, maxDs, minB=0, modFormula=(New~Old+Recency),
+multiGAICRun <- function(sampsDir, maxDs, minB=0, modFormula=(New~Old+Recency),
                          reVars='_', varInd = c(1,2), dateFormat = "%Y", addVarN=NA) {
-  #@param resDir: A directory containing a set of trees previously made as well 
+  #@param sampsDir: A directory containing a set of trees previously made as well 
   #               as a matching set of growth file placements
   #@param modFormula: The predictive model formula. This may be changed with additional variables
   #                   Recency is always calculated for all clusters. This is passed to GAICRun()
@@ -351,9 +351,20 @@ multiGAICRun <- function(resDir, maxDs, minB=0, modFormula=(New~Old+Recency),
   #         Each run will be labelled with a particular run ID
   
   #Obtain a pair of lists - trees and growth files
-  tfs <- list.files(paste0(resDir, "trees"))
+  sampsDir <- gsub("$|/$", "/", sampsDir)
+  short <- (strsplit(list.files(sampsDir, pattern = ".fasta$"), "_")[[1]])[1]
+  
+  tfs <- sapply(1:length(list.files(sampsDir, pattern = ".fasta$")), function(i) {
+    paste0(sampsDir, short, "_refpackages/",
+           short, "_refpkg", i, "/",
+           short, "_tree", i, ".nwk")
+  })
   tfs <- tfs[order(tfs)]
-  gfs <- list.files(paste0(resDir, "growthFiles"))
+  
+  gfs <- sapply(1:length(list.files(sampsDir, pattern = ".fasta$")), function(i){
+    paste0(sampsDir, short, "_GrowthFiles/",
+           short, "_growth", i, ".tree")
+  })
   gfs <- gfs[order(gfs)]
   
   #Multi GAIC Run based on pre-made directory
@@ -361,64 +372,17 @@ multiGAICRun <- function(resDir, maxDs, minB=0, modFormula=(New~Old+Recency),
   dt <- bind_rows(lapply(1:length(tfs), function(i){
     
     #Pair tree and growth file from list
-    tf <- paste0(resDir, "trees/", tfs[[i]])
-    gf <- paste0(resDir, "growthFiles/", gfs[[i]])
+    tf <- tfs[[i]]
+    gf <- gfs[[i]] 
   
     print(i)
     
     #Run GAIC run on smaller tree
     sampT <- impTree(tf, reVars, varInd, dateFormat)
     sampT <- growthSim(sampT, gf)
-    GAICRun(sampT, maxDs, runID=i, modFormula=modFormula)
+    res <- GAICRun(sampT, maxDs, runID=i, modFormula=modFormula)
+    return(res)
   }))
   
   return(dt)
-}
-
-#Test scripts
-if(F){
-  
-  #Set inputs for test
-  reVars <- '_'
-  varInd <- c(1,2,3)
-  dateFormat <- "%Y-%m-%d"
-  addVarN <- "SubType"
-  
-  tFile <- "~/Data/NAlberta/naFullTree/old.treefile"
-  gFile <- "~/Data/NAlberta/naFullTree/old_growth.tree"
-  
-  oT <- impTree(tFile, reVars='_', varInd = c(1,2,3), dateFormat = "%Y-%m-%d", addVarN = "SubType")
-  oT <- growthSim(oT, gFile)
-  
-  maxDs <- seq(0, 0.04, 0.001)
-  res <- GAICRun(oT, maxDs, minB=0.90, nCores=8)
-  
-  plot(maxDs, res$GAIC, xlab="Thresholds", ylab="AIC Loss", ylim =c(-100, 3))
-  lines(maxDs, res$GAIC)
-  lines(maxDs, res$randAIC-res$nullAIC, col="red")
-  
-  #tFile <- "~/Data/Seattle/IqTree_Bootstrap/SeattleB_PRO_Filt.fasta.treefile"
-  #gFile <- "~/Data/Seattle/IqTree_Bootstrap/st.tre"
-  
-  #tFile <- "~/Data/Tennessee/tn_ColTreeData/tn.refpkg/tn_Coltree.nwk"
-  #gFile <- "~/Data/Tennessee/tn_ColTreeData/tn_ColGrowth.tre"
-  
-  #tFile <- "~/Data/Tennessee/tn_DiagTreeData/tn.refpkg/tn.tre"
-  #gFile <- "~/Data/Tennessee/tn_DiagTreeData/tnTGrowth.tre"
-  
-  #tFile <- "~/Data/Seattle/stKingTrees/stKing_PRO_H_Filt.fasta.treefile"
-  #gFile <- "~/Data/Seattle/stKingTrees/stKing.tre"
-
-  #tFile <- "~/Data/NAlberta/IqTree_Bootstrap/na.refpkg/NorthAlbertaB_PRO_Filt.fasta.treefile"
-  #gFile <- "~/Data/NAlberta/IqTree_Bootstrap/na.tre"
-  
-  oT <- impTree(tFile, reVars='_', varInd = c(2,3), dateFormat = "%Y-%m-%d")
-  oT <- growthSim(oT, gFile)
-     
-  maxDs <- seq(0, 0.04, 0.001)
-  res <- GAICRun(oT, maxDs, minB=0.90, nCores=8, modFormula=New~Old+Recency+DominantSubType)
-  
-  plot(maxDs, res$GAIC, xlab="Thresholds", ylab="AIC Loss")
-  lines(maxDs, res$GAIC)
-  #lines(maxDs, res$randAIC-res$nullAIC, col="red")
 }
