@@ -213,10 +213,7 @@ STClu <- function(iT, maxD, minB=0) {
   temp["Nodes", is.na(temp["Nodes",])] <- length(iT$tip.label)+1
   
   #Check a bootstrap requirement of these nodes
-  #Clusters are "Rescued" if a new node is added such that the internal node above them meets the bootstrap requirement
   stepDownI <- which(temp["Boots",]<minB)
-  rescuedI <- which(temp["Nodes",]%in%iT$g[((Bootstrap)>=minB)&((PenDist)<=maxD)&((TermDist)<=maxD), (oConn)])
-  stepDownI <- setdiff(stepDownI, rescuedI)
   
   #If the parent node of a cluster does not meet bootstrap requirements, step back down path until it does
   if(length(stepDownI)>1) {

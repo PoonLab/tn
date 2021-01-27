@@ -34,16 +34,15 @@ runFullMulti <- function(iFile, dateFormat, maxDs, newMark, prop=0.8, n=100) {
 }
 
 #Run GAIC test for tree-based data
-runTreeGAIC <- function(tFile, reVars="_", varInd, dateFormat="%Y", addVarN=NA,
-                        gFile, maxDs=NA, minB=0, nCores ) {
+runTreeGAIC <- function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y", addVarN=NA,
+                        gFile, maxDs=NA, minB=0, nCores=1) {
   
   source("git/tn/subT_Lib.R")
   
   oT <- impTree(tFile, reVars, varInd, dateFormat, addVarN)
   oT <- growthSim(oT, gFile)
-  
-  maxDs <- seq(0, 0.04, 0.001)
-  res <- GAICRun(oT, maxDs, minB=0.90, nCores=8)
+  res <- GAICRun(oT, maxDs, minB, nCores)
+  return(res)
 }
 
 #Test scripts
