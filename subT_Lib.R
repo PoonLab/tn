@@ -6,7 +6,7 @@ require("parallel")
 
 #Import Tree Data and output an annotated tree with additional information to assist clustering
 impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y",  addVarN=NA, rootID=NA){
-  #@param iFile: The name/path of the input file (expecting a newick file)
+  #@param tFile: The name/path of the input file (expecting a newick file)
   #@paran rootID: The rootID which can be manually used to root the tree. If NA - the tree is midpoint rooted
   #@param reVars: The regular expression used to extract variables from column headers. This is passed to strsplit, creating a vertex of values from the column header
   #@param varInd: A vector of numbers describing the order of variables in the split string. This should describe the index of the unique ID, the Timepoint and the location.
@@ -26,6 +26,10 @@ impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y",  addVarN=N
   } else{
     t <- root(t, outgroup = rootID)
   }
+  
+  #Collapse any other tree multichotomies
+  t <- multi2di(t)
+  
   nodes <- 1:(2*length(t$tip.label)-1)
   
   #Obtain lists of sequence ID and Time
@@ -378,6 +382,7 @@ multiGAICRun <- function(sampsDir, maxDs, minB=0, modFormula=(New~Old+Recency),
     sampT <- impTree(tf, reVars, varInd, dateFormat)
     sampT <- growthSim(sampT, gf)
     res <- GAICRun(sampT, maxDs, runID=i, modFormula=modFormula)
+    
     return(res)
   }))
   

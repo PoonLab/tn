@@ -1,7 +1,7 @@
 require(ape)
 
 #Creates Tree-based resamples and re-runs the tree based clustering method on each
-runFullMulti <- function(iFile, dateFormat, maxDs, newMark, prop=0.8, n=100) {
+runFullMulti <- function(iFile, dateFormat, maxDs, newMark, prop=0.8, n=100, varInd=c(1,2)) {
   #@param iFile: An input full fasta file for splitting and resampling
   #@param dateFormat: Passed to multi run 
   #@param maxDs: Passed to multiGAICRun()
@@ -29,7 +29,7 @@ runFullMulti <- function(iFile, dateFormat, maxDs, newMark, prop=0.8, n=100) {
 
   #Save multiple parallel run info to output file
   oFile <- paste0(gsub(".fasta$|.fas$", "_ROB.rds", iFile))
-  res <- multiGAICRun(sampsDir, maxDs=maxDs, dateFormat = dateFormat)
+  res <- multiGAICRun(sampsDir, maxDs=maxDs, dateFormat = dateFormat, varInd = varInd)
   saveRDS(res, oFile)
 }
 

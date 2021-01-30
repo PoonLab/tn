@@ -37,6 +37,8 @@ alignPrePro <- function(iFile, ambiThresh=0.05, gapThresh=0.15) {
     write.dna(seqs[-badSeq,], colsep = "", 
               gsub(".fasta$", "_PRO.fasta", iFile), "fasta")
   }
+  
+  return(seqs[-badSeq,])
 }
 
 #Print a graph of positions and their ambiguity as well as their gapped rate
