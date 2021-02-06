@@ -5,7 +5,7 @@ require("phytools")
 require("parallel") 
 
 #Import Tree Data and output an annotated tree with additional information to assist clustering
-impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y",  addVarN=NA, rootID=NA){
+impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y",  addVarN=character(0), rootID=NA){
   #@param tFile: The name/path of the input file (expecting a newick file)
   #@paran rootID: The rootID which can be manually used to root the tree. If NA - the tree is midpoint rooted
   #@param reVars: The regular expression used to extract variables from column headers. This is passed to strsplit, creating a vertex of values from the column header
@@ -35,48 +35,19 @@ impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y",  addVarN=N
   #Obtain lists of sequence ID and Time
   #Reformat edge list as data table object with predictors extracted from sequence header
   splitHeaders <- sapply(t$tip.label, function(x) {(strsplit(x, reVars)[[1]])[varInd]})
-  seqInfo <- data.table(ID=splitHeaders[1,],  
-                        Time= as.Date(splitHeaders[2,], format=dateFormat), 
+  rownames(splitHeaders) <- c("ID", "Time", addVarN)
+  t$seqInfo <- data.table(ID=splitHeaders["ID",],  
+                        Time= as.Date(splitHeaders["Time",], format=dateFormat), 
                         stringsAsFactors = F)
   
-  #Obtain the full set of descendants at each node
-  t$Des <- lapply(nodes, function(x){getDescendants(t,x)})
-  
-  #Information necessary for clustering each node and building a growth model is stored in an info data table
-  #See descriptions of the $n output above for more detail on each item
-  t$n <- data.table()
-  t$n[,"ID" := c(seqInfo$ID, nodes[(nrow(seqInfo)+1):length(nodes)])] 
-  t$n[,"TipCount" := sapply(t$Des, function(x){length(x[x<=nrow(seqInfo)])})]
-  t$n[,"mTime" := sapply(t$Des, function(x){mean(seqInfo$Time[(x[x<=nrow(seqInfo)])])})]
-  t$n[,"Bootstrap" := c(rep(100, nrow(seqInfo)), as.numeric(t$node.label))]
-    
-  #Set root node bootstrap support to 1 and adjust these values to be fractions out of 1
-  #Different tree-building methods display bootstrap support differently
-  t$n[is.na(Bootstrap), "Bootstrap" := 10^ceiling(log10(max(t$n$Bootstrap[!is.na(t$n$Bootstrap)])))]
-  t$n[,"Bootstrap" := (t$n$Bootstrap)/max(t$n$Bootstrap)]
-  
-  #This block obtains the time difference between each child for each parent node
-  #As well as the largest branch length obtained by a specific child branch
-  temp <- sapply(t$n[-(1:nrow(seqInfo)),(ID)], function(x){
-    cE <- which(t$edge[,1]==as.numeric(x))
-    c <- t$edge[cE,2]
-    times <- t$n$mTime[c]
-    c(abs(times[1]-times[2]), max(t$edge.length[cE]))
-  })
-  t$n[,"tDiff" := c(rep(NA, nrow(seqInfo)), temp[1,])]
-  t$n[,"cDist" := c(rep(NA, nrow(seqInfo)), temp[2,])]
-  
-  #In the event of additional variables
-  if(!is.na(addVarN)){
-    
-    #Add additional variables
+  if(length(addVarN>0)){
     for(i in 1:length(addVarN)) {
-      
       #Add variables named based on character strings in addVarN
       addVars <- splitHeaders[2+i,]
       
       #To catch the event that the inputted variable is likely a date
       #This is determined if over half of the input can be converted to a date
+      #If not a date, type.convert automatically converts the variable typing
       if(sum(sapply(sample(addVars,100,replace =F), function(x) {
         o <- tryCatch({as.Date(x, format=dateFormat)}, 
                       error=function(cond){return(NA)})
@@ -84,8 +55,6 @@ impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y",  addVarN=N
       }))/100<0.5) {
         addVars <- as.Date(addVars, dateFormat)
       } else {
-        
-        #If not a date, type.convert automatically converts the variable typing
         addVars <- type.convert(addVars)
       }
       
@@ -93,40 +62,48 @@ impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y",  addVarN=N
       addVarT <- (strsplit(capture.output(str(addVars)), " |\\[")[[1]])[2]
       
       #Assign variable
-      seqInfo[, (addVarN[i]):=addVars]
-      
-      #Check Means under each node if applicable
-      if(addVarT%in%c("num", "logi", "int", "Date")){
-        nm <- paste0("m", addVarN[i])
-        t$n[, (nm) := sapply(t$Des, function(x){
-          mean(seqInfo[x[x<=nrow(seqInfo)], (addVarN[i])])
-        })]
-      }
-      
-      #Check predominant Level if applicable, as well as number of levels under each node
-      if(addVarT%in%"Factor"){
-        nm1 <- paste0("Dominant", addVarN[i])
-        nm2 <- paste0("NumberOf", addVarN[i])
-        
-        temp <- sapply(t$Des, function(x){
-          tb <- table(seqInfo[x[x<=nrow(seqInfo)], get(addVarN[i])])
-          c(names(tb)[which.max(tb)], length(tb[tb>0]))
-        })
-        t$n[,(nm1) := as.factor(temp[1,])]
-        t$n[,(nm2) := as.numeric(temp[2,])]
-      }
+      t$seqInfo[, (addVarN[i]):=addVars]
     }
   }
+  
+  #Information necessary for clustering each node and building a growth model is stored in an info data table
+  #See descriptions of the $n output above for more detail on each item
+  t$n <- data.table()
+  t$n[,"ID" := c(t$seqInfo$ID, nodes[(nrow(t$seqInfo)+1):length(nodes)])] 
+  t$n[,"Bootstrap" := c(rep(100, nrow(t$seqInfo)), as.numeric(t$node.label))]
+    
+  #Set root node bootstrap support to 1 and adjust these values to be fractions out of 1
+  #Different tree-building methods display bootstrap support differently
+  t$n[is.na(Bootstrap), "Bootstrap" := 10^ceiling(log10(max(t$n$Bootstrap[!is.na(t$n$Bootstrap)])))]
+  t$n[,"Bootstrap" := (t$n$Bootstrap)/max(t$n$Bootstrap)]
   
   #Obtain the path info from every tip to the root node for future clustering
   #This includes the step length (from nodes to their parents) and bootstrap values of nodes
   depLens <- node.depth.edgelength(t)
-  t$pathInfo <- lapply(1:nrow(t$n), function(x){
-    nodes <- nodepath(t, x, nrow(seqInfo)+1)
-    pathBoot <- t$n$Bootstrap[nodes]
-    stepLens <- c((depLens[nodes[-length(nodes)]] - depLens[nodes[-1]]),NA)
-    m <- matrix(c(nodes,pathBoot,stepLens), ncol=length(nodes), nrow=3, byrow = T)
+  pNodes <- nodepath(t)
+  names(pNodes) <- sapply(pNodes, function(p){p[length(p)]})
+
+  #Extend nodepath() to internal nodes
+  l <- 0
+  while(length(pNodes) < nrow(t$n)+1) {
+    newNs <- sapply(pNodes[(l+1):length(pNodes)], function(x){x[-length(x)]})
+    newNs <- newNs[match(unique(newNs),newNs)]  
+    names(newNs) <- sapply(newNs, function(p){p[length(p)]})
+    l <- length(pNodes)
+    pNodes <- c(pNodes, newNs[which(!(names(newNs)%in%names(pNodes)))])
+  }
+  pNodes <- pNodes[which(!sapply(pNodes, function(p) {length(p)})==0)]
+  pNodes <- pNodes[order(as.numeric(names(pNodes)))]
+  
+  pBoots <- lapply(pNodes, function(x){t$n$Bootstrap[x]})
+  pLens <- lapply(pNodes, function(x){c((depLens[x[-1]]-depLens[x[-length(x)]]),NA) })
+  
+  t$pathInfo <- lapply(1:nrow(t$n), function(i) {
+    m <- matrix(ncol=length(pNodes[[i]]), nrow=3)
     rownames(m) <- c("Nodes", "Boots", "StepLength")
+    m[1,] <- rev(pNodes[[i]])
+    m[2,] <- rev(pBoots[[i]])
+    m[3,] <- rev(pLens[[i]])
     return(m)
   })
   
@@ -211,9 +188,10 @@ STClu <- function(iT, maxD, minB=0) {
   #Each node then has the cluster it joins (ie. the highest node reached in an uninterrupted path of short edges) 
   temp <- sapply(iT$pathInfo, function(p) {
     h <- which(p["StepLength",]>maxD)[1]
-    c(p[,h], h)
+    c(p[, h], h)
   })
-  rownames(temp) <- c("Nodes", "Boots", "StepLength", "Height")
+  
+  rownames(temp)[4] <- "Height"
   temp["Nodes", is.na(temp["Nodes",])] <- length(iT$tip.label)+1
   
   #Check a bootstrap requirement of these nodes
@@ -229,9 +207,9 @@ STClu <- function(iT, maxD, minB=0) {
   }
 
   iT$n$Cluster <- temp["Nodes",]
-
+  
   #The cluster that each new tip joins is saved as a column in $g
-  iT$g[,"Cluster" := c(iT$n$Cluster)[(oConn)]]
+  iT$g[,"Cluster" := (iT$n$Cluster)[(oConn)]]
   iT$g[(TermDist>maxD)|(PenDist>maxD), Cluster := 0 ]
 
   #Sort cluster membership. Showing the lists of tip labels for each cluster
@@ -257,22 +235,17 @@ STClu <- function(iT, maxD, minB=0) {
 
   #Summarizes growth information as a data table
   #This excludes any clusters with 
-  iT$c$Info <- data.table(ID = as.numeric(names(old)), Old = as.numeric(old), New = as.numeric(new))
-
-  #This function ensures members are listed by their tip labels.
-  #New members are also added here
-  iT$c$Membership <- lapply(iT$c$Info[,(ID)], function(x){
-    oMem <- iT$n[(Cluster)%in%x, ((ID))]
-    nMem <- names(nidG[nidG%in%x])
-    return(c(oMem, nMem))
-  })
-  names(iT$c$Membership) <- iT$c$Info$ID
-  
-  return(iT)
+  clu <- data.table(ID = as.numeric(names(old)), Old = as.numeric(old), New = as.numeric(new))
+  clu[,"Membership" := lapply(clu$ID, function(id){c(iT$n[(Cluster)%in%id, (ID)], iT$g[(Cluster)%in%id, (nID)])})]
+     
+  clu[,"MaxD" := maxD]
+  clu[,"MinB" := minB]
+  return(clu)
 }
 
 #Obtain GAIC at several different cutoffs
-GAICRun <- function(iT, maxDs=NA, minB=0, runID=0, nCores=1, modFormula=(New~Old+Recency)) {
+GAICRun <- function(iT, maxDs=NA, minB=0, runID=0, nCores=1, saveClus=NA,
+                    modFormula=New~Old+Time, propVar="Time", propTrans=list(function(x){mean(x)})) {
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param modFormula: The predictive model formula. This may be changed with additional variables
   #                   Recency is always calculated for all clusters.
@@ -294,36 +267,42 @@ GAICRun <- function(iT, maxDs=NA, minB=0, runID=0, nCores=1, modFormula=(New~Old
     maxDs <- seq(0 , max(steps), max(steps)/50) 
   }
   
-  #This function runs through severel comparisons of a model weighted by predictors, to a model without those variables
-  df <- mclapply(maxDs, function(d) {
+  #Building Clusters
+  clus <- bind_rows(mclapply(maxDs, function(d) {dt <- STClu(iT, d, minB)}, 
+                             mc.cores = nCores))
+  
+  #Attaching Model Data
+  modD <- bind_rows(mclapply(clus$Membership, function(x) {
+    mRow <- iT$seqInfo[(ID)%in%x, -1]
+    sRow <- lapply(colnames(mRow) ,function(nm) {list(mRow[,get(nm)])})
+    dt <- as.data.table(sRow)
+    colnames(dt) <- colnames(mRow)
+    return(dt)
+  }, mc.cores = nCores))
+  clus <- cbind(clus, modD)
+  
+  if(!is.na(saveClus)) {
+    saveRDS(clus, saveClus)
+  }
+  
+  dt <- bind_rows(mclapply(maxDs, function(d) {
     
-    #Obtain clusters
-    t <- STClu(iT, d, minB)
+    dt <- clus[(MaxD)==d, c("ID", "Old", "New")]
     
-    #Obtain recency (a sum value of all member tips collection date recency) for each cluster.
-    t$c$Info[, "Recency" := sapply(t$c$Membership, function(x) {
-      tips <- x[which(x%in%t$n$ID[1:length(t$tip.label)])]
-      mean(as.numeric(t$n[ID%in%tips, (mTime)]) - min(as.numeric(t$n[,(mTime)])))
+    dt[, (propVar) := lapply(1:length(propVar), function(i){
+      sapply(clus[(MaxD)==d, get(propVar[i])], propTrans[[i]])
     })]
     
-    #A randomly weighted model, can also act as a useful comparison
-    t$c$Info[, "Rando" := sample(1:100, nrow(t$c$Info), replace=T)]
-    
     #Compares clusters with weights obtained through variables to clusters with even weights
-    fit1 <- glm(formula = modFormula, data = t$c$Info, family = "poisson")
-    fit2 <- glm(formula = New~Old, data = t$c$Info, family = "poisson")
-    fitR <- glm(formula = New~Old+Rando, data = t$c$Info, family = "poisson")
+    fit1 <- glm(formula = modFormula, data=dt, family = "poisson")
+    fit2 <- glm(formula = New~Old, data=dt, family = "poisson")
     
-    #GAIC is the difference between the AIC of two models
-    #Put another way, this is the AIC loss associated with predictive variables
-    #Other descriptive data characteristics
-    data.frame(modAIC=fit1$aic, nullAIC=fit2$aic, GAIC=(fit1$aic-fit2$aic), randAIC=fitR$aic ,
-               GrowthTot=sum(t$c$Info[,(New)]), Singletons=nrow(t$c$Info[(Old)==1,]), MeanSize=mean(t$c$Info[,(Old)]),
-               GrowthMax=max(t$c$Info[,(New)]), GrowthMaxID=t$c$Info[which.max((New)), (ID)],
-               SizeMax=max(t$c$Info[,(Old)]), SizeMaxID=t$c$Info[which.max((Old)), (ID)])
-  }, mc.cores = nCores)
+    data.table(modAIC=fit1$aic, nullAIC=fit2$aic, GAIC=(fit1$aic-fit2$aic),
+               GrowthTot=sum(dt[,(New)]), Singletons=nrow(dt[(Old)==1,]), MeanSize=mean(dt[,(Old)]),
+               GrowthMax=max(dt[,(New)]), GrowthMaxID=dt[which.max((New)), (ID)],
+               SizeMax=max(dt[,(Old)]), SizeMaxID=dt[which.max((Old)), (ID)])
+  }),)
   
-  dt <- as.data.table(bind_rows(df))
   dt[,"RunID" := runID]
   dt[,"MaxDistance" := maxDs]
   dt[,"minBootstrap" := minB]
@@ -334,8 +313,8 @@ GAICRun <- function(iT, maxDs=NA, minB=0, runID=0, nCores=1, modFormula=(New~Old
 #Obtain results for a much larger set of sub-sampled trees.
 #See pplacer_utils, for how this data is set up on a larger scale
 ##-UNTESTED WITH PPLACER UTILS AND ADDVARN-##
-multiGAICRun <- function(sampsDir, maxDs, minB=0, modFormula=(New~Old+Recency),
-                         reVars='_', varInd = c(1,2), dateFormat = "%Y", addVarN=NA) {
+multiGAICRun <- function(sampsDir, maxDs, minB=0, nCores=1, reVars='_', varInd = c(1,2), dateFormat = "%Y", addVarN=NA,
+                         modFormula=New~Old+Time, propVar="Time", propTrans=list(function(x){mean(x)})) {
   #@param sampsDir: A directory containing a set of trees previously made as well 
   #               as a matching set of growth file placements
   #@param modFormula: The predictive model formula. This may be changed with additional variables
@@ -368,22 +347,23 @@ multiGAICRun <- function(sampsDir, maxDs, minB=0, modFormula=(New~Old+Recency),
   })
   gfs <- gfs[order(gfs)]
   
+  print("Preparing Trees...")
+  trees <- mclapply(tfs, function(tf){
+    print(tf)
+    impTree(tFile=tf, reVars=reVars, varInd=varInd, dateFormat=dateFormat)
+  }, mc.cores=nCores)
+  
+  print("Simulating Growth...")
+  trees <- mclapply(1:length(trees), function(i){growthSim(trees[[i]], gfs[[i]])}, mc.cores=nCores)
+  
   #Multi GAIC Run based on pre-made directory
   #Again, see pplacer_utils for multi-directory creation
-  dt <- bind_rows(lapply(1:length(tfs), function(i){
-    
-    #Pair tree and growth file from list
-    tf <- tfs[[i]]
-    gf <- gfs[[i]] 
-  
+  print("Running GAIC Analysis...")
+  dt <- bind_rows(lapply(1:length(trees), function(i){
+    t <- trees[[i]]
     print(i)
-    
-    #Run GAIC run on smaller tree
-    sampT <- impTree(tf, reVars, varInd, dateFormat)
-    sampT <- growthSim(sampT, gf)
-    res <- GAICRun(sampT, maxDs, runID=i, modFormula=modFormula)
-    
-    return(res)
+    GAICRun(iT=t, maxDs=maxDs, minB=minB, runID=i, nCores = nCores,
+            modFormula=modFormula, propVar=propVar, propTrans=propTrans)
   }))
   
   return(dt)

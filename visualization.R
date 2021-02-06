@@ -173,3 +173,56 @@ plotMinLoc <- function(robFs, cols, legLabs=NA, figLab="", xlim=NA, bw="nrd0") {
   shifty <- par('usr')[4] + strheight(figLab, cex=2)*3
   text(shiftx, shifty, figLab, cex=2.4)
 }
+
+plotEdgeLength <- function(treeL, cols, legLabs=NA, figLab="", xlim=NA) {
+  
+  blSpan <- sapply(treeL, function(t){max(t$edge.length)})
+  breaks <- seq(0, max(blSpan), max(blSpan)/10)
+  
+  #Get hist plots for optima locations
+  hs <- lapply(treeL, function(t) {
+    x <- t$edge.length
+    hist(x, breaks=breaks)
+  })
+  
+  #Create a plot
+  par(mar=c(5,5,5.2,2)+0.1)
+  hts <- sapply(1:(length(breaks)-1), function(i){
+    sapply(hs, function(h){h$counts[i]/sum(h$counts)})
+  })
+  
+  if(is.na(xlim)) {xlim = range(x)}
+  
+  barplot(hts, beside=T)
+  axis(side = 1, at=seq(0.5, (length(treeL)+1)*length(breaks), length(treeL)+1))
+
+  
+  #Background
+  rect(par("usr")[1],par("usr")[3],par("usr")[2],par("usr")[4],col = "seashell1")
+  ticStep <- (par()$xaxp[2]-par()$xaxp[1])/(par()$xaxp[3])
+  ticLoc <- seq(par()$xaxp[1],par()$xaxp[2], ticStep)
+  abline(v=ticLoc, col="white", lwd=3)
+  abline(v=(ticLoc+ticStep/4), col="white", lwd=1.8)
+  abline(v=(ticLoc+2*ticStep/4), col="white", lwd=1.8)
+  abline(v=(ticLoc+3*ticStep/4), col="white", lwd=1.8)
+  abline(h=0, lty=2)
+  
+  
+  #Add density lines
+  for(i in 1:length(ds)){
+    l <- hs[[i]]
+    cl <- cols[[i]]
+    
+  }
+  
+  #Legend and figure labelling
+  par(xpd=NA)
+  if(!is.na(legLabs)){
+    legend("topright", legend = legLabs, fill = cols, bty='n',cex=1.5) 
+  }
+  shiftx <- par('usr')[1] - strwidth(figLab, cex=2)*2
+  shifty <- par('usr')[4] + strheight(figLab, cex=2)*3
+  text(shiftx, shifty, figLab, cex=2.4)
+  
+  
+}

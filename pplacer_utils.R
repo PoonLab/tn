@@ -114,11 +114,12 @@ translator <- function(logF, program, oFile, dataType="DNA", subsModel="GTR") {
   if(program%in%"FastTree") {
     p <- "GTRRates"
     s <- lns[grep(p, lns)]
-    s <- strsplit(s, "\t")[[1]]
-    s <- as.numeric(s[2,3,4,5,6,7])
+    s <- strsplit(s, '\t')[[1]]
+    s <- as.numeric(s[c(2,3,4,5,6,7)])
   }
   if(program%in%"IQ-TREE") {
     p <- "Rate parameters"
+    subsModel
     s <- lns[grep(p, lns)]
     s <- strsplit(s[length(s)], " ")[[1]]
     s <- as.numeric(s[c(5,20,11,8,14,17)])
