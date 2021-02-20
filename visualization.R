@@ -1,6 +1,5 @@
 require(scales)
 
-
 #Plot and compare AIC loss results
 plotGAIC <- function(res, resComp=NA, robF="", mCol="black", cCol="grey", randMod=F,
                      legLabs=NA, xlim=NA, figLab="", ylim=NA) {
@@ -35,8 +34,8 @@ plotGAIC <- function(res, resComp=NA, robF="", mCol="black", cCol="grey", randMo
   } 
 
   #Create plot 
-  x <- c(res$MaxDistance, resComp$MaxDistance, resRob$MaxDistance)
-  y <- c(res$GAIC, resComp$GAIC, resRob$GAIC)
+  x <- c(res$MaxDistance, sapply(resComp, function(x){x$MaxDistance}), resRob$MaxDistance)
+  y <- c(res$GAIC, sapply(resComp, function(x){x$GAIC}), resRob$GAIC)
   
   par(mar=c(5,5,5.2,2)+0.1)
   if(is.na(xlim)) {xlim = range(x)}
@@ -57,7 +56,11 @@ plotGAIC <- function(res, resComp=NA, robF="", mCol="black", cCol="grey", randMo
   abline(v=res$MaxDistance[which.min(robLine[1,])], col="grey", lty=2, lwd=2)
   
   #Plot comp
-  lines(resComp$MaxDistance, resComp$GAIC, col=cCol, lwd=3)
+  for(i in 1:length(resComp)) {
+    print("Blah")
+    lines(resComp[[i]]$MaxDistance, resComp[[i]]$GAIC, col=cCol[i], lwd=3)
+  }
+  
   
   #Plot Rob
   lines(res$MaxDistance, robLine[1,], col=cCol, lwd=2)
@@ -74,9 +77,6 @@ plotGAIC <- function(res, resComp=NA, robF="", mCol="black", cCol="grey", randMo
   if(nrow(resRob)>0) {
     if(which.min(res$GAIC)>which.min(robLine[1,])) {hStep <- -hStep}
   }
-  if(nrow(resComp)>0) {
-    if(which.min(res$GAIC)>which.min(resComp$GAIC)) {hStep <- -hStep}
-  }
   
   #Highlight min loc for Main
   lines(rep(res$MaxDistance[which.min(res$GAIC)], 2), c(par("usr")[3], par("usr")[3]+vStep*3), col=mCol, lwd=4)
@@ -85,12 +85,15 @@ plotGAIC <- function(res, resComp=NA, robF="", mCol="black", cCol="grey", randMo
   text(res$MaxDistance[which.min(res$GAIC)]-hStep*2, par("usr")[3]+vStep*5, res$MaxDistance[which.min(res$GAIC)], cex=1.25)
   
   #Highlight min loc for Comp (if different)
-  if(nrow(resComp)>0){
-    if(which.min(res$GAIC)!=which.min(resComp$GAIC)) {
-      lines(rep(res$MaxDistance[which.min(resComp$GAIC)], 2), c(par("usr")[3], par("usr")[3]+vStep*2), col=cCol, lwd=4)
-      lines(rep(res$MaxDistance[which.min(resComp$GAIC)], 2), c(par("usr")[3], par("usr")[3]+vStep*1), col="white", lwd=0.5)
-      points(res$MaxDistance[which.min(resComp$GAIC)], par("usr")[3])
-      text(res$MaxDistance[which.min(resComp$GAIC)]+hStep*2, par("usr")[3]+vStep*4, res$MaxDistance[which.min(resComp$GAIC)], cex=1.25)
+  if(length(resComp)>0){
+    for(i in 1:length(resComp)){
+      if(which.min(res$GAIC)!=which.min(resComp[[i]]$GAIC)) {
+        if(which.min(res$GAIC)>which.min(resComp[[i]]$GAIC)) {hStep <- -hStep}
+        lines(rep(res$MaxDistance[which.min(resComp[[i]]$GAIC)], 2), c(par("usr")[3], par("usr")[3]+vStep*2), col=cCol, lwd=4)
+        lines(rep(res$MaxDistance[which.min(resComp[[i]]$GAIC)], 2), c(par("usr")[3], par("usr")[3]+vStep*1), col="white", lwd=0.5)
+        points(res$MaxDistance[which.min(resComp[[i]]$GAIC)], par("usr")[3])
+        text(res$MaxDistance[which.min(resComp[[i]]$GAIC)]+hStep*2, par("usr")[3]+vStep*4, res$MaxDistance[which.min(resComp[[i]]$GAIC)], cex=1.25)
+      }
     }
   }
   
@@ -174,47 +177,30 @@ plotMinLoc <- function(robFs, cols, legLabs=NA, figLab="", xlim=NA, bw="nrd0") {
   text(shiftx, shifty, figLab, cex=2.4)
 }
 
-plotEdgeLength <- function(treeL, cols, legLabs=NA, figLab="", xlim=NA) {
+plotEdgeLength <- function(elL, cols, legLabs=NA, figLab="", ylim=NA, xlim=NA, breaks=NA, xlab="") {
   
-  blSpan <- sapply(treeL, function(t){max(t$edge.length)})
-  breaks <- seq(0, max(blSpan), max(blSpan)/10)
+  if(is.na(breaks)){
+    blSpan <- max(unlist(elL))
+    breaks <- seq(0, max(blSpan), max(blSpan)/10)
+  }
   
   #Get hist plots for optima locations
-  hs <- lapply(treeL, function(t) {
-    x <- t$edge.length
-    hist(x, breaks=breaks)
-  })
+  hs <- lapply(elL, function(x) {hist(x, breaks=breaks, plot = F)})
   
   #Create a plot
   par(mar=c(5,5,5.2,2)+0.1)
   hts <- sapply(1:(length(breaks)-1), function(i){
     sapply(hs, function(h){h$counts[i]/sum(h$counts)})
   })
-  
-  if(is.na(xlim)) {xlim = range(x)}
-  
-  barplot(hts, beside=T)
-  axis(side = 1, at=seq(0.5, (length(treeL)+1)*length(breaks), length(treeL)+1))
 
+  if(is.na(xlim)) {xlim = range(breaks)}
+  if(is.na(ylim)) {ylim = c(0,1)}
   
-  #Background
-  rect(par("usr")[1],par("usr")[3],par("usr")[2],par("usr")[4],col = "seashell1")
-  ticStep <- (par()$xaxp[2]-par()$xaxp[1])/(par()$xaxp[3])
-  ticLoc <- seq(par()$xaxp[1],par()$xaxp[2], ticStep)
-  abline(v=ticLoc, col="white", lwd=3)
-  abline(v=(ticLoc+ticStep/4), col="white", lwd=1.8)
-  abline(v=(ticLoc+2*ticStep/4), col="white", lwd=1.8)
-  abline(v=(ticLoc+3*ticStep/4), col="white", lwd=1.8)
-  abline(h=0, lty=2)
-  
-  
-  #Add density lines
-  for(i in 1:length(ds)){
-    l <- hs[[i]]
-    cl <- cols[[i]]
-    
-  }
-  
+  barplot(hts, beside=T, col=cols, cex.axis=1.4, cex.lab=1.65, 
+          xlab = xlab, ylab="Frequency", ylim = ylim, xlim=xlim)
+  axis(side = 1, labels = round(breaks, 3),
+       at=seq(0.5, (length(treeL)+1)*length(breaks), length(treeL)+1),cex.axis=1.4)
+
   #Legend and figure labelling
   par(xpd=NA)
   if(!is.na(legLabs)){
@@ -223,6 +209,5 @@ plotEdgeLength <- function(treeL, cols, legLabs=NA, figLab="", xlim=NA) {
   shiftx <- par('usr')[1] - strwidth(figLab, cex=2)*2
   shifty <- par('usr')[4] + strheight(figLab, cex=2)*3
   text(shiftx, shifty, figLab, cex=2.4)
-  
   
 }

@@ -3,9 +3,10 @@ require("dplyr")
 require("data.table")
 require("phytools")
 require("parallel") 
+require("pROC")
 
 #Import Tree Data and output an annotated tree with additional information to assist clustering
-impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y",  addVarN=character(0), rootID=NA){
+impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y",  addVarN=character(0), rootID=NA, priorityQ=0.80){
   #@param tFile: The name/path of the input file (expecting a newick file)
   #@paran rootID: The rootID which can be manually used to root the tree. If NA - the tree is midpoint rooted
   #@param reVars: The regular expression used to extract variables from column headers. This is passed to strsplit, creating a vertex of values from the column header
@@ -169,9 +170,9 @@ growthSim <- function(iT, gFile) {
   }))  
   
   #Add this information as a data table under g.
-  iT$g <- as.data.table(df)
+  g <- as.data.table(df)
   
-  return(iT)
+  return(g)
 }
 
 #Clusters are defined as a series of tips diverging from a series of quickly branching nodes
@@ -210,7 +211,7 @@ STClu <- function(iT, maxD, minB=0) {
   
   #The cluster that each new tip joins is saved as a column in $g
   iT$g[,"Cluster" := (iT$n$Cluster)[(oConn)]]
-  iT$g[(TermDist>maxD)|(PenDist>maxD), Cluster := 0 ]
+  iT$g[(TermDist>maxD)|(PenDist>maxD), Cluster := 0]
 
   #Sort cluster membership. Showing the lists of tip labels for each cluster
   #This is sorted with growth info to be appended onto the final tree
@@ -243,33 +244,21 @@ STClu <- function(iT, maxD, minB=0) {
   return(clu)
 }
 
-#Obtain GAIC at several different cutoffs
-GAICRun <- function(iT, maxDs=NA, minB=0, runID=0, nCores=1, saveClus=NA,
-                    modFormula=New~Old+Time, propVar="Time", propTrans=list(function(x){mean(x)})) {
+multiSTClu <- function(iT, maxDs, minB, nCores=1, modFormula=New~Old+Time, 
+                       propVar="Time", propTrans=list(function(x){mean(x)})) {
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param modFormula: The predictive model formula. This may be changed with additional variables
   #                   Recency is always calculated for all clusters.
   #@param maxDs: The maximum distance criteria defining clusters
   #@param minB: The minimum bootstrap criterion for clustering
   #@param runID: An identifier to lable this particular run and compare it to others
-  #@param nCores: Number of cores for parallel processing
-  #@return: A data table of each runs cluster information.
-  #         Both null and proposed model AIC values, as well as the AIC loss ($nullAIC, $modAIC and $GAIC)
-  #         The max size, average size and number of singletons ($SizeMax, $MeanSize and $Singletons)
-  #         The total growth, largest growth and number of growing clusters ($GrowthTot, $GrowthMax, and $nGrowing)
-  #         The ID of the largest cluster and the cluster with the highest growth ($SizeMaxID and $GrowthMaxID)
-  #         The effect ratio of mean recency in growing clusters over mean recency in non-growing clusters ($xMag)
   
-  
-  #Initialize a set of cutoffs to observe (based on the branch-length distribution)
-  if(is.na(maxDs)) {
-    steps <- head(hist(iT$edge.length, plot=FALSE)$breaks, -5)
-    maxDs <- seq(0 , max(steps), max(steps)/50) 
-  }
-  
-  #Building Clusters
+  #Building all Clusters
   clus <- bind_rows(mclapply(maxDs, function(d) {dt <- STClu(iT, d, minB)}, 
                              mc.cores = nCores))
+  
+  clus[,"Growing" := F]
+  clus[New>1,"Growing" := T]
   
   #Attaching Model Data
   modD <- bind_rows(mclapply(clus$Membership, function(x) {
@@ -281,14 +270,23 @@ GAICRun <- function(iT, maxDs=NA, minB=0, runID=0, nCores=1, saveClus=NA,
   }, mc.cores = nCores))
   clus <- cbind(clus, modD)
   
-  if(!is.na(saveClus)) {
-    saveRDS(clus, saveClus)
-  }
+  return(clus)
+}
+
+#Obtain GAIC at several different cutoffs
+GAICRun <- function(clus, runID=0, nCores=1) {
+  #@param nCores: Number of cores for parallel processing
+  #@return: A data table of each runs cluster information.
+  #         Both null and proposed model AIC values, as well as the AIC loss ($nullAIC, $modAIC and $GAIC)
+  #         The max size, average size and number of singletons ($SizeMax, $MeanSize and $Singletons)
+  #         The total growth, largest growth and number of growing clusters ($GrowthTot, $GrowthMax, and $nGrowing)
+  #         The ID of the largest cluster and the cluster with the highest growth ($SizeMaxID and $GrowthMaxID)
+  #         The effect ratio of mean recency in growing clusters over mean recency in non-growing clusters ($xMag)
   
-  dt <- bind_rows(mclapply(maxDs, function(d) {
+
+  dt <- bind_rows(mclapply(unique(clus$MaxD), function(d) {
     
-    dt <- clus[(MaxD)==d, c("ID", "Old", "New")]
-    
+    dt <- clus[(MaxD)==d, c("ID", "Old", "New", "Growing")]
     dt[, (propVar) := lapply(1:length(propVar), function(i){
       sapply(clus[(MaxD)==d, get(propVar[i])], propTrans[[i]])
     })]
@@ -297,11 +295,23 @@ GAICRun <- function(iT, maxDs=NA, minB=0, runID=0, nCores=1, saveClus=NA,
     fit1 <- glm(formula = modFormula, data=dt, family = "poisson")
     fit2 <- glm(formula = New~Old, data=dt, family = "poisson")
     
-    data.table(modAIC=fit1$aic, nullAIC=fit2$aic, GAIC=(fit1$aic-fit2$aic),
-               GrowthTot=sum(dt[,(New)]), Singletons=nrow(dt[(Old)==1,]), MeanSize=mean(dt[,(Old)]),
-               GrowthMax=max(dt[,(New)]), GrowthMaxID=dt[which.max((New)), (ID)],
-               SizeMax=max(dt[,(Old)]), SizeMaxID=dt[which.max((Old)), (ID)])
-  }),)
+    if(length(unique(dt$Growing))<2){
+      AUCs <- rep(NA, 1+length(propVar))
+    } else {
+      tfFormula <- gsub("New", "Growing", as.character(modFormula))
+      fitROC <- roc(formula=modFormula, data=dt)
+      AUCs <- sapply(fitROC, function(x){x$auc})
+    }
+    
+    res <- data.table(modAIC=fit1$aic, nullAIC=fit2$aic, GAIC=(fit1$aic-fit2$aic),
+                      GrowthTot=sum(dt[,(New)]), Singletons=nrow(dt[(Old)==1,]), MeanSize=mean(dt[,(Old)]),
+                      GrowthMax=max(dt[,(New)]), GrowthMaxID=dt[which.max((New)), (ID)],
+                      SizeMax=max(dt[,(Old)]), SizeMaxID=dt[which.max((Old)), (ID)])
+    nmAUC <- sapply(names(dt[,!c("ID","New", "Growing")]), function(s){paste0(s, "AUC")})
+    res[, (nmAUC) :=  as.list(AUCs)]
+    
+    return(res)
+  }, mc.cores=nCores))
   
   dt[,"RunID" := runID]
   dt[,"MaxDistance" := maxDs]

@@ -37,7 +37,8 @@ runFullMulti <- function(iFile, dateFormat, maxDs, newMark, prop=0.8, n=100, var
 }
 
 #Run GAIC test for tree-based data
-runTreeGAIC <- function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y", addVarN=NA, fullF=NA, oDir="~/",
+#See Comparison for ease of use
+runTreeGAIC <- function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y", addVarN=character(0), fullF=NA, oDir="~/",
                         gFile=NA, maxDs=NA, minB=0, nCores=1, logF=NA, program="IQ-TREE", short="seq",
                         modFormula=New~Old+Time, propVar="Time", propTrans=list(function(x){mean(x)})) {
   #@param tFile: An input tree, passed to impTree()
@@ -55,17 +56,18 @@ runTreeGAIC <- function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y", addVa
   source("git/tn/subT_Lib.R")
   source("git/tn/pplacer_utils.R")
   
-  oDir <- gsub("$|/$", "/", oDir)
-  
+  ##UNTESTED
   if(is.na(gFile)) {
     taxitCreate(treeF=tFile, logF = logF, fullF = fullF, oDir = oDir, program = program)
     multiPplacer(oDir)
     multiGuppy(oDir)
   }
   
-  oT <- impTree(tFile, reVars=reVars, varInd=varInd, dateFormat=dateFormat, addVarN=addVarN)
-  oT <- growthSim(oT, gFile)
-  res <- GAICRun(oT, maxDs, minB, nCores, modFormula=modFormula, propVar=propVar, propTrans=propTrans)
+  oT <- impTree(tFile=tFile, reVars=reVars, varInd=varInd, dateFormat=dateFormat, addVarN=addVarN)
+  oT$g <- growthSim(iT=oT, gFile=gFile)
+  clus <- multiSTClu(iT=oT, maxDs=maxDs, minB=minB, nCores=nCores,
+                     modFormula=modFormula, propVar=propVar, propTrans=propTrans )
+  res <- GAICRun(clus=clus, nCores = nCores)
 
   return(res)
 }
