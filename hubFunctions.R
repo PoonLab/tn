@@ -65,9 +65,8 @@ runTreeGAIC <- function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y", addVa
   
   oT <- impTree(tFile=tFile, reVars=reVars, varInd=varInd, dateFormat=dateFormat, addVarN=addVarN)
   oT$g <- growthSim(iT=oT, gFile=gFile)
-  clus <- multiSTClu(iT=oT, maxDs=maxDs, minB=minB, nCores=nCores,
-                     modFormula=modFormula, propVar=propVar, propTrans=propTrans )
-  res <- GAICRun(clus=clus, nCores = nCores)
+  clus <- multiSTClu(iT=oT, maxDs=maxDs, minB=minB, nCores=nCores)
+  res <- GAICRun(clus=clus, nCores = nCores, modFormula=modFormula, propVar=propVar, propTrans=propTrans )
 
   return(res)
 }

@@ -244,8 +244,7 @@ STClu <- function(iT, maxD, minB=0) {
   return(clu)
 }
 
-multiSTClu <- function(iT, maxDs, minB, nCores=1, modFormula=New~Old+Time, 
-                       propVar="Time", propTrans=list(function(x){mean(x)})) {
+multiSTClu <- function(iT, maxDs, minB, nCores=1) {
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param modFormula: The predictive model formula. This may be changed with additional variables
   #                   Recency is always calculated for all clusters.
@@ -274,7 +273,8 @@ multiSTClu <- function(iT, maxDs, minB, nCores=1, modFormula=New~Old+Time,
 }
 
 #Obtain GAIC at several different cutoffs
-GAICRun <- function(clus, runID=0, nCores=1) {
+GAICRun <- function(clus, runID=0, nCores=1, modFormula=New~Old+Time, 
+                    propVar="Time", propTrans=list(function(x){mean(x)})) {
   #@param nCores: Number of cores for parallel processing
   #@return: A data table of each runs cluster information.
   #         Both null and proposed model AIC values, as well as the AIC loss ($nullAIC, $modAIC and $GAIC)
@@ -284,7 +284,8 @@ GAICRun <- function(clus, runID=0, nCores=1) {
   #         The effect ratio of mean recency in growing clusters over mean recency in non-growing clusters ($xMag)
   
 
-  dt <- bind_rows(mclapply(unique(clus$MaxD), function(d) {
+  maxDs <- unique(clus$MaxD)
+  dt <- bind_rows(mclapply(maxDs, function(d) {
     
     dt <- clus[(MaxD)==d, c("ID", "Old", "New", "Growing")]
     dt[, (propVar) := lapply(1:length(propVar), function(i){
@@ -315,7 +316,6 @@ GAICRun <- function(clus, runID=0, nCores=1) {
   
   dt[,"RunID" := runID]
   dt[,"MaxDistance" := maxDs]
-  dt[,"minBootstrap" := minB]
   
   return(dt)
 }
