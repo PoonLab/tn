@@ -176,7 +176,7 @@ growthSim <- function(iT, gFile) {
 }
 
 #Clusters are defined as a series of tips diverging from a series of quickly branching nodes
-STClu <- function(iT, maxD, minB=0) {
+STClu <- function(iT, maxD, minB=0, setID=0) {
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param maxD: The maximum distance criterion defining clusters
   #@return: The tree annotated with $c, which contains cluster membership information ($Membership).
@@ -241,10 +241,11 @@ STClu <- function(iT, maxD, minB=0) {
      
   clu[,"MaxD" := maxD]
   clu[,"MinB" := minB]
+  clu[,"SetID" := setID]
   return(clu)
 }
 
-multiSTClu <- function(iT, maxDs, minB, nCores=1) {
+multiSTClu <- function(iT, maxDs, minBs=NA, nCores=1) {
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param modFormula: The predictive model formula. This may be changed with additional variables
   #                   Recency is always calculated for all clusters.
@@ -253,8 +254,13 @@ multiSTClu <- function(iT, maxDs, minB, nCores=1) {
   #@param runID: An identifier to lable this particular run and compare it to others
   
   #Building all Clusters
-  clus <- bind_rows(mclapply(maxDs, function(d) {dt <- STClu(iT, d, minB)}, 
-                             mc.cores = nCores))
+  if(is.na(minBs)){
+    clus <- bind_rows(mclapply(1:length(maxDs), function(i) {dt <- STClu(iT, maxD=maxDs[i], minB=0, setID=i)}, 
+                               mc.cores = nCores))
+  } else {
+    clus <- bind_rows(mclapply(1:length(minBs), function(i) {dt <- STClu(iT, maxD=maxDs, minB=minBs[i], setID=i)}, 
+                               mc.cores = nCores))
+  }
   
   clus[,"Growing" := F]
   clus[New>1,"Growing" := T]
@@ -273,7 +279,7 @@ multiSTClu <- function(iT, maxDs, minB, nCores=1) {
 }
 
 #Obtain GAIC at several different cutoffs
-GAICRun <- function(clus, runID=0, nCores=1, modFormula=New~Old+Time, 
+GAICRun <- function(clus, runID=0, nCores=1, modFormula=New~Old+Time,
                     propVar="Time", propTrans=list(function(x){mean(x)})) {
   #@param nCores: Number of cores for parallel processing
   #@return: A data table of each runs cluster information.
@@ -283,13 +289,12 @@ GAICRun <- function(clus, runID=0, nCores=1, modFormula=New~Old+Time,
   #         The ID of the largest cluster and the cluster with the highest growth ($SizeMaxID and $GrowthMaxID)
   #         The effect ratio of mean recency in growing clusters over mean recency in non-growing clusters ($xMag)
   
-
-  maxDs <- unique(clus$MaxD)
-  dt <- bind_rows(mclapply(maxDs, function(d) {
+  setIDs <- unique(clus$SetID)
+  dt <- bind_rows(mclapply(setIDs, function(id) {
     
-    dt <- clus[(MaxD)==d, c("ID", "Old", "New", "Growing")]
+    dt <- clus[(SetID)==id, c("ID", "Old", "New", "Growing", "MaxD", "MinB")]
     dt[, (propVar) := lapply(1:length(propVar), function(i){
-      sapply(clus[(MaxD)==d, get(propVar[i])], propTrans[[i]])
+      sapply(clus[(SetID)==id, get(propVar[i])], propTrans[[i]])
     })]
     
     #Compares clusters with weights obtained through variables to clusters with even weights
@@ -307,15 +312,15 @@ GAICRun <- function(clus, runID=0, nCores=1, modFormula=New~Old+Time,
     res <- data.table(modAIC=fit1$aic, nullAIC=fit2$aic, GAIC=(fit1$aic-fit2$aic),
                       GrowthTot=sum(dt[,(New)]), Singletons=nrow(dt[(Old)==1,]), MeanSize=mean(dt[,(Old)]),
                       GrowthMax=max(dt[,(New)]), GrowthMaxID=dt[which.max((New)), (ID)],
-                      SizeMax=max(dt[,(Old)]), SizeMaxID=dt[which.max((Old)), (ID)])
-    nmAUC <- sapply(names(dt[,!c("ID","New", "Growing")]), function(s){paste0(s, "AUC")})
+                      SizeMax=max(dt[,(Old)]), SizeMaxID=dt[which.max((Old)), (ID)],
+                      MaxD=dt[1,(MaxD)], MinB=dt[1,(MinB)])
+    nmAUC <- sapply(names(dt[,!c("ID","New", "Growing", "MinB", "MaxD")]), function(s){paste0(s, "AUC")})
     res[, (nmAUC) :=  as.list(AUCs)]
     
     return(res)
   }, mc.cores=nCores))
   
   dt[,"RunID" := runID]
-  dt[,"MaxDistance" := maxDs]
   
   return(dt)
 }

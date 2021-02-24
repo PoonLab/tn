@@ -1,14 +1,12 @@
 require(scales)
 
 #Plot and compare AIC loss results
-plotGAIC <- function(res, resComp=NA, robF="", mCol="black", cCol="grey", randMod=F,
+plotGAIC <- function(res, robF="", resCols="black", randMod=F, resLtys=1,
                      legLabs=NA, xlim=NA, figLab="", ylim=NA) {
   #@param res: The result of a GAIC run. This is the "Main" result
-  #@param resComp: The result of a second GAIC run for comparison
   #@param robF: A file containing a robust run (ie. repeated runs from the multiGAIC function)
-  #@param mCol: The colour for the main result
-  #@param cCol: The colour for the comparison result.
-  #             Robustness info will also use this
+  #@param resCols: The set of colours for each result
+  #@param resLtys: The set of line types for each result
   #@param randMod: If comparing to a random model
   #@param legLabs: The text to go into the legend describing res, and resComp/resRob
   #@param xlim: Manually set xrange for magnification
@@ -19,23 +17,18 @@ plotGAIC <- function(res, resComp=NA, robF="", mCol="black", cCol="grey", randMo
   if(file.exists(robF)) {
     resRob <- readRDS(robF)
   } else {
-    resRob <- res[numeric(0)]
+    resRob <- (res[[1]])[numeric(0)]
   }
   
   #Calculating robustness info
-  robLine <- sapply(res$MaxDistance, function(d) {
+  robLine <- sapply(res[[1]]$MaxDistance, function(d) {
     dGAIC <- resRob[MaxDistance==d, (GAIC)]
     return(c(mean(dGAIC), sd(dGAIC)))
   })
   
-  #Searching for Comparison run info
-  if(is.na(resComp)) {
-    resComp <- res[numeric(0)]
-  } 
-
   #Create plot 
-  x <- c(res$MaxDistance, sapply(resComp, function(x){x$MaxDistance}), resRob$MaxDistance)
-  y <- c(res$GAIC, sapply(resComp, function(x){x$GAIC}), resRob$GAIC)
+  x <- c(sapply(res, function(x){x$MaxDistance}), resRob$MaxDistance)
+  y <- c(sapply(res, function(x){x$GAIC}), resRob$GAIC)
   
   par(mar=c(5,5,5.2,2)+0.1)
   if(is.na(xlim)) {xlim = range(x)}
@@ -51,25 +44,20 @@ plotGAIC <- function(res, resComp=NA, robF="", mCol="black", cCol="grey", randMo
   abline(h=(ticLoc+ticStep/2), col="white", lwd=1)
   abline(h=0, lty=2)
   
-  abline(v=res$MaxDistance[which.min(res$GAIC)], col="grey", lty=2, lwd=2)
-  abline(v=res$MaxDistance[which.min(resComp$GAIC)], col="grey", lty=2, lwd=2)
-  abline(v=res$MaxDistance[which.min(robLine[1,])], col="grey", lty=2, lwd=2)
+  resMins <- sapply(res, function(x){x$MaxDistance[which.min(x$GAIC)]})
   
-  #Plot comp
-  for(i in 1:length(resComp)) {
-    print("Blah")
-    lines(resComp[[i]]$MaxDistance, resComp[[i]]$GAIC, col=cCol[i], lwd=3)
+  abline(v=resMins, col="grey", lty=1, lwd=1.5)
+  
+  #Plot res
+  for(i in 1:length(res)) {
+    lines(res[[i]]$MaxDistance, res[[i]]$GAIC, col=resCols[i], lty=resLtys[i], lwd=3)
   }
   
-  
   #Plot Rob
-  lines(res$MaxDistance, robLine[1,], col=cCol, lwd=2)
-  polygon(c(res$MaxDistance, rev(res$MaxDistance)),
+  lines(res[[1]]$MaxDistance, robLine[1,], col=resCols[1], lwd=2)
+  polygon(c(res[[1]]$MaxDistance, rev(res[[1]]$MaxDistance)),
           c(robLine[1,]+robLine[2,],rev(robLine[1,]-robLine[2,])),
           col=alpha("black", 0.08), border = alpha("black", 0.65), lty=1, lwd=0.5)
-  
-  #Plot main
-  lines(res$MaxDistance, res$GAIC, col=mCol, lwd=3)
   
   #Define steps for text labels on plot
   vStep <- (par("usr")[4]-par("usr")[3])/50
@@ -78,29 +66,19 @@ plotGAIC <- function(res, resComp=NA, robF="", mCol="black", cCol="grey", randMo
     if(which.min(res$GAIC)>which.min(robLine[1,])) {hStep <- -hStep}
   }
   
-  #Highlight min loc for Main
-  lines(rep(res$MaxDistance[which.min(res$GAIC)], 2), c(par("usr")[3], par("usr")[3]+vStep*3), col=mCol, lwd=4)
-  lines(rep(res$MaxDistance[which.min(res$GAIC)], 2), c(par("usr")[3], par("usr")[3]+vStep*2), col="white", lwd=0.5)
-  points(res$MaxDistance[which.min(res$GAIC)], par("usr")[3])
-  text(res$MaxDistance[which.min(res$GAIC)]-hStep*2, par("usr")[3]+vStep*5, res$MaxDistance[which.min(res$GAIC)], cex=1.25)
-  
-  #Highlight min loc for Comp (if different)
-  if(length(resComp)>0){
-    for(i in 1:length(resComp)){
-      if(which.min(res$GAIC)!=which.min(resComp[[i]]$GAIC)) {
-        if(which.min(res$GAIC)>which.min(resComp[[i]]$GAIC)) {hStep <- -hStep}
-        lines(rep(res$MaxDistance[which.min(resComp[[i]]$GAIC)], 2), c(par("usr")[3], par("usr")[3]+vStep*2), col=cCol, lwd=4)
-        lines(rep(res$MaxDistance[which.min(resComp[[i]]$GAIC)], 2), c(par("usr")[3], par("usr")[3]+vStep*1), col="white", lwd=0.5)
-        points(res$MaxDistance[which.min(resComp[[i]]$GAIC)], par("usr")[3])
-        text(res$MaxDistance[which.min(resComp[[i]]$GAIC)]+hStep*2, par("usr")[3]+vStep*4, res$MaxDistance[which.min(resComp[[i]]$GAIC)], cex=1.25)
-      }
-    }
+  #Highlight min loc (if different)
+  for(i in 1:length(unique(resMins))){
+    resMin <- unique(resMins)[i]
+    lines(rep(resMin, 2), c(par("usr")[3], par("usr")[3]+vStep*2), col=resCols[1], lwd=4)
+    lines(rep(resMin, 2), c(par("usr")[3], par("usr")[3]+vStep*1), col="white", lwd=0.75)
+    points(resMin, par("usr")[3])
+    #text(resMin+hStepi*2, par("usr")[3]+vStep*4, resMin, cex=1.25)
   }
   
   if(nrow(resRob)>0){
     #Highlight min loc for Rob (if different)
     if(which.min(res$GAIC)!=which.min(robLine[1,])) {
-      lines(rep(res$MaxDistance[which.min(robLine[1,])], 2), c(par("usr")[3], par("usr")[3]+vStep*2), col=cCol, lwd=4)
+      lines(rep(res$MaxDistance[which.min(robLine[1,])], 2), c(par("usr")[3], par("usr")[3]+vStep*2), col=resCols[1], lwd=4)
       lines(rep(res$MaxDistance[which.min(robLine[1,])], 2), c(par("usr")[3], par("usr")[3]+vStep*1), col="white", lwd=0.5)
       points(res$MaxDistance[which.min(robLine[1,])], par("usr")[3])
       text(res$MaxDistance[which.min(robLine[1,])]+hStep*2, par("usr")[3]+vStep*4, res$MaxDistance[which.min(robLine[1,])], cex=1.25)
@@ -111,7 +89,7 @@ plotGAIC <- function(res, resComp=NA, robF="", mCol="black", cCol="grey", randMo
   #Legend and figure labelling
   par(xpd=NA)
   if(!is.na(legLabs)){
-    legend("bottomright", legend = legLabs, fill = c(mCol, cCol), bty='n',cex=1.5) 
+    legend("bottomright", legend = legLabs, fill = resCols, lty = resLtys, bty='n',cex=1.25) 
   }
   shiftx <- par('usr')[1] - strwidth(figLab, cex=2)*2
   shifty <- par('usr')[4] + strheight(figLab, cex=2)*3

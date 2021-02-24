@@ -39,7 +39,7 @@ runFullMulti <- function(iFile, dateFormat, maxDs, newMark, prop=0.8, n=100, var
 #Run GAIC test for tree-based data
 #See Comparison for ease of use
 runTreeGAIC <- function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y", addVarN=character(0), fullF=NA, oDir="~/",
-                        gFile=NA, maxDs=NA, minB=0, nCores=1, logF=NA, program="IQ-TREE", short="seq",
+                        gFile=NA, maxDs=NA, minBs=NA, nCores=1, logF=NA, program="IQ-TREE", short="seq",
                         modFormula=New~Old+Time, propVar="Time", propTrans=list(function(x){mean(x)})) {
   #@param tFile: An input tree, passed to impTree()
   #@param dateFormat: Passed to GAICrun
@@ -65,8 +65,14 @@ runTreeGAIC <- function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y", addVa
   
   oT <- impTree(tFile=tFile, reVars=reVars, varInd=varInd, dateFormat=dateFormat, addVarN=addVarN)
   oT$g <- growthSim(iT=oT, gFile=gFile)
-  clus <- multiSTClu(iT=oT, maxDs=maxDs, minB=minB, nCores=nCores)
-  res <- GAICRun(clus=clus, nCores = nCores, modFormula=modFormula, propVar=propVar, propTrans=propTrans )
+  clus <- multiSTClu(iT=oT, maxDs=maxDs, nCores=nCores)
+  res <- GAICRun(clus=clus, nCores=nCores, modFormula=modFormula, propVar=propVar, propTrans=propTrans)
+
+  #Secondary optimization for branch lengths.
+  if(!is.na(minBs)) {
+    clusSec <- multiSTClu(iT=oT, maxDs=res[which.min(GAIC), (MaxD)], minBs=minBs, nCores=nCores)
+    resSec <- GAICRun(clus=clusSec, nCores=nCores, modFormula=modFormula, propVar=propVar, propTrans=propTrans, runID=-1)
+  }
 
   return(res)
 }
