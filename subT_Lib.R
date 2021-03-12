@@ -111,6 +111,31 @@ impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y",  addVarN=c
   return(t)
 }
 
+#More Node stuff
+#This is relevent for alternative clustering methods, or results, but takes up time
+extendInfo <- function(iT) {
+  
+  oN <- iT$n
+  
+  ds <- dist.nodes(iT)
+  des <- Descendants(iT, type = "all")
+  desDs <- sapply(des, function(x) {ds[x[x<=nrow(iT$seqInfo)],x[x<=nrow(iT$seqInfo)]]})
+  
+  oN$MaxD <- sapply(desDs, function(x){max(x)})
+  oN$MeanD <- sapply(desDs, function(x){mean(x[x>0])})
+  oN$Size <- sapply(des, function(x){length(x)})
+  oN$des <- des
+  
+  for(nm in colnames(iT$seqInfo)[-1]){
+    oN[,(nm) := lapply(oN$des, function(x){iT$seqInfo[x[x<=nrow(iT$seqInfo)],get(nm)]})]
+  }
+  oN[, "Membership" := lapply(oN$des, function(x){
+    iT$seqInfo[x[x<=nrow(iT$seqInfo)],(ID)]
+  })]
+  
+  return(oN)
+}
+
 #After simulating the growth of trees by placing recent sequences as tips on a fixed ML tree
 growthSim <- function(iT, gFile) {
   #@param iT: The input tree file, annotated with vertex and edge information
@@ -245,7 +270,64 @@ STClu <- function(iT, maxD, minB=0, setID=0) {
   return(clu)
 }
 
-multiSTClu <- function(iT, maxDs, minBs=NA, nCores=1) {
+#Use cluster-pickers clustering method.
+CPClu <- function(iT, maxD, minB=0, setID=0) {
+  
+  iT$n[,"Clustered":=F]
+  iT$n[(MaxD<=maxD)&(Bootstrap>=minB), "Clustered":=T]
+  cNodes <- as.numeric(unlist(iT$n[(Clustered), .(des)]))
+  iT$n[ID%in%cNodes, "Clustered" := F]
+
+  #Sort out singleton clustering
+  iT$n[1:length(iT$tip.label), "Clustered" := F]
+  cTips <- unlist(iT$n[(Clustered), .(des)])
+  cTips <- as.numeric(cTips[cTips<=nrow(iT$seqInfo)])
+  iT$n[1:length(iT$tip.label), "Clustered" := T]
+  iT$n[cTips, "Clustered" := F]
+  
+  #Find parent clusters
+  iT$n[,"Cluster":=0]
+  for(i in which(iT$n$Clustered)) {
+    if(i<=nrow(iT$seqInfo)){
+      iT$n[i, "Cluster" := i]
+    } else{
+      iT$n[iT$n$des[[i]], "Cluster" := iT$n$ID[[i]]] 
+    }
+  }
+  
+  #The cluster that each new tip joins is saved as a column in $g
+  iT$g[,"Cluster" := (iT$n$Cluster)[(oConn)]]
+  maxDs <- iT$n[iT$g$oConn, (maxD)]+iT$g$TermDist+iT$g$PenDist
+  iT$g[which(maxDs<maxD), "Cluster" := 0]
+  
+  nidG <- sapply(unique(iT$g[,(nID)]), function(id) {
+    idG <- iT$g[(nID)%in%id,]
+    totB <- sapply(unique(idG[,(Cluster)]), function(x){
+      sum(idG[(Cluster)==x, (Bootstrap)])
+    })
+    ifelse(max(totB)<minB, 0,
+           idG[which.max(totB)[[1]], (Cluster)]) 
+  })
+  temp <- table(nidG)
+  
+  #Initialize and fill table representing new case attachment (ie. growth)
+  old <- table(iT$n$Cluster[1:length(iT$tip.label)])
+  new <- old-old
+  new[names(new)%in%names(temp)] <- temp[names(temp)%in%names(new)]
+  
+  #Summarizes growth information as a data table
+  #This excludes any clusters with 
+  clu <- data.table(ID = as.numeric(names(old)), Old = as.numeric(old), New = as.numeric(new))
+  clu[,"Membership" := lapply(clu$ID, function(id){c(iT$n[(Cluster)%in%id, (ID)], iT$g[(Cluster)%in%id, (nID)])})]
+  
+  clu[,"MaxD" := maxD]
+  clu[,"MinB" := minB]
+  clu[,"SetID" := setID]
+  
+  return(clu)
+}
+
+multiSTClu <- function(iT, maxDs, minBs=0, nCores=1, cluFun=STClu) {
   #@param iT: The input tree file, annotated with vertex and edge information
   #@param modFormula: The predictive model formula. This may be changed with additional variables
   #                   Recency is always calculated for all clusters.
@@ -254,11 +336,11 @@ multiSTClu <- function(iT, maxDs, minBs=NA, nCores=1) {
   #@param runID: An identifier to lable this particular run and compare it to others
   
   #Building all Clusters
-  if(is.na(minBs)){
-    clus <- bind_rows(mclapply(1:length(maxDs), function(i) {dt <- STClu(iT, maxD=maxDs[i], minB=0, setID=i)}, 
+  if(length(minBs)==1){
+    clus <- bind_rows(mclapply(1:length(maxDs), function(i) {dt <- cluFun(iT, maxD=maxDs[i], minB=minBs, setID=i)}, 
                                mc.cores = nCores))
-  } else {
-    clus <- bind_rows(mclapply(1:length(minBs), function(i) {dt <- STClu(iT, maxD=maxDs, minB=minBs[i], setID=i)}, 
+  } else{
+    clus <- bind_rows(mclapply(1:length(minBs), function(i) {dt <- cluFun(iT, maxD=maxDs, minB=minBs[i], setID=i)}, 
                                mc.cores = nCores))
   }
   

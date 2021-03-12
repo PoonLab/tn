@@ -21,13 +21,13 @@ plotGAIC <- function(res, robF="", resCols="black", randMod=F, resLtys=1,
   }
   
   #Calculating robustness info
-  robLine <- sapply(res[[1]]$MaxDistance, function(d) {
-    dGAIC <- resRob[MaxDistance==d, (GAIC)]
+  robLine <- sapply(res[[1]]$MaxD, function(d) {
+    dGAIC <- resRob[MaxD==d, (GAIC)]
     return(c(mean(dGAIC), sd(dGAIC)))
   })
   
   #Create plot 
-  x <- c(sapply(res, function(x){x$MaxDistance}), resRob$MaxDistance)
+  x <- c(sapply(res, function(x){x$MaxD}), resRob$MaxD)
   y <- c(sapply(res, function(x){x$GAIC}), resRob$GAIC)
   
   par(mar=c(5,5,5.2,2)+0.1)
@@ -44,18 +44,19 @@ plotGAIC <- function(res, robF="", resCols="black", randMod=F, resLtys=1,
   abline(h=(ticLoc+ticStep/2), col="white", lwd=1)
   abline(h=0, lty=2)
   
-  resMins <- sapply(res, function(x){x$MaxDistance[which.min(x$GAIC)]})
+  resMins <- sapply(res, function(x){x$MaxD[which.min(x$GAIC)]})
   
   abline(v=resMins, col="grey", lty=1, lwd=1.5)
   
   #Plot res
   for(i in 1:length(res)) {
-    lines(res[[i]]$MaxDistance, res[[i]]$GAIC, col=resCols[i], lty=resLtys[i], lwd=3)
+    lines(res[[i]]$MaxD, res[[i]]$GAIC, col=resCols[i], lty=resLtys[i], lwd=3)
   }
   
   #Plot Rob
-  lines(res[[1]]$MaxDistance, robLine[1,], col=resCols[1], lwd=2)
-  polygon(c(res[[1]]$MaxDistance, rev(res[[1]]$MaxDistance)),
+  lines(res[[1]]$MaxD, robLine[1,], col=resCols[length(resCols)], lwd=2, lty=resLtys[length(resLtys)])
+  abline(v=res[[1]]$MaxD[which.min(robLine[1,])], col="grey", lty=1, lwd=1.5)
+  polygon(c(res[[1]]$MaxD, rev(res[[1]]$MaxD)),
           c(robLine[1,]+robLine[2,],rev(robLine[1,]-robLine[2,])),
           col=alpha("black", 0.08), border = alpha("black", 0.65), lty=1, lwd=0.5)
   
@@ -63,13 +64,13 @@ plotGAIC <- function(res, robF="", resCols="black", randMod=F, resLtys=1,
   vStep <- (par("usr")[4]-par("usr")[3])/50
   hStep <- (par("usr")[2]-par("usr")[1])/50
   if(nrow(resRob)>0) {
-    if(which.min(res$GAIC)>which.min(robLine[1,])) {hStep <- -hStep}
+    if(which.min(res[[1]]$GAIC)>which.min(robLine[1,])) {hStep <- -hStep}
   }
   
   #Highlight min loc (if different)
   for(i in 1:length(unique(resMins))){
     resMin <- unique(resMins)[i]
-    lines(rep(resMin, 2), c(par("usr")[3], par("usr")[3]+vStep*2), col=resCols[1], lwd=4)
+    lines(rep(resMin, 2), c(par("usr")[3], par("usr")[3]+vStep*2), col=resCols[i], lwd=4)
     lines(rep(resMin, 2), c(par("usr")[3], par("usr")[3]+vStep*1), col="white", lwd=0.75)
     points(resMin, par("usr")[3])
     #text(resMin+hStepi*2, par("usr")[3]+vStep*4, resMin, cex=1.25)
@@ -77,11 +78,12 @@ plotGAIC <- function(res, robF="", resCols="black", randMod=F, resLtys=1,
   
   if(nrow(resRob)>0){
     #Highlight min loc for Rob (if different)
-    if(which.min(res$GAIC)!=which.min(robLine[1,])) {
-      lines(rep(res$MaxDistance[which.min(robLine[1,])], 2), c(par("usr")[3], par("usr")[3]+vStep*2), col=resCols[1], lwd=4)
-      lines(rep(res$MaxDistance[which.min(robLine[1,])], 2), c(par("usr")[3], par("usr")[3]+vStep*1), col="white", lwd=0.5)
-      points(res$MaxDistance[which.min(robLine[1,])], par("usr")[3])
-      text(res$MaxDistance[which.min(robLine[1,])]+hStep*2, par("usr")[3]+vStep*4, res$MaxDistance[which.min(robLine[1,])], cex=1.25)
+    if(which.min(res[[1]]$GAIC)!=which.min(robLine[1,])) {
+      lines(rep(res[[1]]$MaxD[which.min(robLine[1,])], 2), c(par("usr")[3], par("usr")[3]+vStep*2),
+            col=resCols[length(resCols)],lty=resLtys[length(resLtys)], lwd=4)
+      lines(rep(res[[1]]$MaxD[which.min(robLine[1,])], 2), c(par("usr")[3], par("usr")[3]+vStep*1), col="white", lwd=0.5)
+      points(res[[1]]$MaxD[which.min(robLine[1,])], par("usr")[3])
+      text(res[[1]]$MaxD[which.min(robLine[1,])]+hStep*2, par("usr")[3]+vStep*4, res$MaxD[which.min(robLine[1,])], cex=1.25)
     }
   }
 
@@ -93,7 +95,7 @@ plotGAIC <- function(res, robF="", resCols="black", randMod=F, resLtys=1,
   }
   shiftx <- par('usr')[1] - strwidth(figLab, cex=2)*2
   shifty <- par('usr')[4] + strheight(figLab, cex=2)*3
-  text(shiftx, shifty, figLab, cex=2.4)
+  text(shiftx, shifty, figLab, cex=2.4) 
 }
 
 #Plot and compare AIC loss results
@@ -109,7 +111,7 @@ plotMinLoc <- function(robFs, cols, legLabs=NA, figLab="", xlim=NA, bw="nrd0") {
     resRob <- readRDS(f)
     sapply(range(resRob$RunID)[1]:range(resRob$RunID)[2], function(i){
       x <- resRob[RunID==i]
-      x[which.min(GAIC), (MaxDistance)]
+      x[which.min(GAIC), (MaxD)]
     })
   })
   
@@ -165,19 +167,21 @@ plotEdgeLength <- function(elL, cols, legLabs=NA, figLab="", ylim=NA, xlim=NA, b
   #Get hist plots for optima locations
   hs <- lapply(elL, function(x) {hist(x, breaks=breaks, plot = F)})
   
-  #Create a plot
-  par(mar=c(5,5,5.2,2)+0.1)
   hts <- sapply(1:(length(breaks)-1), function(i){
-    sapply(hs, function(h){h$counts[i]/sum(h$counts)})
+    sapply(hs, function(h){
+      (h$counts[i]/sum(h$counts))
+    })
   })
 
-  if(is.na(xlim)) {xlim = range(breaks)}
-  if(is.na(ylim)) {ylim = c(0,1)}
+  if(is.na(xlim)) {xlim <- c(1,length(breaks))}
+  if(is.na(ylim)) {ylim <-  c(0,1)}
   
-  barplot(hts, beside=T, col=cols, cex.axis=1.4, cex.lab=1.65, 
-          xlab = xlab, ylab="Frequency", ylim = ylim, xlim=xlim)
-  axis(side = 1, labels = round(breaks, 3),
-       at=seq(0.5, (length(treeL)+1)*length(breaks), length(treeL)+1),cex.axis=1.4)
+  #Create a plot
+  par(mar=c(5,5,5.2,2)+0.1)
+  barplot(hts[,xlim[1]:(xlim[2]-1)], beside=T , col=cols, cex.axis=1.4, cex.lab=1.65, 
+          xlab = xlab, ylab="Frequency", ylim = ylim)
+  axis(side = 1, labels = round(breaks[xlim[1]:xlim[2]], 3),
+       at=seq(0.5, (length(elL)+1)*length(breaks[xlim[1]:xlim[2]]), length(elL)+1),cex.axis=1.4)
 
   #Legend and figure labelling
   par(xpd=NA)
@@ -189,3 +193,6 @@ plotEdgeLength <- function(elL, cols, legLabs=NA, figLab="", ylim=NA, xlim=NA, b
   text(shiftx, shifty, figLab, cex=2.4)
   
 }
+
+
+

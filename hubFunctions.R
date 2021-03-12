@@ -39,7 +39,7 @@ runFullMulti <- function(iFile, dateFormat, maxDs, newMark, prop=0.8, n=100, var
 #Run GAIC test for tree-based data
 #See Comparison for ease of use
 runTreeGAIC <- function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y", addVarN=character(0), fullF=NA, oDir="~/",
-                        gFile=NA, maxDs=NA, minBs=NA, nCores=1, logF=NA, program="IQ-TREE", short="seq",
+                        gFile=NA, maxDs=NA, minBs=NA, cluFun=STClu, nCores=1, logF=NA, program="IQ-TREE", short="seq",
                         modFormula=New~Old+Time, propVar="Time", propTrans=list(function(x){mean(x)})) {
   #@param tFile: An input tree, passed to impTree()
   #@param dateFormat: Passed to GAICrun
@@ -56,6 +56,7 @@ runTreeGAIC <- function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y", addVa
   source("git/tn/subT_Lib.R")
   source("git/tn/pplacer_utils.R")
   
+  print("Creating Tree")
   ##UNTESTED
   if(is.na(gFile)) {
     taxitCreate(treeF=tFile, logF = logF, fullF = fullF, oDir = oDir, program = program)
@@ -65,7 +66,14 @@ runTreeGAIC <- function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y", addVa
   
   oT <- impTree(tFile=tFile, reVars=reVars, varInd=varInd, dateFormat=dateFormat, addVarN=addVarN)
   oT$g <- growthSim(iT=oT, gFile=gFile)
-  clus <- multiSTClu(iT=oT, maxDs=maxDs, nCores=nCores)
+  
+  if(all(attr(CPClu, "srcref")==attr(cluFun, "srcref"))){
+    oT$n <- extendInfo(iT=oT)  
+  }
+  print("Defining Clusters")
+  clus <- multiSTClu(iT=oT, maxDs=maxDs, nCores=nCores, cluFun=cluFun)
+  
+  print("Obtaining Results")
   res <- GAICRun(clus=clus, nCores=nCores, modFormula=modFormula, propVar=propVar, propTrans=propTrans)
 
   #Secondary optimization for branch lengths.
