@@ -6,8 +6,8 @@ require("parallel")
 require("pROC")
 
 #Import Tree Data and output an annotated tree with additional information to assist clustering
-impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y",  addVarN=character(0), rootID=NA, priorityQ=0.80){
-  #@param tFile: The name/path of the input file (expecting a newick file)
+import.tree <-function(iFile, varInd=c(1,2), dateFormat="%Y",  addVarN=character(0), rootID=NA, priorityQ=0.80){
+  #@param iFile: The name/path of the input file (expecting a newick file)
   #@paran rootID: The rootID which can be manually used to root the tree. If NA - the tree is midpoint rooted
   #@param reVars: The regular expression used to extract variables from column headers. This is passed to strsplit, creating a vertex of values from the column header
   #@param varInd: A vector of numbers describing the order of variables in the split string. This should describe the index of the unique ID, the Timepoint and the location.
@@ -21,7 +21,7 @@ impTree <-function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y",  addVarN=c
   
   #Import the truncated tree from the tree file
   #By default, root the tree by using mmidpoint root, alternatively, the rootID can be provided.
-  t <- read.tree(tFile)
+  t <- read.tree(iFile)
   if(is.na(rootID)) {
     t <- midpoint.root(t)
   } else{

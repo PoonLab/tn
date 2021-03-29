@@ -79,12 +79,3 @@ positScan <- function(iFile, showPlot=T) {
   return(df)
 }
 
-#Annotates headers with metadata
-headerPrePro <- function(iFile, metData){
-  #@param iFile: Input fasta file.
-  #@param metData: A csv containing both sequence ID's and MetaData
-  
-  #Take fasta file input,
-  seqs <- read.dna(iFile, format = "fasta", as.character = T)
-  
-}
