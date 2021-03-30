@@ -47,10 +47,11 @@ pull.headers <- function(seqs, var.names, var.transformations=list(), sep="_") {
 #By default this will include some basic node info like bootstraps. Other annotations are optional.
 
 #'@param t: An inputted tree using ape's tree handling
-#'@param seq.info: A data frame or data.table object containing the 
+#'@param seq.info: A data frame or data.table object containing the sequences
+#'@param mc.cores: Passed to annotate.nodes as a parallel option
 #'@param paths.annotated: An option to add path info for the tree. Useful for some tree-based clustering methods
 #'@return: the tree annotated with node information and seq.info
-extend.tree <- function(t, seq.info, paths.annotated=T) {
+extend.tree <- function(t, seq.info, paths.annotated=T, mc.cores=1) {
   
   #Root the tree (if unrooted) and resolve multichotomies
   if(!ape::is.rooted(t)){
@@ -72,7 +73,7 @@ extend.tree <- function(t, seq.info, paths.annotated=T) {
   t$seq.info <- seq.info
   
   print("Annotating Nodes")
-  t$node.info <- annotate.nodes(t)
+  t$node.info <- annotate.nodes(t, mc.cores)
   
   print("Annotating Paths")
   if(paths.annotated){
@@ -86,12 +87,13 @@ extend.tree <- function(t, seq.info, paths.annotated=T) {
 #Called by extend.tree. Adds additional node info to the tree. Required for mono.cluster()
 #NOTE: Unlabelled nodes are defaulted to a bootstrap value of 1
 
-#'@param t: An inputted tree using ape's tree handling
+#'@param t: An inputted tree using ape's tree handling. This must be annotated with seq.info
+#'@param mc.cores: A parallel option
 #'@return: A slightly more detailed data table to replace "node.info" to a given tree.
-annotate.nodes <- function(t) {
+annotate.nodes <- function(t, mc.cores=1) {
   
   #Unlabelled nodes are defaulted to a bootstrap value of 1
-  t$node.label[which(t$node.label)%in%""] <- 1
+  t$node.label[which(t$node.label%in%"")] <- 1
   
   nodes <- 1:(2*length(t$tip.label)-1)
   
@@ -117,11 +119,13 @@ annotate.nodes <- function(t) {
   
   #Get membership 
   for(nm in colnames(t$seq.info)[-1]){
-    node.info[,(nm) := lapply(des, function(x){t$seq.info[x[x<=nrow(t$seq.info)],get(nm)]})]
+    node.info[,(nm) := mclapply(des, function(x){
+      t$seq.info[x[x<=nrow(t$seq.info)],get(nm)]
+    }, mc.cores=mc.cores)]
   }
-  node.info[, "Membership" := lapply(des, function(x){
+  node.info[, "Membership" := mclapply(des, function(x){
     t$seq.info[x[x<=nrow(t$seq.info)],(ID)]
-  })]
+  }, mc.cores=mc.cores)]
   
   return(node.info)
 }
@@ -166,4 +170,59 @@ annotate.paths <- function(t) {
   })
   
   return(path.info)
+}
+
+
+#Add the growth information onto the known tree.
+#This uses pplacer to ensure that previously defined clusters remain the same.
+
+#'@param t: An inputted tree using ape's tree handling
+#'@param t.growth: A set of trees from pplacer. Each with a newly added tip.
+#'@param mc.cores: A parallel option
+#'@return: The input tree annotated with growth information stored as growth.info.
+annotate.growth <- function(t, t.grown, mc.cores=1) {
+  
+  print("Annotating Growth")
+  
+  #Obtain placement information from trees.
+  #New IDs, bootstap + branch lengths of new node
+  growth.info <- dplyr::bind_rows(
+    parallel::mclapply(1:length(t.grown), function(i){
+      
+      x <- t.grown[[i]]
+      new.ids <- setdiff(x$tip.label, t$tip.label)
+      new.tips <- which(x$tip.label%in%new.ids)
+      
+      new.edges <- which(x$edge[,2]%in%new.tips)
+      term.dists <- x$edge.length[new.edges]
+      
+      new.nodes <- x$edge[new.edges, 1]
+      new.nodes.des <- which(x$edge[,1]%in%new.nodes)
+      node.boots <- sapply(new.ids, function(x){
+        l <- strsplit(x,"=")[[1]]
+        as.numeric(l[length(l)])
+      })
+      
+      pen.edges <- dplyr::setdiff(new.nodes.des, new.edges)
+      pen.dists <- x$edge.length[pen.edges]
+      
+      neighbour.des <- lapply(new.nodes, function(n){phangorn::Descendants(x, n, "tips")[[1]]})
+      old.tips <- lapply(neighbour.des, function(des){which(t$tip.label%in%x$tip.label[des])})
+      terminal <- sapply(old.tips, function(x){length(x)==1})
+      
+      DT <- data.table::data.table("ID"=i, "NeighbourDes"=old.tips, "Bootstrap" = node.boots,
+                                   "TermDistance"=term.dists, "PendantDistance"=pen.dists, "Terminal"=terminal)
+      
+      return(DT)
+  }, mc.cores=mc.cores))
+  
+  #Collapse neighbour node descendant tips to their MRCA
+  collapsed.neighbours <- sapply(growth.info[!(Terminal), NeighbourDes],  function(des){ape::getMRCA(t,des)})
+  temp <- growth.info[, NeighbourDes]
+  temp[which(!growth.info$Terminal)] <- collapsed.neighbours
+  
+  suppressWarnings(growth.info[, "NeighbourNode" := unlist(temp)])
+  growth.info[, NeighbourDes := NULL]
+  
+  return(growth.info)
 }
