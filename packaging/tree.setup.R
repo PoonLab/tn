@@ -1,14 +1,14 @@
-#Translates a set of sequence headers into a data.frame object for inputted.
-#NOTE: This must contain, at minimum, a set of unique sequence id's (labelled ID) and one other variable
 
-#'@param seqs: An inputted alignment using ape's sequence handling
-#'@param var.names: The names of the variables represented in each header. This must contain "ID".
-#'@param var.transformations: A list of transformation functions (such as as.character()) 
-#'these transform each row into it's proper type. by default, each type is set to character.
-#'The variable named "ID" will be automatically forced to a character object.
-#'@param sep: The separator character that splits upthe headers in the fasta file
-#'@return: A data.table object containing the information associated with each sequence
+#'Translates a set of sequence headers into a data.frame object for inputted.
+#'NOTE: This must contain, at minimum, a set of unique sequence id's (labelled ID) and one other variable
 pull.headers <- function(seqs, var.names, var.transformations=list(), sep="_") {
+  #'@param seqs: An inputted alignment using ape's sequence handling
+  #'@param var.names: The names of the variables represented in each header. This must contain "ID".
+  #'@param var.transformations: A list of transformation functions (such as as.character()) 
+  #'these transform each row into it's proper type. by default, each type is set to character.
+  #'The variable named "ID" will be automatically forced to a character object.
+  #'@param sep: The separator character that splits upthe headers in the fasta file
+  #'@return: A data.table object containing the information associated with each sequence
   
   #Checking Inputs
   if(length(var.names)!=length(unique(var.names))){
@@ -43,15 +43,15 @@ pull.headers <- function(seqs, var.names, var.transformations=list(), sep="_") {
 }
 
 
-#Extends an ape tree object to include annotated node and path information. 
-#By default this will include some basic node info like bootstraps. Other annotations are optional.
-
-#'@param t: An inputted tree using ape's tree handling
-#'@param seq.info: A data frame or data.table object containing the sequences
-#'@param mc.cores: Passed to annotate.nodes as a parallel option
-#'@param paths.annotated: An option to add path info for the tree. Useful for some tree-based clustering methods
-#'@return: the tree annotated with node information and seq.info
-extend.tree <- function(t, seq.info, paths.annotated=T, mc.cores=1) {
+#'Extends an ape tree object to include annotated node and path information. 
+#'By default this will include some basic node info like bootstraps. Other annotations are optional.
+extend.tree <- function(t, seq.info, paths.annotated=T, mc.cores=1, verbose=T) {
+  #'@param t: An inputted tree using ape's tree handling
+  #'@param seq.info: A data frame or data.table object containing the sequences
+  #'@param mc.cores: Passed to annotate.nodes as a parallel option
+  #'@param verbose: An output monitoring option
+  #'@param paths.annotated: An option to add path info for the tree. Useful for some tree-based clustering methods
+  #'@return: the tree annotated with node information and seq.info
   
   #Root the tree (if unrooted) and resolve multichotomies
   if(!ape::is.rooted(t)){
@@ -72,10 +72,10 @@ extend.tree <- function(t, seq.info, paths.annotated=T, mc.cores=1) {
   }
   t$seq.info <- seq.info
   
-  print("Annotating Nodes")
+  if(verbose){print("Annotating Nodes")}
   t$node.info <- annotate.nodes(t, mc.cores)
   
-  print("Annotating Paths")
+  if(verbose){print("Annotating Paths")}
   if(paths.annotated){
     t$path.info <- annotate.paths(t)
   }
@@ -84,13 +84,12 @@ extend.tree <- function(t, seq.info, paths.annotated=T, mc.cores=1) {
 }
 
 
-#Called by extend.tree. Adds additional node info to the tree. Required for mono.cluster()
-#NOTE: Unlabelled nodes are defaulted to a bootstrap value of 1
-
-#'@param t: An inputted tree using ape's tree handling. This must be annotated with seq.info
-#'@param mc.cores: A parallel option
-#'@return: A slightly more detailed data table to replace "node.info" to a given tree.
+#'Called by extend.tree. Adds additional node info to the tree. Required for mono.cluster()
+#'NOTE: Unlabeled nodes are defaulted to a bootstrap value of 1
 annotate.nodes <- function(t, mc.cores=1) {
+  #'@param t: An inputted tree using ape's tree handling. This must be annotated with seq.info
+  #'@param mc.cores: A parallel option
+  #'@return: A slightly more detailed data table to replace "node.info" to a given tree.
   
   #Unlabelled nodes are defaulted to a bootstrap value of 1
   t$node.label[which(t$node.label%in%"")] <- 1
@@ -99,7 +98,7 @@ annotate.nodes <- function(t, mc.cores=1) {
   
   #Store node info in data.table
   node.info <- data.table()
-  node.info[,"ID" := c(t$seq.info$ID, nodes[(nrow(t$seq.info)+1):length(nodes)])] 
+  node.info[,"ID" := nodes] 
   node.info[,"Bootstrap" := c(rep(100, nrow(t$seq.info)), as.numeric(t$node.label))]
   
   node.info[is.na(Bootstrap), 
@@ -108,8 +107,7 @@ annotate.nodes <- function(t, mc.cores=1) {
   
   #Get descendant information for each node
   des <- phangorn::Descendants(t, type = "all")
-  node.info$des <- des
-  node.info$size <- sapply(des, function(x){length(x)})
+  node.info[, "Descendants" := des] 
   
   #Get pairwise patristic distance info
   patristic.dists <- ape::dist.nodes(t)
@@ -126,18 +124,18 @@ annotate.nodes <- function(t, mc.cores=1) {
   node.info[, "Membership" := mclapply(des, function(x){
     t$seq.info[x[x<=nrow(t$seq.info)],(ID)]
   }, mc.cores=mc.cores)]
+  node.info[, "Size" := length(Membership[[1]]), by=1:nrow(node.info)]
   
   return(node.info)
 }
 
 
-#Called by extend.tree. Adds path info to the tree. Required for step.cluster()
-
-#'@param t: An inputted tree using ape's tree handling
-#'@return: A matrix labelled "path.info" to attach to a given tree.
-#'For each node in the path the branch lengths (below node) and bootstraps are given
-#'For the terminal node, no branch length is given below the node and the bootstrap is 1
+#'Called by extend.tree. Adds path info to the tree. Required for step.cluster()
 annotate.paths <- function(t) {
+  #'@param t: An inputted tree using ape's tree handling
+  #'@return: A matrix labelled "path.info" to attach to a given tree.
+  #'For each node in the path the branch lengths (below node) and bootstraps are given
+  #'For the terminal node, no branch length is given below the node and the bootstrap is 1
   
   #Get paths and length information from terminal nodes
   lens <- ape::node.depth.edgelength(t)
@@ -173,16 +171,16 @@ annotate.paths <- function(t) {
 }
 
 
-#Add the growth information onto the known tree.
-#This uses pplacer to ensure that previously defined clusters remain the same.
-
-#'@param t: An inputted tree using ape's tree handling
-#'@param t.growth: A set of trees from pplacer. Each with a newly added tip.
-#'@param mc.cores: A parallel option
-#'@return: The input tree annotated with growth information stored as growth.info.
-annotate.growth <- function(t, t.grown, mc.cores=1) {
+#'Add the growth information onto the known tree.
+#'This uses pplacer to ensure that previously defined clusters remain the same.
+annotate.growth <- function(t, t.grown, mc.cores=1, verbose=T) {
+  #'@param t: An inputted tree using ape's tree handling
+  #'@param t.growth: A set of trees from pplacer. Each with a newly added tip.
+  #'@param mc.cores: A parallel option
+  #'@param verbose: An output monitoring option
+  #'@return: The input tree annotated with growth information stored as growth.info.
   
-  print("Annotating Growth")
+  if(verbose){print("Annotating Growth")}
   
   #Obtain placement information from trees.
   #New IDs, bootstap + branch lengths of new node
