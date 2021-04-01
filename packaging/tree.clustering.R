@@ -1,10 +1,11 @@
 #' Clusters are defined as a series of tips diverging from A high confidence common ancestor.
 #' This divergence must be done Through a series of short branches. 
 #' NOTE: Running this method requires a tree object with growth.info and path.info defined
-step.cluster <- function(t, branch.thresh, boot.thresh=0) {
+step.cluster <- function(t, branch.thresh=0.007, boot.thresh=0, setID=0) {
   #'@param t: The input tree file, annotated with vertex and edge information
   #'@param step.thresh: The maximum branch length criterion defining clusters
   #'@param boot.thresh: The minimum bootstrap criterion defining clusters
+  #'@param setID: If several different parameter ranges are used, the setID can identify them
   #'@return: A data table which extends a subset of node.info. This includes growth info
 
   #Input Checking
@@ -41,9 +42,23 @@ step.cluster <- function(t, branch.thresh, boot.thresh=0) {
     })
   }
   
-  #Assign Clusters
+  #Assign Clusters and update membership info for each
   t$node.info[, "Cluster"] <- path.stop["Node",]
-  cluster.info <- t$node.info[unique(t$node.info[,Cluster]),]
+  cluster.set <- t$node.info[unique(t$node.info[,Cluster]),]
+  
+  cluster.des <- lapply(cluster.set[,ID], function(x){which(t$node.info[1:nrow(t$seq.info),Cluster]%in%x)})
+  cluster.seq.cols <- colnames(cluster.set)[6:(ncol(cluster.set)-4)]
+  cluster.set[, "Descendants" := cluster.des]
+  
+  #Re-Obtain membership 
+  for(nm in cluster.seq.cols){
+    cluster.set[,(nm) := lapply(cluster.des, function(x){
+      t$seq.info[x ,get(nm)]
+    })]
+  }
+  cluster.set[, "Membership" := lapply(cluster.des, function(x){t$seq.info[x,ID]})]
+  cluster.set[, "Size" := sapply(cluster.des, function(x){length(x)})]
+  
   t$growth.info[, "Cluster" := t$node.info[t$growth.info$NeighbourNode, Cluster]] 
   t$growth.info[(TermDistance)<=branch.thresh, Cluster := NA]
   
@@ -53,13 +68,14 @@ step.cluster <- function(t, branch.thresh, boot.thresh=0) {
   growth <- table(growth$V1)
   
   #Attach growth info and a set ID to clusters
-  cluster.info[, "Growth" := 0]
-  cluster.info[ID%in%names(growth), "Growth" := as.numeric(growth)]
+  cluster.set[, "Growth" := 0]
+  cluster.set[ID%in%names(growth), "Growth" := as.numeric(growth)]
   
-  cluster.info[, "BranchThresh" := branch.thresh]
-  cluster.info[, "BootThresh" := boot.thresh]
+  cluster.set[, "BranchThresh" := branch.thresh]
+  cluster.set[, "BootThresh" := boot.thresh]
+  cluster.set[,"setID" := setID]
 
-  return(cluster.info)
+  return(cluster.set)
 }
 
 
@@ -67,19 +83,20 @@ step.cluster <- function(t, branch.thresh, boot.thresh=0) {
 #' Clusters as a monophyletic clade under a high-confidence common ancestor.
 #' The pairwise patristic distances in this clade must all 
 #' NOTE: Running this method requires a tree object with growth.info defined
-mono.pat.cluster <- function(t, dist.thresh, boot.thresh=0, dist.criterion="max.patristic.dist", verbose=T){
+mono.pat.cluster <- function(t, dist.thresh, boot.thresh=0, dist.criterion="max.patristic.dist", verbose=T, setID=0){
   #'@param t: The input tree file, annotated with vertex and edge information
   #'@param dist.criterion: A particular column in node.info that must be less than a distance threshold
   #'@param dist.thresh: The threshold required for clustering.
   #'@param verbose: An output monitoring option
+  #'@param setID: If several different parameter ranges are used, the setID can identify them.
   #'@param boot.thresh: The minimum bootstrap criterion defining clusters
   #'@return: A data table which extends a subset of node.info. This includes growth info
   
   #Input Checking
-  if(!is.numeric(branch.thresh) | !is.numeric(boot.thresh) ){
+  if(!is.numeric(dist.thresh) | !is.numeric(boot.thresh) ){
     stop("Clustering criteria must be numeric values")
   }
-  if(branch.thresh<0 | boot.thresh<0 | boot.thresh>1){
+  if(dist.thresh<0 | boot.thresh<0 | boot.thresh>1){
     warning("Bootstrap criterion should be from 0-1 and 
             branch length criterion should be positive.")
   }
@@ -96,7 +113,7 @@ mono.pat.cluster <- function(t, dist.thresh, boot.thresh=0, dist.criterion="max.
   sub.clusters <- times.clustered[((which<=nrow(t$seq.info))&(V1>1)) | ((which>nrow(t$seq.info))&(V1>0)), which]
   t$node.info[sub.clusters, "Clustered" := F]  
   
-  cluster.info <- t$node.info[(Clustered),]
+  cluster.set <- t$node.info[(Clustered),]
 
   #Find parent clusters
   t$node.info[,"Cluster":=0]
@@ -111,35 +128,11 @@ mono.pat.cluster <- function(t, dist.thresh, boot.thresh=0, dist.criterion="max.
   }
     
   #Attach growth info and a set ID to clusters
-  cluster.info[, "Growth" := NA]
+  cluster.set[, "Growth" := NA]
   
-  cluster.info[, "BranchThresh" := branch.thresh]
-  cluster.info[, "BootThresh" := boot.thresh]
+  cluster.set[, "DistThresh" := dist.thresh]
+  cluster.set[, "BootThresh" := boot.thresh]
+  cluster.set[,"setID" := setID]
   
-  return(cluster.info)
-}
-
-
-#' Runs a given clustering method over a range of parameters values.
-multi.cluster <- function(cluster.method, param.list, mc.cores=1, verbose=T, rangeID=0) {
-  #'@param t: The input tree file, annotated with vertex and edge information
-  #'@param param.list: A named list of parameter sets. Each must correspond to the clustering method used. 
-  #'@param rangeID: If several different parameter ranges are used, the rangeID can identify them.
-  #'@param mc.cores: A parallel option
-  #'@param verbose: An output monitoring option
-  #'@return: A larger data.table with parameter sets noted
-  
-  #Cluster method loop
-  cluster.range <- parallel::mclapply(1:length(param.list), function(i){
-    if(verbose){
-      flush.console()
-      print(paste0(i, " of ", length(param.list)))
-    }
-    do.call(cluster.method, param.list[[i]])
-  }, mc.cores=mc.cores)
-  
-  cluster.range <- dplyr::bind_rows(cluster.range)
-  suppressWarnings(cluster.range[,"rangeID" := rangeID])
-  
-  return(cluster.range)
+  return(cluster.set)
 }
