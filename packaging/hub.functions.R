@@ -19,7 +19,7 @@ multi.cluster <- function(cluster.method, param.list, mc.cores=1, verbose=T, ran
   }, mc.cores=mc.cores)
   
   cluster.range <- dplyr::bind_rows(cluster.range)
-  suppressWarnings(cluster.range[,"rangeID" := rangeID])
+  suppressWarnings(cluster.range[,"RangeID" := rangeID])
   
   return(cluster.range)
 }

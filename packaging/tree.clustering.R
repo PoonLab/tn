@@ -43,37 +43,34 @@ step.cluster <- function(t, branch.thresh=0.007, boot.thresh=0, setID=0) {
   }
   
   #Assign Clusters and update membership info for each
+  seq.cols <- colnames(t$seq.info)
   t$node.info[, "Cluster"] <- path.stop["Node",]
-  cluster.set <- t$node.info[unique(t$node.info[,Cluster]),]
+  t$seq.info[, "Cluster"] <- t$node.info[1:nrow(t$seq.info), Cluster]
   
-  cluster.des <- lapply(cluster.set[,ID], function(x){which(t$node.info[1:nrow(t$seq.info),Cluster]%in%x)})
-  cluster.seq.cols <- colnames(cluster.set)[6:(ncol(cluster.set)-4)]
-  cluster.set[, "Descendants" := cluster.des]
+  cluster.set <- t$seq.info[,lapply(seq.cols, function(nm){list(get(nm))}),by=Cluster]
+  cluster.set <- cluster.set[order(Cluster),]
+  des <- t$node.info[Cluster%in%cluster.set$Cluster, list(.(ID)), by=Cluster]
+  des <- des[order(Cluster),]  
+  cluster.set[,"Descendants":= des$V1]
+  cluster.set[,"Size":=length(V1[[1]]), by=1:nrow(cluster.set)]
+  colnames(cluster.set) <- c("ClusterID", seq.cols, "Descendants", "Size")
   
-  #Re-Obtain membership 
-  for(nm in cluster.seq.cols){
-    cluster.set[,(nm) := lapply(cluster.des, function(x){
-      t$seq.info[x ,get(nm)]
-    })]
-  }
-  cluster.set[, "Membership" := lapply(cluster.des, function(x){t$seq.info[x,ID]})]
-  cluster.set[, "Size" := sapply(cluster.des, function(x){length(x)})]
-  
+  #Assign growth cases to clusters, summing certainty for each
   t$growth.info[, "Cluster" := t$node.info[t$growth.info$NeighbourNode, Cluster]] 
   t$growth.info[(TermDistance)<=branch.thresh, Cluster := NA]
   
-  #Sum bootstrap values within a given cluster
   growth <- t$growth.info[!is.na(Cluster), sum(Bootstrap), by=.(ID, Cluster)]
   growth <- growth[V1>=boot.thresh, Cluster[which.max(V1)], by=.(ID)]
   growth <- table(growth$V1)
+  growth <- growth[which(as.numeric(names(growth))%in%cluster.set$ClusterID)]
   
   #Attach growth info and a set ID to clusters
   cluster.set[, "Growth" := 0]
-  cluster.set[ID%in%names(growth), "Growth" := as.numeric(growth)]
+  cluster.set[ClusterID%in%as.numeric(names(growth)), "Growth" := as.numeric(growth)]
   
   cluster.set[, "BranchThresh" := branch.thresh]
   cluster.set[, "BootThresh" := boot.thresh]
-  cluster.set[,"setID" := setID]
+  cluster.set[,"SetID" := setID]
 
   return(cluster.set)
 }

@@ -14,7 +14,7 @@ fit.analysis <- function(cluster.data, mc.cores=1, null.formula=Growth~Size, ful
   
   #Check inputs
   predictors <- names(predictor.transformations)
-  setIDs <- unique(cluster.data[,setID])
+  setIDs <- unique(cluster.data[,SetID])
   formula.elements <- unlist(lapply(as.character(full.formula), function(x){strsplit(x, " ")[[1]]}))
   if(!all((formula.elements)%in%c(colnames(cluster.data), "+", "~", "-", "*"))){
     warning("Predictors for formula may not be in the range of cluster data")
@@ -22,9 +22,9 @@ fit.analysis <- function(cluster.data, mc.cores=1, null.formula=Growth~Size, ful
   if(!all((predictors)%in%colnames(cluster.data))){
     stop("Predictors referenced in transform step are not in the range of cluster data")
   }
-  if(!("rangeID"%in%colnames(cluster.data))){
+  if(!("RangeID"%in%colnames(cluster.data))){
     warning("No range ID, by default this will be set to 0 for all sets")
-    cluster.data[,"rangeID" := 0]
+    cluster.data[,"RangeID" := 0]
   }
   if(!("Growth"%in%colnames(cluster.data))){
     warning("No Growth information from clusters. By default this will be set to 0 for all sets")
@@ -32,7 +32,7 @@ fit.analysis <- function(cluster.data, mc.cores=1, null.formula=Growth~Size, ful
   }
   
   #Transform cluster data for modelling based on inputs
-  model.data <- cluster.data[, c("ID", "Size", "Growth", "setID", "rangeID")]
+  model.data <- cluster.data[, c("ID", "Size", "Growth", "SetID", "RangeID")]
   model.data[, (predictors) := lapply(predictors, function(x){
     sapply(cluster.data[, get(x)], function(z){(predictor.transformations[[x]])(z)})
   })]
@@ -41,11 +41,11 @@ fit.analysis <- function(cluster.data, mc.cores=1, null.formula=Growth~Size, ful
   cluster.analysis <- dplyr::bind_rows(
     parallel::mclapply(setIDs, function(id) {
       print(id)
-      DT <- model.data[setID==id, ]
+      DT <- model.data[SetID==id, ]
       suppressWarnings(null.fit <- predictor.model(null.formula, DT))
       suppressWarnings(full.fit <- predictor.model(full.formula, DT))
       
-      res <- data.table("NullFit"=list(null.fit), "FullFit"=list(full.fit), "setID"=DT[1,setID], "rangeID"=DT[1,rangeID])
+      res <- data.table("NullFit"=list(null.fit), "FullFit"=list(full.fit), "SetID"=DT[1,SetID], "RangeID"=DT[1,RangeID])
       return(res)
     }, mc.cores=mc.cores))
   

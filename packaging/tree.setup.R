@@ -115,17 +115,6 @@ annotate.nodes <- function(t, mc.cores=1) {
   node.info$max.patristic.dist <- sapply(dists.by.des, function(x){max(x)})
   node.info$mean.patristic.dist <- sapply(dists.by.des, function(x){mean(x[x>0])})
   
-  #Get membership 
-  for(nm in colnames(t$seq.info)[-1]){
-    node.info[,(nm) := parallel::mclapply(des, function(x){
-      t$seq.info[x[x<=nrow(t$seq.info)],get(nm)]
-    }, mc.cores=mc.cores)]
-  }
-  node.info[, "Membership" := parallel::mclapply(des, function(x){
-    t$seq.info[x[x<=nrow(t$seq.info)],(ID)]
-  }, mc.cores=mc.cores)]
-  node.info[, "Size" := length(Membership[[1]]), by=1:nrow(node.info)]
-  
   return(node.info)
 }
 
