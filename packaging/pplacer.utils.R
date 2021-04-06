@@ -1,11 +1,12 @@
 #' Parses the logfile output of tree building software to find information relevant to pplacer.
 #' Prints stats to a temporary ref.pkg file and returns the path to that file. 
 #' 
-#' NOTE: Currently compatible with GTR substitution model and either FastTree, RAxML or IQ-TREE logfiles.
+#' NOTE: Currently compatible with GTR substitution model and either FastTree or IQ-TREE logfiles.
+#' Working to extend this to RAxML and PhyML logfiles, and then to different models of evolution
 translate.log <- function(log.file, program, substitution.model="GTR") {
   #'@param log.file: A path to the logfile from a tree construction run
   #'@param program: The software used to build the tree.
-  #'Can be "FastTree", "IQ-TREE" or "RAxML".
+  #'Can be "FastTree" or "IQ-TREE".
   #'@param substitution.model: The substitution model used. Currently only accepts "GTR"
   #'@return: a json output to be written to a given stats.file for pplacer
   
@@ -15,6 +16,8 @@ translate.log <- function(log.file, program, substitution.model="GTR") {
   close(con)
   
   #Extracts and normalizes list of frequencies
+  ##TO-DO: Fast Tree is untested
+  ##TO-DO: RAxML and PhyML are both not implemented ()
   if(program%in%"FastTree") {
     p <- "GTRRates"
     s <- lns[grep(p, lns)]
@@ -65,28 +68,31 @@ taxit.create <- function(t, seqs.full, stats.json, locus="LOCUS") {
   #'@return: Path to a temporary refpkg directory
   
   #Set up and populate temporary file system
-  temp.dir <- tempdir()
+  refpkg <- tempdir()
   
-  ali.file <- tempfile("ali", temp.dir,".fasta")
-  ali.file.name <- tail(strsplit(ali.file, "/")[[1]],1)
-  ape::write.FASTA(seqs.full, ali.file)
+  seq.file <- paste0(refpkg,"/seq.fasta")
+  seq.file.name <- tail(strsplit(seq.file, "/")[[1]],1)
+  ape::write.FASTA(seqs.full, "test.fasta")
+  ape::write.FASTA(seqs.full, seq.file)
   
-  stats.file <- tempfile("stats", temp.dir, ".json")
+  stats.file <- paste0(refpkg,"/stats.json")
   stats.file.name <- tail(strsplit(stats.file, "/")[[1]],1)
-  jsonlite::write_json(stats.json, stats.file)
+  con <- file(stats.file)
+  write(stats.json, con)
+  close(con)
   
-  tree.file <- tempfile("tree", temp.dir,".nwk")
+  tree.file <- paste0(refpkg,"/tree.nwk")
   tree.file.name <- tail(strsplit(tree.file, "/")[[1]],1)
   ape::write.tree(t, tree.file)
   
-  log.file <- tempfile("log", temp.dir, ".txt")
+  log.file <- paste0(refpkg,"/log.txt")
   log.file.name <- tail(strsplit(log.file, "/")[[1]],1)
-  write(log.file, "Sample log file. Created Using taxit.create() wrapper")
-  
+  write("Sample log file. Created Using taxit.create() wrapper")
+
   #Create generic JSON summary for refpkg.
   summary.json <- jsonlite::toJSON(list(
     "files" = list(
-      "aln_fasta" = ali.file.name,
+      "aln_fasta" = seq.file.name,
       "phylo_model" = stats.file.name,
       "tree" = tree.file.name,
       "tree_stats" = log.file.name
@@ -101,16 +107,18 @@ taxit.create <- function(t, seqs.full, stats.json, locus="LOCUS") {
     ),
     "rollforward"=NULL,
     "md5"= list(
-      "aln_fasta" = digest::digest(ali.file.name, algo = "md5"),
+      "aln_fasta" = digest::digest(seq.file.name, algo = "md5"),
       "phylo_model" = digest::digest(stats.file.name, algo = "md5"),
       "tree" = digest::digest(tree.file.name, algo = "md5"),
       "tree_stats" = digest::digest(log.file.name, algo = "md5")
     )
   ), pretty=T, always_decimal=T, auto_unbox=T)
-  summary.file <- tempfile("summary", temp.dir,".json")
-  jsonlite::write_json(summary.json, summary.file)
-  
-  return(temp.dir)
+  summary.file <- paste0(refpkg,"/CONTENTS.json")
+  con <- file(summary.file)
+  write(summary.json, summary.file)
+  close(con)
+
+  return(refpkg)
 }
 
 #' A wrapper for pplacer's basic run function coupled with guppy's sing function. 
@@ -120,4 +128,16 @@ run.pplacer_guppy <- function(refpkg){
   #'@param: A reference package to use as input for pplacer
   #'@return: A set of trees
 
+  #Run pplacer to obtain placements
+  system(paste0("export LC_ALL=C ; ","pplacer -c ", refpkg,
+                " -o ", refpkg, "/placements.jplace",
+                " ", refpkg, "/seq.fasta"))
+  
+  #Run guppy to obtain trees
+  system(paste0("guppy sing ", refpkg, "/placements.jplace",
+                " -o ", refpkg, "/growth.tre"))
+
+  ts <- ape::read.tree(paste0(refpkg, "/growth.tre"))
+  
+  return(ts)      
 }

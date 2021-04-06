@@ -97,7 +97,7 @@ annotate.nodes <- function(t, mc.cores=1) {
   nodes <- 1:(2*length(t$tip.label)-1)
   
   #Store node info in data.table
-  node.info <- data.table()
+  node.info <- data.table::data.table()
   node.info[,"ID" := nodes] 
   node.info[,"Bootstrap" := c(rep(100, nrow(t$seq.info)), as.numeric(t$node.label))]
   

@@ -45,7 +45,7 @@ fit.analysis <- function(cluster.data, mc.cores=1, null.formula=Growth~Size, ful
       suppressWarnings(null.fit <- predictor.model(null.formula, DT))
       suppressWarnings(full.fit <- predictor.model(full.formula, DT))
       
-      res <- data.table("NullFit"=list(null.fit), "FullFit"=list(full.fit), "SetID"=DT[1,SetID], "RangeID"=DT[1,RangeID])
+      res <- data.table::data.table("NullFit"=list(null.fit), "FullFit"=list(full.fit), "SetID"=DT[1,SetID], "RangeID"=DT[1,RangeID])
       return(res)
     }, mc.cores=mc.cores))
   
