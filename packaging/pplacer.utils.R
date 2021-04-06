@@ -125,8 +125,8 @@ taxit.create <- function(t, seqs.full, stats.json, locus="LOCUS") {
 #' Together, these extend fixed trees with most likely placement locations.
 #' TODO: Include package binaries such that it is not a requirement to install both pplacer and guppy
 run.pplacer_guppy <- function(refpkg){
-  #'@param: A reference package to use as input for pplacer
-  #'@return: A set of trees
+  #'@param refpkg: A reference package to use as input for pplacer
+  #'@return: A set of trees, each containing 1 new sequence.
 
   #Run pplacer to obtain placements
   system(paste0("export LC_ALL=C ; ","pplacer -c ", refpkg,

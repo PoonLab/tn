@@ -1,55 +1,10 @@
-
-#'Translates a set of sequence headers into a data.frame object for inputted.
-#'NOTE: This must contain, at minimum, a set of unique sequence id's (labelled ID) and one other variable
-pull.headers <- function(seqs, var.names, var.transformations=list(), sep="_") {
-  #'@param seqs: An inputted alignment using ape's sequence handling
-  #'@param var.names: The names of the variables represented in each header. This must contain "ID".
-  #'@param var.transformations: A list of transformation functions (such as as.character()) 
-  #'these transform each row into it's proper type. by default, each type is set to character.
-  #'The variable named "ID" will be automatically forced to a character object.
-  #'@param sep: The separator character that splits upthe headers in the fasta file
-  #'@return: A data.table object containing the information associated with each sequence
-  
-  #Checking Inputs
-  if(length(var.names)!=length(unique(var.names))){
-    stop("var.names may not contain repeats")
-  }
-  if(length(var.transformations)==0){
-    var.transformations <- lapply(1:length(var.names), function(x){as.character})
-  } else {
-    if(length(var.names)!=length(var.transformations)) {
-      stop("var.names and var.transformations must be equal lengths")
-      return(NULL)
-    }
-  }
-  if(!("ID"%in%var.names)){
-    stop("'ID' must be contained within var.names")
-  } else{
-    var.transformations[[which(var.names%in%"ID")]] <- as.character
-  }
-  
-  #Split and transform data from headers
-  split.headers <- sapply(names(seqs), function(x) {strsplit(x, sep)[[1]]})
-  seq.info <- lapply(1:nrow(split.headers), function(i) {
-    x <- unname(split.headers[i,])
-    x <- var.transformations[[i]](x)
-    data.table::data.table(x)
-  })
-  
-  seq.info <- dplyr::bind_cols(seq.info)
-  colnames(seq.info) <- var.names
-  
-  return(seq.info)
-}
-
-
 #'Extends an ape tree object to include annotated node and path information. 
 #'By default this will include some basic node info like bootstraps. Other annotations are optional.
-extend.tree <- function(t, seq.info, paths.annotated=T, mc.cores=1, verbose=T) {
+extend.tree <- function(t, seq.info, paths.annotated=T, mc.cores=1) {
   #'@param t: An inputted tree using ape's tree handling
-  #'@param seq.info: A data frame or data.table object containing the sequences
+  #'@param seq.info: A data frame or data.table object containing the sequences. 
+  #'By default, new sequences are assigned as those not in the tree.
   #'@param mc.cores: Passed to annotate.nodes as a parallel option
-  #'@param verbose: An output monitoring option
   #'@param paths.annotated: An option to add path info for the tree. Useful for some tree-based clustering methods
   #'@return: the tree annotated with node information and seq.info
   
@@ -61,21 +16,22 @@ extend.tree <- function(t, seq.info, paths.annotated=T, mc.cores=1, verbose=T) {
   
   #Check Sequence names inputs
   var.names <- colnames(seq.info)
-  if(!("ID"%in%var.names)){
-    stop("'ID' must be contained within var.names")
+  if(!("Header"%in%var.names)){
+    stop("Header must be contained within var.names")
   } else{
-    seq.info[,ID:=as.character(ID)]
-    if(length(unique(seq.info[,"ID"]))!=length(seq.info[,"ID"])){
-      seq.info <- seq.info[!duplicated(ID),]
-      warning("Duplicate ID's have been arbitrarily removed")
+    if(length(unique(seq.info[,"Header"]))!=length(seq.info[,"Header"])){
+      seq.info <- seq.info[!duplicated(Header),]
+      warning("Duplicate Headers have been arbitrarily removed")
+    }
+    if(!all(t$tip.label%in%seq.info$Header)){
+      stop("At least 1 tip labels in tree is not represent seq.labels")
     }
   }
+  seq.info <- annotate.new(seq.info, which(!(seq.info$Header%in%t$tip.label)))
   t$seq.info <- seq.info
   
-  if(verbose){print("Annotating Nodes")}
   t$node.info <- annotate.nodes(t, mc.cores)
   
-  if(verbose){print("Annotating Paths")}
   if(paths.annotated){
     t$path.info <- annotate.paths(t)
   }
@@ -99,7 +55,7 @@ annotate.nodes <- function(t, mc.cores=1) {
   #Store node info in data.table
   node.info <- data.table::data.table()
   node.info[,"ID" := nodes] 
-  node.info[,"Bootstrap" := c(rep(100, nrow(t$seq.info)), as.numeric(t$node.label))]
+  node.info[,"Bootstrap" := c(rep(100, length(t$tip.label)), as.numeric(t$node.label))]
   
   node.info[is.na(Bootstrap), 
             "Bootstrap" := 10^ceiling(log10(max(node.info$Bootstrap[!is.na(node.info$Bootstrap)])))]
@@ -111,7 +67,7 @@ annotate.nodes <- function(t, mc.cores=1) {
   
   #Get pairwise patristic distance info
   patristic.dists <- ape::dist.nodes(t)
-  dists.by.des <- lapply(des, function(x) {patristic.dists[x[x<=nrow(t$seq.info)],x[x<=nrow(t$seq.info)]]})
+  dists.by.des <- lapply(des, function(x) {patristic.dists[x[x<= length(t$tip.label)],x[x<=length(t$tip.label)]]})
   node.info$max.patristic.dist <- sapply(dists.by.des, function(x){max(x)})
   node.info$mean.patristic.dist <- sapply(dists.by.des, function(x){mean(x[x>0])})
   
@@ -162,23 +118,21 @@ annotate.paths <- function(t) {
 
 #'Add the growth information onto the known tree.
 #'This uses pplacer to ensure that previously defined clusters remain the same.
-annotate.growth <- function(t, t.grown, mc.cores=1, verbose=T) {
+annotate.growth <- function(t, t.grown, mc.cores=1) {
   #'@param t: An inputted tree using ape's tree handling
   #'@param t.growth: A set of trees from pplacer. Each with a newly added tip.
   #'@param mc.cores: A parallel option
-  #'@param verbose: An output monitoring option
   #'@return: The input tree annotated with growth information stored as growth.info.
-  
-  if(verbose){print("Annotating Growth")}
-  
+
   #Obtain placement information from trees.
   #New IDs, bootstap + branch lengths of new node
   growth.info <- dplyr::bind_rows(
-    parallel::mclapply(1:length(t.grown), function(i){
+    parallel::mclapply(t.grown, function(x){
       
-      x <- t.grown[[i]]
       new.ids <- setdiff(x$tip.label, t$tip.label)
       new.tips <- which(x$tip.label%in%new.ids)
+      
+      h <- gsub("_#.*","",new.ids[1])
       
       new.edges <- which(x$edge[,2]%in%new.tips)
       term.dists <- x$edge.length[new.edges]
@@ -197,7 +151,7 @@ annotate.growth <- function(t, t.grown, mc.cores=1, verbose=T) {
       old.tips <- lapply(neighbour.des, function(des){which(t$tip.label%in%x$tip.label[des])})
       terminal <- sapply(old.tips, function(x){length(x)==1})
       
-      DT <- data.table::data.table("ID"=i, "NeighbourDes"=old.tips, "Bootstrap" = node.boots,
+      DT <- data.table::data.table("Header"=h, "NeighbourDes"=old.tips, "Bootstrap" = node.boots,
                                    "TermDistance"=term.dists, "PendantDistance"=pen.dists, "Terminal"=terminal)
       
       return(DT)
@@ -210,6 +164,10 @@ annotate.growth <- function(t, t.grown, mc.cores=1, verbose=T) {
   
   suppressWarnings(growth.info[, "NeighbourNode" := unlist(temp)])
   growth.info[, NeighbourDes := NULL]
+  
+  if(!all(growth.info$Header%in%t$seq.info[(New),Header])){
+    warning("Not all newly added sequences are noted in the seq.info of the tree")
+  }
   
   return(growth.info)
 }

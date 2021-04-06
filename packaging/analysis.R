@@ -32,7 +32,7 @@ fit.analysis <- function(cluster.data, mc.cores=1, null.formula=Growth~Size, ful
   }
   
   #Transform cluster data for modelling based on inputs
-  model.data <- cluster.data[, c("ID", "Size", "Growth", "SetID", "RangeID")]
+  model.data <- cluster.data[, c("Header", "Size", "Growth", "SetID", "RangeID")]
   model.data[, (predictors) := lapply(predictors, function(x){
     sapply(cluster.data[, get(x)], function(z){(predictor.transformations[[x]])(z)})
   })]

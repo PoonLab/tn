@@ -45,22 +45,24 @@ step.cluster <- function(t, branch.thresh=0.007, boot.thresh=0, setID=0) {
   #Assign Clusters and update membership info for each
   seq.cols <- colnames(t$seq.info)
   t$node.info[, "Cluster"] <- path.stop["Node",]
-  t$seq.info[, "Cluster"] <- t$node.info[1:nrow(t$seq.info), Cluster]
+  t$seq.info[, "Cluster" := 0]
+  t$seq.info[!(New), Cluster := t$node.info[1:length(t$tip.label), Cluster]]
   
-  cluster.set <- t$seq.info[,lapply(seq.cols, function(nm){list(get(nm))}),by=Cluster]
+  cluster.set <- t$seq.info[!(New),lapply(seq.cols, function(nm){list(get(nm))}),by=Cluster]
   cluster.set <- cluster.set[order(Cluster),]
   des <- t$node.info[Cluster%in%cluster.set$Cluster, list(.(ID)), by=Cluster]
   des <- des[order(Cluster),]  
   cluster.set[,"Descendants":= des$V1]
   cluster.set[,"Size":=length(V1[[1]]), by=1:nrow(cluster.set)]
   colnames(cluster.set) <- c("ClusterID", seq.cols, "Descendants", "Size")
+  cluster.set$New <- NULL
   
   #Assign growth cases to clusters, summing certainty for each
   t$growth.info[, "Cluster" := t$node.info[t$growth.info$NeighbourNode, Cluster]] 
   t$growth.info[(TermDistance)<=branch.thresh, Cluster := NA]
   
-  growth <- t$growth.info[!is.na(Cluster), sum(Bootstrap), by=.(ID, Cluster)]
-  growth <- growth[V1>=boot.thresh, Cluster[which.max(V1)], by=.(ID)]
+  growth <- t$growth.info[!is.na(Cluster), sum(Bootstrap), by=.(Header, Cluster)]
+  growth <- growth[V1>=boot.thresh, Cluster[which.max(V1)], by=.(Header)]
   growth <- table(growth$V1)
   growth <- growth[which(as.numeric(names(growth))%in%cluster.set$ClusterID)]
   
@@ -77,6 +79,7 @@ step.cluster <- function(t, branch.thresh=0.007, boot.thresh=0, setID=0) {
 
 
 ##- TO-DO: SOLVE MONOPHYLETIC CLUSTER GROWTH IN A SIMPLE WAY -##
+##- TO-DO: Update Header info-##
 #' Clusters as a monophyletic clade under a high-confidence common ancestor.
 #' The pairwise patristic distances in this clade must all 
 #' NOTE: Running this method requires a tree object with growth.info defined
@@ -107,7 +110,7 @@ mono.pat.cluster <- function(t, dist.thresh, boot.thresh=0, dist.criterion="max.
   clustered.des <- unlist(t$node.info[(Clustered), Descendants])
   
   times.clustered <- t$node.info[(Clustered), length(which(clustered.des%in%ID)), by=which(Clustered)]
-  sub.clusters <- times.clustered[((which<=nrow(t$seq.info))&(V1>1)) | ((which>nrow(t$seq.info))&(V1>0)), which]
+  sub.clusters <- times.clustered[((which<=length(t$tip.label))&(V1>1)) | ((which>length(t$tip.label))&(V1>0)), which]
   t$node.info[sub.clusters, "Clustered" := F]  
   
   cluster.set <- t$node.info[(Clustered),]
