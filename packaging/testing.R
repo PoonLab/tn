@@ -4,16 +4,33 @@ setwd("~/git/tn/packaging/")
 source("analysis.R")
 source("tree.setup.R")
 source("pplacer.utils.R")
-source("hub.functions.R")
 source("tree.clustering.R")
-source("tn93.utils.R")
+source("sequence.setup.R")
+source("graph.setup.R")
 
 #### TN93 TESTING
 seqs.full <- ape::read.FASTA("~/Data/NAlberta/naFullTree/refpkg/naFull.fasta")
 seq.info <- pull.headers(seqs.full,var.names = c("ID", "Time", "Subtype"),
-                         var.transformations =list(as.Date, as.Date, as.factor))
+                         var.transformations =list(as.character, as.Date, as.factor))
+#edge.info <- run.tn93(seqs.full)
+edge.info <- ape::dist.dna(seqs.full, pairwise.deletion = T, as.matrix = T, model = "TN93", )
 
-edge.info <- run.tn93(seqs.full, seq.info)
+seq.info <- annotate.new(seq.info)
+
+g <- create.graph(seq.info, edge.info)
+
+clusters <- component.cluster(g, 0.007)
+param.list <- lapply(seq(0,0.02,0.0005), function(x){list("g"=g, "dist.thresh"=x)})
+cluster.range <- multi.cluster(component.cluster, param.list, mc.cores = 4)
+cluster.data <- cluster.range
+
+
+res <- fit.analysis(cluster.data)
+nf <- sapply(res$NullFit, function(x){x$aic})
+ff <- sapply(res$FullFit, function(x){x$aic})
+
+ff - nf
+plot(ff-nf)
 
 #### PPLACER TESTING
 

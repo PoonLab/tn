@@ -70,28 +70,19 @@ annotate.new <- function(seq.info, which.new=logical(0)){
   return(seq.info)
 }
 
-#' Runs a given clustering method over a range of parameters values.
-multi.cluster <- function(cluster.method, param.list, mc.cores=1, verbose=T, rangeID=0) {
-  #'@param t: The input tree file, annotated with vertex and edge information
-  #'@param param.list: A named list of parameter sets. Each must correspond to the clustering method used. 
-  #'@param rangeID: If several different parameter ranges are used, the rangeID can identify them.
-  #'@param mc.cores: A parallel option
-  #'@param verbose: An output monitoring option
-  #'@return: A larger data.table with parameter sets noted
+#' Get a subset of sequences based on the old sequences in seq.info
+get.old.seqs <- function(seqs, seq.info){
+  #'@param seqs: A full alaignment
+  #'@param seq.info: A set of seq.info. If provided, may be used to ascertain old sequences from new
+  #'A tree is generally only to be built from old sequences
+  #'@return: Filtered sequences
   
-  #Cluster method loop
-  cluster.range <- parallel::mclapply(1:length(param.list), function(i){
-    x <- param.list[[i]]
-    x$setID <- i
-    if(verbose){
-      flush.console()
-      print(paste0(i, " of ", length(param.list)))
-    }
-    do.call(cluster.method, x)
-  }, mc.cores=mc.cores)
+  #Check new sequences, filter if given
+  if("New"%in%colnames(seq.info)){
+    stop("No new info given in seq.info")      
+  } else {
+    seqs <- seqs[which(names(seqs)%in%seq.info[!(New),Header])]
+  }
   
-  cluster.range <- dplyr::bind_rows(cluster.range)
-  suppressWarnings(cluster.range[,"RangeID" := rangeID])
-  
-  return(cluster.range)
+  return(seqs)
 }
