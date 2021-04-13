@@ -68,8 +68,3 @@ run.tn93 <- function(seqs.full){
   
   return(edge.info)      
 }
-
-#' Obtain an edgelist based on the pairwise patristic distances of an inputted tree from ape's tree handling.
-pairwise.patristic <- function(t){
-  #'@param t: An inputted tree using ape's tree handling
-}

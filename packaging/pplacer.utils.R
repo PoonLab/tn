@@ -2,11 +2,11 @@
 #' Prints stats to a temporary ref.pkg file and returns the path to that file. 
 #' 
 #' NOTE: Currently compatible with GTR substitution model and either FastTree or IQ-TREE logfiles.
-#' Working to extend this to RAxML and PhyML logfiles, and then to different models of evolution
+#' Working to extend this to PhyML logfiles, and then to different models of evolution
 translate.log <- function(log.file, program, substitution.model="GTR") {
   #'@param log.file: A path to the logfile from a tree construction run
   #'@param program: The software used to build the tree.
-  #'Can be "FastTree" or "IQ-TREE".
+  #'Can be "FastTree", "RAxML" or "IQ-TREE".
   #'@param substitution.model: The substitution model used. Currently only accepts "GTR"
   #'@return: a json output to be written to a given stats.file for pplacer
   
@@ -16,8 +16,7 @@ translate.log <- function(log.file, program, substitution.model="GTR") {
   close(con)
   
   #Extracts and normalizes list of frequencies
-  ##TO-DO: Fast Tree is untested
-  ##TO-DO: RAxML and PhyML are both not implemented ()
+  ##TO-DO: PhyML not implemented ()
   if(program%in%"FastTree") {
     p <- "GTRRates"
     s <- lns[grep(p, lns)]
@@ -29,6 +28,12 @@ translate.log <- function(log.file, program, substitution.model="GTR") {
     s <- lns[grep(p, lns)]
     s <- strsplit(s[length(s)], " ")[[1]]
     s <- as.numeric(s[c(5,20,11,8,14,17)])
+  }
+  if(program%in%"RAxML") {
+    p <- " rates"
+    s <- lns[grep(p, lns)]
+    s <- strsplit(s[length(s)], " ")[[1]]
+    s <- as.numeric(s[c(10,15,12,11,13,14)])
   }
   
   #Write stats information to .json
