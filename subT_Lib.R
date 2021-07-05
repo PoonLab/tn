@@ -5,22 +5,36 @@ require("phytools")
 require("parallel") 
 require("pROC")
 
-#Import Tree Data and output an annotated tree with additional information to assist clustering
-import.tree <-function(iFile, varInd=c(1,2), dateFormat="%Y",  addVarN=character(0), rootID=NA, priorityQ=0.80){
-  #@param iFile: The name/path of the input file (expecting a newick file)
-  #@paran rootID: The rootID which can be manually used to root the tree. If NA - the tree is midpoint rooted
-  #@param reVars: The regular expression used to extract variables from column headers. This is passed to strsplit, creating a vertex of values from the column header
-  #@param varInd: A vector of numbers describing the order of variables in the split string. This should describe the index of the unique ID, the Timepoint and the location.
-  #               ex. If the header would be split such that the 4th index is the Unique ID, then 4 should be the first number in this list
-  #               ID and timepoint are currently required. If the location information is not available, it should be set as "0".
-  #@oaram addvarN: The names of additional variables beyond the second.
-  #@return: An ape phylo object annotated with the additional data summarized below
-  #    $Des: A list of each descendant for each node
-  #    $n: Several pieces of info, including $cDist for the longest branch length between the two child branches.
-  #        $cDist will later be correlated with variables such as $tDiff (time difference between nodes).  
-  
-  #Import the truncated tree from the tree file
-  #By default, root the tree by using mmidpoint root, alternatively, the rootID can be provided.
+
+#' Import Tree Data and output an annotated tree with additional information to 
+#' assist clustering
+#'
+#' @param iFile: The name/path of the input file (expecting a newick file)
+#' @param rootID: The rootID which can be manually used to root the tree. If NA 
+#' - the tree is midpoint rooted
+#' @param reVars: The regular expression used to extract variables from column 
+#' headers. This is passed to strsplit, creating a vertex of values from the 
+#' column header
+#' @param varInd: A vector of numbers describing the order of variables in the 
+#' split string. This should describe the index of the unique ID, the Timepoint 
+#' and the location.
+#' ex. If the header would be split such that the 4th index is the Unique ID, 
+#' then 4 should be the first number in this list ID and timepoint are currently 
+#' required. If the location information is not available, it should be set as 
+#' "0".
+#' @param addvarN: The names of additional variables beyond the second.
+#' @return: An ape phylo object annotated with the additional data summarized 
+#' below
+#'    $Des: A list of each descendant for each node
+#'    $n: Several pieces of info, including $cDist for the longest branch length
+#'    between the two child branches.
+#'    $cDist: will later be correlated with variables such as $tDiff (time 
+#'    difference between nodes).  
+import.tree <-function(iFile, varInd=c(1,2), dateFormat="%Y", reVars='_', 
+                       addVarN=character(0), rootID=NA, priorityQ=0.80) {
+  # Import the truncated tree from the tree file
+  # By default, root the tree by using midpoint root, alternatively, the rootID 
+  # can be provided.
   t <- read.tree(iFile)
   if(is.na(rootID)) {
     t <- midpoint.root(t)
@@ -28,13 +42,13 @@ import.tree <-function(iFile, varInd=c(1,2), dateFormat="%Y",  addVarN=character
     t <- root(t, outgroup = rootID)
   }
   
-  #Collapse any other tree multichotomies
+  # Collapse any other tree multichotomies
   t <- multi2di(t)
   
   nodes <- 1:(2*length(t$tip.label)-1)
   
-  #Obtain lists of sequence ID and Time
-  #Reformat edge list as data table object with predictors extracted from sequence header
+  # Obtain lists of sequence ID and Time
+  # Reformat edge list as data table object with predictors extracted from sequence header
   splitHeaders <- sapply(t$tip.label, function(x) {(strsplit(x, reVars)[[1]])[varInd]})
   rownames(splitHeaders) <- c("ID", "Time", addVarN)
   t$seqInfo <- data.table(ID=splitHeaders["ID",],  
