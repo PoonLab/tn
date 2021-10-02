@@ -400,11 +400,10 @@ GAICRun <- function(clus, runID=0, nCores=1, modFormula=New~Old+Time,
     if(length(unique(dt$Growing))<2){
       AUCs <- rep(NA, 1+length(propVar))
     } else {
-      tfFormula <- gsub("New", "Growing", as.character(modFormula))
-      fitROC <- roc(formula=modFormula, data=dt)
+      tfFormula <- as.formula(do.call("substitute",list(modFormula, list(New=quote(Growing)))))
+      fitROC <- roc(formula=tfFormula, data=dt)
       AUCs <- sapply(fitROC, function(x){x$auc})
     }
-    
     res <- data.table(modAIC=fit1$aic, nullAIC=fit2$aic, GAIC=(fit1$aic-fit2$aic),
                       GrowthTot=sum(dt[,(New)]), Singletons=nrow(dt[(Old)==1,]), MeanSize=mean(dt[,(Old)]),
                       GrowthMax=max(dt[,(New)]), GrowthMaxID=dt[which.max((New)), (ID)],
@@ -441,6 +440,7 @@ multiGAICRun <- function(sampsDir, maxDs, minB=0, nCores=1, reVars='_', varInd =
   #@return: A data table of multiple runs worth of cluster information.
   #         Each run will be labelled with a particular run ID
   
+  
   #Obtain a pair of lists - trees and growth files
   sampsDir <- gsub("$|/$", "/", sampsDir)
   short <- (strsplit(list.files(sampsDir, pattern = ".fasta$"), "_")[[1]])[1]
@@ -461,7 +461,7 @@ multiGAICRun <- function(sampsDir, maxDs, minB=0, nCores=1, reVars='_', varInd =
   print("Preparing Trees...")
   trees <- mclapply(tfs, function(tf){
     print(tf)
-    impTree(tFile=tf, reVars=reVars, varInd=varInd, dateFormat=dateFormat)
+    import.tree(iFile=tf, reVars=reVars, varInd=varInd, dateFormat=dateFormat)
   }, mc.cores=nCores)
   
   print("Simulating Growth...")
