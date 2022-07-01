@@ -41,10 +41,6 @@ import.tree <-function(iFile, varInd=c(1,2), dateFormat="%Y", reVars='_',
   } else{
     t <- root(t, outgroup = rootID)
   }
-  
-  # Collapse any other tree multichotomies
-  t <- multi2di(t)
-  
   nodes <- 1:(2*length(t$tip.label)-1)
   
   # Obtain lists of sequence ID and Time
@@ -85,11 +81,12 @@ import.tree <-function(iFile, varInd=c(1,2), dateFormat="%Y", reVars='_',
   #See descriptions of the $n output above for more detail on each item
   t$n <- data.table()
   t$n[,"ID" := c(t$seqInfo$ID, nodes[(nrow(t$seqInfo)+1):length(nodes)])] 
-  t$n[,"Bootstrap" := c(rep(100, nrow(t$seqInfo)), as.numeric(t$node.label))]
-    
-  #Set root node bootstrap support to 1 and adjust these values to be fractions out of 1
-  #Different tree-building methods display bootstrap support differently
-  t$n[is.na(Bootstrap), "Bootstrap" := 10^ceiling(log10(max(t$n$Bootstrap[!is.na(t$n$Bootstrap)])))]
+  t$n[, "Bootstrap" := sapply(c(rep("-1", nrow(t$seqInfo)), t$node.label), function(x){
+    ifelse(grepl("[0-9|/.]", x), as.numeric(x), -1)
+  })] 
+  t$n[,"Bootstrap" := t$n[,"Bootstrap"]/max(t$n[,"Bootstrap"])]
+  t$n[Bootstrap < 0,"Bootstrap" := 1]
+
   t$n[,"Bootstrap" := (t$n$Bootstrap)/max(t$n$Bootstrap)]
   
   #Obtain the path info from every tip to the root node for future clustering
@@ -359,7 +356,7 @@ multiSTClu <- function(iT, maxDs, minBs=0, nCores=1, cluFun=STClu) {
   }
   
   clus[,"Growing" := F]
-  clus[New>1,"Growing" := T]
+  clus[(New>0),"Growing" := T]
   
   #Attaching Model Data
   modD <- bind_rows(mclapply(clus$Membership, function(x) {
@@ -406,7 +403,7 @@ GAICRun <- function(clus, runID=0, nCores=1, modFormula=New~Old+Time,
     }
     res <- data.table(modAIC=fit1$aic, nullAIC=fit2$aic, GAIC=(fit1$aic-fit2$aic),
                       GrowthTot=sum(dt[,(New)]), Singletons=nrow(dt[(Old)==1,]), MeanSize=mean(dt[,(Old)]),
-                      GrowthMax=max(dt[,(New)]), GrowthMaxID=dt[which.max((New)), (ID)],
+                      GrowthMax=max(dt[,(New)]), GrowthMaxID=dt[which.max((New)), (ID)], Growing=sum(dt$Growing),
                       SizeMax=max(dt[,(Old)]), SizeMaxID=dt[which.max((Old)), (ID)],
                       MaxD=dt[1,(MaxD)], MinB=dt[1,(MinB)])
     nmAUC <- sapply(names(dt[,!c("ID","New", "Growing", "MinB", "MaxD")]), function(s){paste0(s, "AUC")})
@@ -471,10 +468,9 @@ multiGAICRun <- function(sampsDir, maxDs, minB=0, nCores=1, reVars='_', varInd =
   #Again, see pplacer_utils for multi-directory creation
   print("Running GAIC Analysis...")
   dt <- bind_rows(lapply(1:length(trees), function(i){
-    t <- trees[[i]]
     print(i)
-    GAICRun(iT=t, maxDs=maxDs, minB=minB, runID=i, nCores = nCores,
-            modFormula=modFormula, propVar=propVar, propTrans=propTrans)
+    t <- trees[[i]]
+    GAICRun(clus)
   }))
   
   return(dt)

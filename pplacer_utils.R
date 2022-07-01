@@ -1,4 +1,4 @@
-require("ape")
+ require("ape")
 require("rjson")
 require("digest")
 require("jsonlite")
@@ -92,6 +92,9 @@ multiTree <- function(sampsDir) {
                   "-nt ", sampsDir, short, "_samp", i, ".fasta ",
                   "> ", sampsDir, short, "_tree", i, ".nwk"))
   }
+  t <- read.tree(paste0(sampsDir, short, "_tree", i, ".nwk"))
+  t <- multi2di(t)
+  write.tree(t, paste0(sampsDir, short, "_tree", i, ".nwk"))
 }
 
 #A wrapper for the python translator script
@@ -166,7 +169,7 @@ taxitCreate <- function(treeF, logF, fullF, oDir, program="FastTree", locus="LOC
   if(!file.exists(oDir)) {dir.create(oDir)}
   
   #Copy files and update filenames
-  file.copy(treeF, oDir)  
+  file.copy(treeF, oDir)
   file.copy(logF, oDir)
   file.copy(fullF, oDir)
     
@@ -242,6 +245,17 @@ multiTaxit <- function(sampsDir) {
     file.remove(logF)
     file.remove(fullF)
   }
+}
+
+# Simple wrapper for running pplacer on a refpackage
+pplacer_guppy <- function(refpkg, oDir) {
+  refpkgnm <- (strsplit(refpkg, '/')[[1]])[-1]
+  short <- (strsplit(refpkgnm, "[.]")[[1]])[1]
+  jpFile <- paste0(oDir, short, ".jplace")
+
+  seqFile <- list.files(refpkg)[grepl(".fasta", list.files(refpkg))]
+  system(paste0("pplacer -c ", refpkg, " -o ", jpFile, " ", refpkg, "/", seqFile))
+  system(paste0("guppy sing ", jpFile, " -o ", oDir, short, "_growth.tree"))
 }
 
 #Runs pplacer on all files in a directory to obtain placement files

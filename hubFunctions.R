@@ -32,14 +32,14 @@ runFullMulti <- function(iFile, dateFormat, maxDs, newMark, prop=0.8, n=100, var
 
   #Save multiple parallel run info to output file
   oFile <- paste0(gsub(".fasta$|.fas$", "_ROB.rds", iFile))
-  res <- multiGAICRun(sampsDir, maxDs=maxDs, dateFormat = dateFormat, varInd = varInd)
+  res <- multiGAICRun(sampsDir, maxDs=maxDs, dateFormat=dateFormat, varInd=varInd)
   saveRDS(res, oFile)
 }
 
 #Run GAIC test for tree-based data
 #See Comparison for ease of use
 runTreeGAIC <- function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y", addVarN=character(0), fullF=NA, oDir="~/",
-                        gFile=NA, maxDs=NA, minBs=NA, cluFun=STClu, nCores=1, logF=NA, program="IQ-TREE", short="seq",
+                        gFile=NA, maxDs=NA, minBs=0, cluFun=STClu, nCores=1, logF=NA, program="IQ-TREE", short="seq",
                         modFormula=New~Old+Time, propVar="Time", propTrans=list(function(x){mean(x)})) {
   #@param tFile: An input tree, passed to import.tree()
   #@param dateFormat: Passed to GAICrun
@@ -71,16 +71,10 @@ runTreeGAIC <- function(tFile, reVars="_", varInd=c(1,2), dateFormat="%Y", addVa
     oT$n <- extendInfo(iT=oT)  
   }
   print("Defining Clusters")
-  clus <- multiSTClu(iT=oT, maxDs=maxDs, nCores=nCores, cluFun=cluFun)
+  clus <- multiSTClu(iT=oT, maxDs=maxDs, nCores=nCores, cluFun=cluFun, minBs =minBs)
   
   print("Obtaining Results")
   res <- GAICRun(clus=clus, nCores=nCores, modFormula=modFormula, propVar=propVar, propTrans=propTrans)
-
-  #Secondary optimization for branch lengths.
-  if(!is.na(minBs)) {
-    clusSec <- multiSTClu(iT=oT, maxDs=res[which.min(GAIC), (MaxD)], minBs=minBs, nCores=nCores)
-    resSec <- GAICRun(clus=clusSec, nCores=nCores, modFormula=modFormula, propVar=propVar, propTrans=propTrans, runID=-1)
-  }
 
   return(res)
 }

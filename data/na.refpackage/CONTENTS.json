@@ -1,0 +1,22 @@
+{
+  "files": {
+    "aln_fasta": "na.fasta",
+    "phylo_model": "na_stats.json",
+    "tree": "na.nwk",
+    "tree_stats": "na.log"
+  },
+  "rollback": {},
+  "log": ["Stripped refpkg (removed 0 files)", "Loaded initial files into empty refpkg"],
+  "metadata": {
+    "create_date": "2022-07-01",
+    "format_version": "1.1",
+    "locus": "LOCUS"
+  },
+  "rollforward": {},
+  "md5": {
+    "aln_fasta": "d5bfff5e70d66af2f50c2154d56aa85f",
+    "phylo_model": "0483b0bc6dcd954df9d4dec95765b0b1",
+    "tree": "8177d9bb6b5bede68b9208e219ebc14e",
+    "tree_stats": "8deacfdb8bdee4d15115fd9149ee46c5"
+  }
+}
