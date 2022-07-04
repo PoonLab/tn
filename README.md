@@ -1,12 +1,16 @@
-# Code Description
+## Description
 
 The scripts contained here Implement clustering algorithms on genetic data and find optimal parameters through the performance of predictive growth models. They contain code to run on sequence alignments and/or phylogenetic trees, allowing users to choose between multiple implemented cluster-building algorithms. These algorithms can be further augmented through the selection of parameters, such as a required similarity for cluster formation, or a required level of certainty. The package also takes in meta-data associated with sequences (such as a known collection date or subtype/variant classification) by parsing headers. These can also allow users to identify cluster-level characteristics, such as the range of collection dates or the most common subtype/variant within a cluster.
 
 If a subset of sequences are specified as “New”, then these scripts simulate cluster growth by building clusters in two stages: first clusters are built from sequences which are not specified as new, then the new sequences are added to clusters. Depending on the clustering method used, this second step may include compromises to insure that new sequences do not retroactively change the membership of clusters. For example, if a single new sequence forms a cluster with two, previously separate clusters, then those two clusters would have ambiguous growth. Pairing cluster-level meta-data, with the growth of clusters is a common goal in research and these scripts contain some functions to help test predictive models based on cluster data. Furthermore, they facilitate the assignment of multiple cluster sets from the same data using different methods and parameters. Pairing these with the effectiveness of growth models can be useful in method/parameter selection.
 
-# Usage
+## Prerequisites
 
-## Running pplacer
+* [pplacer](http://matsen.github.io/pplacer/) - includes `guppy`
+
+## Usage
+
+### Running pplacer
 
 Pplacer proposes the most likely places for new sequences to join a fixed maximum likelihood tree, simulating growth prospectively
 This step assumes that we already have a newick-formatted maximum likelihood tree with bootstrap support values saved as node labels.
@@ -28,7 +32,7 @@ taxitCreate(input.tree,tree.log,full.alignment,out.ref,program)
 pplacer_guppy(out.ref,"data/")
 ```
 
-## Running Cluster Analysis
+### Running Cluster Analysis
 
 After pplacer has proposed the growth placements, the cluster analysis described above can be run
 
@@ -63,7 +67,10 @@ var.translation <- list(function(x){mean(x)}) # List of transformation functions
 res <- GAICRun(clus,runID,cores,proposed.formula,proposed.var,var.translation)
 ```
 
-# References
+## References
+
+- Chato C, Kalish ML, Poon AF. Public health in genetic spaces: a statistical framework to optimize cluster-based outbreak detection. Virus evolution. 2020 Jan;6(1):veaa011.
+- Chato C, Feng Y, Ruan Y, Xing H, Herbeck J, Kalish M, Poon A. Optimized phylogenetic clustering of HIV-1 sequence data for public health applications. bioRxiv. 2022 Jan 1.
 
 ### pplacer
 - Matsen FA, Kodner RB, Armbrust EV. pplacer: linear time maximum-likelihood and Bayesian phylogenetic placement of sequences onto a fixed reference tree. BMC bioinformatics. 2010 Dec;11(1):1-6.
