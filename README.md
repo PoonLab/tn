@@ -1,8 +1,8 @@
 ## Description
 
-The scripts contained here Implement clustering algorithms on genetic data and find optimal parameters through the performance of predictive growth models. They contain code to run on sequence alignments and/or phylogenetic trees, allowing users to choose between multiple implemented cluster-building algorithms. These algorithms can be further augmented through the selection of parameters, such as a required similarity for cluster formation, or a required level of certainty. The package also takes in meta-data associated with sequences (such as a known collection date or subtype/variant classification) by parsing headers. These can also allow users to identify cluster-level characteristics, such as the range of collection dates or the most common subtype/variant within a cluster.
+The scripts contained here Implement clustering algorithms on genetic data and find optimal parameters through the performance of predictive growth models.  They contain code to run on sequence alignments and/or phylogenetic trees, allowing users to choose between multiple implemented cluster-building algorithms.  These algorithms can be further augmented through the selection of parameters, such as a required similarity for cluster formation, or a required level of certainty.  The package also takes in meta-data associated with sequences (such as a known collection date or subtype/variant classification) by parsing headers.  These can also allow users to identify cluster-level characteristics, such as the range of collection dates or the most common subtype/variant within a cluster.
 
-If a subset of sequences are specified as “New”, then these scripts simulate cluster growth by building clusters in two stages: first clusters are built from sequences which are not specified as new, then the new sequences are added to clusters. Depending on the clustering method used, this second step may include compromises to insure that new sequences do not retroactively change the membership of clusters. For example, if a single new sequence forms a cluster with two, previously separate clusters, then those two clusters would have ambiguous growth. Pairing cluster-level meta-data, with the growth of clusters is a common goal in research and these scripts contain some functions to help test predictive models based on cluster data. Furthermore, they facilitate the assignment of multiple cluster sets from the same data using different methods and parameters. Pairing these with the effectiveness of growth models can be useful in method/parameter selection.
+If a subset of sequences are specified as “New”, then these scripts simulate cluster growth by building clusters in two stages: first clusters are built from sequences which are not specified as new, then the new sequences are added to clusters.  Depending on the clustering method used, this second step may include compromises to insure that new sequences do not retroactively change the membership of clusters.  For example, if a single new sequence forms a cluster with two, previously separate clusters, then those two clusters would have ambiguous growth.  Pairing cluster-level meta-data, with the growth of clusters is a common goal in research and these scripts contain some functions to help test predictive models based on cluster data.  Furthermore, they facilitate the assignment of multiple cluster sets from the same data using different methods and parameters.  Pairing these with the effectiveness of growth models can be useful in method/parameter selection.
 
 ## Prerequisites
 
@@ -24,12 +24,12 @@ input.tree <- "data/na.nwk"       # A tree containing only older sequences (ie. 
 tree.log <- "data/na.log"         # A log file from the tree building process
 full.alignment <- "data/na.fasta" # The full alignment (part of this was used to build the input tree)
 out.ref <- "data/na.refpackage"   # Name of the output file (this will be a reference package)
-program = "IQ-TREE"               # Name of the program used (either "IQ-TREE" or "FastTree")
+program <- "IQ-TREE"               # Name of the program used (either "IQ-TREE" or "FastTree")
 
 # Creates a reference package that pplacer can run on
 # Follows this by running both pplacer and guppy
-taxitCreate(input.tree,tree.log,full.alignment,out.ref,program)
-pplacer_guppy(out.ref,"data/")
+taxitCreate(input.tree, tree.log, full.alignment, out.ref, program)
+pplacer_guppy(out.ref, "data/")
 ```
 
 ### Running Cluster Analysis
