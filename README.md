@@ -37,6 +37,8 @@ pplacer_guppy(out.ref,"data/")
 After pplacer has proposed the growth placements, the cluster analysis described above can be run
 
 ```R
+source("subT_Lib.R")  # load import.tree, growthSim and multiSTClu functions
+
 date.format <- "%Y-%m-%d"            # Date format for time info
 var.indices <- c(1,2,3)              # The indices of the unique sequence identifier, the time info, and any additional variables (in that order - there may be more than one additional variable)
 sep <- '_'                           # A splitter to pull variable info from headers
@@ -66,6 +68,13 @@ var.translation <- list(function(x){mean(x)}) # List of transformation functions
 # This includes a profile of delta AIC values and cluster stats
 res <- GAICRun(clus,runID,cores,proposed.formula,proposed.var,var.translation)
 ```
+
+To display the delta-AIC (GAIC) profile:
+```R
+plot(res$MaxD, res$GAIC, type='l', xlab="Distance threshold", ylab="GAIC")
+```
+<img src="https://user-images.githubusercontent.com/1109328/177177193-0c2c7f96-93b1-451c-9531-89e44085d4c7.png" width="500px"/>
+
 
 ## References
 
