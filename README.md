@@ -47,9 +47,8 @@ extra.vars = c("Subtype")            # The names of any additional variables bey
 growth.info <- "data/na_growth.tree" # End result of pplacer and guppy runs. A list of trees that include new sequence placements.
 
 # Extends the tree with information necessary for clustering and prospective growth measurement
-extended.tree <- import.tree(input.tree,var.indices,date.format,sep,extra.vars)
-extended.tree$g <- growthSim(extended.tree,growth.info)
-
+extended.tree <- import.tree(input.tree, var.indices, date.format, sep, extra.vars)
+extended.tree$g <- growthSim(extended.tree, growth.info)
 
 distance.thresholds <- seq(0, 0.04, 0.001) # Distance thresholds for clustering
 bootstrap.requirements <- 0.95             # Minimum bootstrap requirements for clustering 
@@ -57,7 +56,7 @@ cores <- 4                                 # Number of cores for parallel proces
 clustering.function <- STClu               # Type of clustering algorithm (subtree step clustering for this example)
 
 # Builds a list of different cluster sets made from different parameters
-clus <- multiSTClu(extended.tree,distance.thresholds,bootstrap.requirements,cores,clustering.function )
+clus <- multiSTClu(extended.tree, distance.thresholds, bootstrap.requirements, cores, clustering.function)
 
 proposed.var <- "Time"                        # Proposed additional variable for proposed model
 runID <- 0                                    # Unique identifier for run
@@ -66,7 +65,7 @@ var.translation <- list(function(x){mean(x)}) # List of transformation functions
 
 # List of Resulting data
 # This includes a profile of delta AIC values and cluster stats
-res <- GAICRun(clus,runID,cores,proposed.formula,proposed.var,var.translation)
+res <- GAICRun(clus, runID, cores, proposed.formula, proposed.var, var.translation)
 ```
 
 To display the delta-AIC (GAIC) profile:
