@@ -41,6 +41,7 @@ import.tree <-function(iFile, varInd=c(1,2), dateFormat="%Y", reVars='_',
   } else{
     t <- root(t, outgroup = rootID)
   }
+  t <- multi2di(t)
   nodes <- 1:(2*length(t$tip.label)-1)
   
   # Obtain lists of sequence ID and Time
@@ -160,7 +161,10 @@ growthSim <- function(iT, gFile) {
   #Obtain a set of trees with new tips added
   #This is one tree for each new case
   ts <- read.tree(gFile)
+  i <-1 
   df <- bind_rows(lapply(ts, function(t){
+    print(i)
+    i<-i+1
     
     #Obtain the newest tip and it's edge
     nID <- setdiff(t$tip.label, iT$tip.label)
