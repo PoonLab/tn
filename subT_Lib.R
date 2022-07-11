@@ -163,7 +163,7 @@ growthSim <- function(iT, gFile) {
   ts <- read.tree(gFile)
   i <-1 
   df <- bind_rows(lapply(ts, function(t){
-    print(i)
+    #print(i)
     i<-i+1
     
     #Obtain the newest tip and it's edge
